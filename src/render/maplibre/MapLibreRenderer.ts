@@ -150,7 +150,10 @@ export class MapLibreRenderer implements Renderer {
       zoom: 17,
       pitch: 0,
       bearing: 0,
-      attributionControl: { compact: true },
+      // No MapLibre attribution widget: the game's corner credit line
+      // carries the GeoNB/OSM attribution (the widget also collided
+      // with the help line in screenshots).
+      attributionControl: false,
       interactive: false, // the game owns the camera
     });
     // Sprite overlay, pinned over the map canvas.

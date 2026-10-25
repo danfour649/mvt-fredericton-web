@@ -133,4 +133,14 @@ body { font-family: system-ui, sans-serif; }
   #touch { display: flex; }
   #pager { bottom: 96px; }
   #credit { display: none; }
+  /* Keep the help line / ? toggle clear of the touch button row. */
+  #help { bottom: 92px; }
+}
+@media (max-width: 560px) {
+  /* The one-line help crowds the corner on narrow screens (its text
+     is a bare text node, so shrink the line away); the ? toggle —
+     which expands the full controls text — stays readable. */
+  #help { font-size: 0; }
+  #help-toggle { font-size: 0.85rem; }
+  #hud-score { font-size: 1.35rem; }
 }

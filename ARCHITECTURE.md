@@ -10,7 +10,7 @@ adapter folders may import rendering tech.
 
 ```
         ┌────────────────────────────────────────────────┐
-        │ src/main.ts — boot, keyboard, HUD (DOM)        │
+        │ src/main.ts — boot, keyboard/touch, HUD (DOM)  │
         └───────────────┬────────────────────────────────┘
                         │ inputs (move/throttle/steer, E)
                         ▼
@@ -18,11 +18,13 @@ adapter folders may import rendering tech.
         │ src/core/ — SIMULATION                         │
         │  geo.ts      projection + desktop-grid convert │
         │  world.ts    projected world model + collision │
-        │  physics.ts  on-foot movement, arcade car      │
+        │  physics.ts  on-foot movement, car w/ slide    │
         │  traffic.ts  cars following road polylines     │
+        │  cops.ts     police pursuit steering           │
+        │  peds.ts     pedestrians on road-offset paths  │
         │  wanted.ts   0–5 star heat, decay              │
-        │  wallet.ts   money                             │
-        │  missions.ts definitions + state machine      │
+        │  wallet.ts   score + multiplier (score=money)  │
+        │  missions.ts payphone missions + state machine │
         │  save.ts     persistence via injected storage  │
         │  game.ts     orchestrates all of the above     │
         │  renderer.ts the Renderer interface (the seam) │
@@ -47,9 +49,37 @@ interface Renderer {
 }
 ```
 
-`RenderFrame` is plain data: camera centre, view height in metres, entity
-list (player + cars with position/heading/colour), and mission markers.
-Adapters own all presentation choices (colours, line widths, zoom math).
+`RenderFrame` is plain data: camera centre (already smoothed by the core,
+with velocity lookahead and speed-driven view height), view height in
+metres, a frame clock, entity list (player, parked/traffic/driven/cop
+cars, pedestrians — with wreck/down flags), and markers (payphone,
+objective, respray, exit). Adapters own all presentation choices
+(colours, line widths, zoom math).
+
+## Sprites (v0.20 — the dot is dead)
+
+v0 drew entities as GeoJSON: the player was a MapLibre circle layer and
+mission markers were metre-radius polygon rings — which is exactly what
+it looked like ("a dot with a ring around it"). v0.20 generates real
+top-down sprites once from offscreen canvases (`src/render/sprites.ts`:
+car bodies with roof/windshield/headlights at 4.4 × 1.9 m, police with
+a two-phase flashing lightbar, wrecks, little people with feet/head
+direction cues) and both adapters draw them rotated by heading:
+
+- **MapLibre adapter:** MapLibre now renders ONLY the static world
+  (bright palette style: green ground, light asphalt + casing + centre
+  dashes, per-building saturated colours with inset-roof polygons).
+  A transparent canvas overlay pinned to the map container is redrawn
+  per frame: each entity is projected to screen px (`map.project`),
+  sized by the live px-per-metre at its position, and blitted.
+  Markers are screen-pixel badges (22 px) with labels; only objective/
+  exit zones keep a faint metre-accurate ground circle (that's their
+  actual trigger area). No per-frame GeoJSON rebuilds at all.
+- **Canvas adapter:** same sprites, same marker treatment, metre-space
+  transform instead of map projection.
+
+The core knew nothing about any of this — `RenderEntity`/`RenderMarker`
+gained kinds and flags, that's all.
 
 ## Coordinates — one frame, conversions only at the edges
 
@@ -74,24 +104,52 @@ formulae from the desktop game's `tools/osm_import.py`
 ## Simulation notes
 
 - **Collision:** circle vs building-polygon (bbox reject → nearest-edge
-  push-out, with an inside-polygon case), shared by the player and cars.
+  push-out, with an inside-polygon case), shared by the player, cars,
+  cops and peds.
 - **Cars:** parked cars are deterministic (seeded RNG, same city every
   load). Traffic cars follow road polylines with `pointAlongRoad`, drive
   on the right, honour GeoNB `Dir_of_Traffic_Flow` ("Opposite Direction"
-  travels against the digitised path), and ping-pong at road ends — v0
-  has no intersection routing.
-- **Driving:** throttle/steer arcade model in `physics.ts` (top speed
-  ~90 km/h); building hits and car-vs-car hits at speed raise wanted heat
-  via `wanted.ts`, which also decays it.
-- **Missions:** data-first definitions in `missions.ts` mirroring the
-  desktop JSON (same ids, briefs, payouts, step order). `MissionRunner`
-  is a small state machine: `interact` steps complete via E near the
-  step position, `steal_vehicle` via entering a parked car,
-  `deliver_vehicle` via arriving in a car inside the step radius.
-- **Persistence:** `SaveStore` serialises { money, completedMissions }
-  through the injected `StorageAdapter`. `main.ts` injects a
-  localStorage-backed adapter; tests (and future Route C shells) inject
-  `MemoryStorage`. The core never touches `window`.
+  travels against the digitised path), ping-pong at road ends (still no
+  intersection routing), and brake when the player blocks them.
+- **Driving:** `physics.ts` keeps a velocity vector with grip: throttle/
+  steer is snappier than v0, steering fades with speed, and the
+  handbrake (Space) slashes grip so the car genuinely slides. Building
+  and car hits at speed damage the car (0 = wreck, driver ejected) and
+  raise wanted heat.
+- **Score/multiplier (`wallet.ts`):** score IS money. `earn()` multiplies
+  every gain; mission completion raises the multiplier; BUSTED halves it
+  (floor ×1) plus a $1,000 fine. The game awards desktop mission payouts
+  ×100 as score (fees stay literal) so the $250,000 district goal is a
+  real arc: goal → EXIT point → district archived → freeroam or new run.
+- **Police (`cops.ts`):** pursuit cars are player-physics cars steered at
+  a velocity-predicted aim point. Count = stars (cap 4), spawned ~150 m
+  out on roads. They ram (damage + shove); a stopped player with a cop
+  alongside for 3 s (car) or a cop holding the player 2 s (foot) is
+  BUSTED. Heat decays only while no cop is within 45 m.
+- **Pedestrians (`peds.ts`):** ~20 walkers on road-offset paths near the
+  player; they flee fast/close cars; a car contact downs one (+score,
+  +star); on-foot contact is a harmless nudge.
+- **Respray:** a snapped roadside point on Queen St (grid (95, 55));
+  driving in hot charges $500 × stars (floor $0), zeroes heat, clears
+  cops, repaints the car.
+- **Missions:** data-first definitions in `missions.ts`. The two ported
+  missions mirror the desktop JSON (same ids, briefs, payouts, steps);
+  v0.20 adds a timed steal-and-deliver (80 s) and a foot drop, placed via
+  the same grid conversion. `MissionRunner` is a small state machine:
+  `interact` steps complete via E near the step position,
+  `steal_vehicle` via entering a parked car, `deliver_vehicle` via
+  arriving in a car inside the step radius; timed missions `tick()` down
+  and fail (re-takable, not completed). Missions are started at their
+  start positions, presented as ringing payphones by the renderers.
+- **Camera (in `game.ts`, not the adapters):** exponential smoothing
+  toward the player plus velocity lookahead; view height interpolates
+  from ~70 m on foot to ~300 m at full speed — the GTA 1 zoom-out.
+- **Persistence:** `SaveStore` (key save-v2) archives { completedMissions,
+  districtCleared, bestScore } through the injected `StorageAdapter`.
+  Runs themselves are NOT restored (a fresh load = a fresh run, GTA
+  style); only the archive persists. `main.ts` injects a
+  localStorage-backed adapter; tests inject `MemoryStorage`. The core
+  never touches `window`.
 
 ## Taking Route C from prototype to standalone
 
@@ -102,13 +160,18 @@ chunks (they're dynamically separable in `main.ts`), (3) polish the
 canvas draw (road labels, culling, DPR handling). No core changes —
 that is the point of the seam.
 
-## Known v0 simplifications
+## Known v0.20 simplifications
 
 - The world loader loads all 1,225 buildings in the dataset (all are
   Polygons; non-Polygon geometries would be skipped) and 218 of 219 roads
   (one sub-4 m stub is dropped).
 - No Wolastoq river polygon in the playable dataset (GeoNB extract layers
-  used here don't carry it); the PMTiles context has no water layer either.
-  The river is a data addition, not an architecture change.
-- Traffic doesn't route through intersections; police don't pursue yet
-  (wanted is a display + decay system in v0).
+  used here don't carry it); the PMTiles wetlands layer stands in as
+  water/marsh in the context area. The river is a data addition, not an
+  architecture change.
+- Traffic and cop cars don't route through intersections (road-following
+  + ping-pong); cops occasionally take a wall the scenic route.
+- Pedestrians are anchored to their spawn roads rather than roaming the
+  whole graph; downed peds get up after ~6 s (GTA-forgiving).
+- Save v1 (v0's money/completed) is not migrated — save-v2 archives only
+  districtCleared + bestScore, and every load starts a fresh run.
