@@ -2,30 +2,76 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>MVT Fredericton Web — top-down Fredericton</title>
     <meta name="description" content="A minimalist, web-playable, top-down MVT Fredericton: real GeoNB buildings and roads for downtown Fredericton, NB, in your browser." />
   </head>
   <body>
     <div id="map"></div>
-    <header id="hud">
-      <h1>MVT Fredericton <span class="web">WEB</span></h1>
-      <div class="row stats">
-        <span id="hud-money">$0</span>
-        <span id="hud-stars" aria-label="wanted stars">☆☆☆☆☆</span>
-        <span id="hud-speed"></span>
+
+    <!-- Goal progress: hairline bar pinned to the very top. -->
+    <div id="goalbar" title="District goal progress"><div id="goalfill"></div></div>
+
+    <!-- Slim game chrome: score + multiplier left, lives/stars/speed right. -->
+    <div id="topbar">
+      <div class="left">
+        <span id="hud-score">$0</span>
+        <span id="hud-mult" class="chip">×1</span>
       </div>
-      <p id="hud-objective">Loading Fredericton…</p>
-      <p id="hud-toast" role="status"></p>
-      <p class="help">
-        WASD / arrows — walk or drive · <b>E</b> — enter/exit car, take missions, interact<br />
-        Renderer: <span id="renderer-name">…</span> · add <code>?renderer=canvas</code> for Route C
-      </p>
-      <p class="fine">
-        Buildings &amp; roads © GeoNB / Service New Brunswick (Open Government Licence – NB).
-        Mission coordinates from MVT Fredericton (desktop), © OpenStreetMap contributors (ODbL).
-      </p>
-    </header>
+      <div class="right">
+        <span id="hud-speed"></span>
+        <span id="hud-lives" aria-label="lives"></span>
+        <span id="hud-stars" aria-label="wanted stars">☆☆☆☆☆</span>
+      </div>
+    </div>
+
+    <!-- Pager: only visible when there's a brief or an objective. -->
+    <div id="pager" hidden>
+      <div class="pager-head">📟 PAGER</div>
+      <p id="hud-brief"></p>
+      <p id="hud-objective"></p>
+      <p id="hud-timer" hidden></p>
+    </div>
+
+    <!-- Transient centre toast. -->
+    <div id="hud-toast" role="status"></div>
+
+    <!-- Full-screen BUSTED / WASTED stamp. -->
+    <div id="stamp" hidden></div>
+
+    <!-- End overlays: DISTRICT COMPLETE / GAME OVER. -->
+    <div id="overlay" hidden>
+      <div class="card">
+        <h2 id="overlay-title"></h2>
+        <p id="overlay-body"></p>
+        <div class="buttons">
+          <button id="btn-primary" type="button"></button>
+          <button id="btn-restart" type="button">New run (R)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Touch controls (shown on coarse pointers only). -->
+    <div id="touch">
+      <div class="cluster">
+        <button type="button" data-code="KeyA" aria-label="left">◀</button>
+        <button type="button" data-code="KeyD" aria-label="right">▶</button>
+      </div>
+      <div class="cluster">
+        <button type="button" data-action="interact" class="e-btn" aria-label="interact">E</button>
+        <button type="button" data-code="Space" aria-label="handbrake">DRIFT</button>
+        <button type="button" data-code="KeyS" aria-label="brake/reverse">BRK</button>
+        <button type="button" data-code="KeyW" aria-label="accelerate">GAS</button>
+      </div>
+    </div>
+
+    <div id="credit">
+      MVT Fredericton Web v0.20 · <span id="renderer-name">…</span> · buildings &amp; roads © GeoNB (OGL-NB) · mission coords © OpenStreetMap contributors (ODbL)
+    </div>
+    <div id="help" title="Controls">WASD drive/walk · E interact · Space handbrake · <span id="help-toggle">?</span>
+      <span id="help-full" hidden> — steal cars, answer payphones ☎, watch the stars, respray on Queen St kills the heat. R restarts a finished run.</span>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

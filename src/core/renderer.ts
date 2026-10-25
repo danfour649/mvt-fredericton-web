@@ -2,8 +2,9 @@
  * The Renderer contract — the ONLY seam between the game core and any
  * drawing technology.
  *
- * Route A (src/render/maplibre) implements this over MapLibre GL + PMTiles.
- * Route C (src/render/canvas) implements it over a plain Canvas 2D.
+ * Route A (src/render/maplibre) implements this over MapLibre GL + PMTiles
+ * with sprites drawn on a synced canvas overlay. Route C
+ * (src/render/canvas) implements it over a plain Canvas 2D.
  * The core never imports either; src/main.ts picks one at boot.
  *
  * Everything the renderer is handed is in core-frame local metres
@@ -14,7 +15,7 @@
 import type { Vec2 } from './geo';
 import type { WorldModel } from './world';
 
-export type EntityKind = 'player' | 'car-parked' | 'car-traffic' | 'car-driven';
+export type EntityKind = 'player' | 'car-parked' | 'car-traffic' | 'car-driven' | 'car-cop' | 'ped';
 
 export interface RenderEntity {
   id: string;
@@ -24,22 +25,32 @@ export interface RenderEntity {
   heading: number;
   /** Paint hint for adapters that want variety; ignored otherwise. */
   color: string;
+  /** Car is a burned-out wreck (dead, dark). */
+  wrecked?: boolean;
+  /** Pedestrian is down on the ground. */
+  down?: boolean;
 }
 
 export interface RenderMarker {
   pos: Vec2;
+  /** Ground trigger radius in metres — adapters may draw it faintly for
+   *  objectives, or ignore it; icons themselves are SCREEN-sized. */
   radius: number;
   label: string;
-  kind: 'mission-start' | 'objective';
+  /** Single glyph drawn inside the marker badge (payphone ☎, etc.). */
+  icon: string;
+  kind: 'payphone' | 'objective' | 'respray' | 'exit';
 }
 
 export interface RenderFrame {
-  /** Camera centre, core metres. */
+  /** Camera centre, core metres (already smoothed by the core). */
   camera: Vec2;
   /** Metres visible across the viewport height, roughly. Camera adapters
    *  translate this to a MapLibre zoom / canvas scale. */
   viewHeightM: number;
   playerInCar: boolean;
+  /** Seconds since boot, for pulse/blink animation phases. */
+  timeSec: number;
   entities: RenderEntity[];
   markers: RenderMarker[];
 }

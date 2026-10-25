@@ -1,8 +1,12 @@
 /**
  * Save/load via an INJECTED storage interface. The core never touches
  * localStorage directly — src/main.ts passes a browser-backed adapter,
- * tests pass the in-memory one below. Same shape as the desktop game's
- * SaveGame (money + completed missions), deliberately smaller.
+ * tests pass the in-memory one below.
+ *
+ * v0.20 save shape (key save-v2): the run's score/multiplier are session
+ * state and are NOT persisted (a fresh load starts a fresh run, GTA-style);
+ * what persists across loads is the archive: district cleared flag and
+ * best score ever.
  */
 
 export interface StorageAdapter {
@@ -22,11 +26,14 @@ export class MemoryStorage implements StorageAdapter {
 }
 
 export interface SaveData {
-  money: number;
+  /** Missions completed in the archived record (kept for continuity). */
   completedMissions: string[];
+  districtCleared: boolean;
+  bestScore: number;
 }
 
-const SAVE_KEY = 'mvt-fredericton-web/save-v1';
+const SAVE_KEY = 'mvt-fredericton-web/save-v2';
+const DEFAULTS: SaveData = { completedMissions: [], districtCleared: false, bestScore: 0 };
 
 export class SaveStore {
   private storage: StorageAdapter;
@@ -37,16 +44,17 @@ export class SaveStore {
   load(): SaveData {
     try {
       const raw = this.storage.read(SAVE_KEY);
-      if (!raw) return { money: 0, completedMissions: [] };
+      if (!raw) return { ...DEFAULTS };
       const parsed = JSON.parse(raw) as Partial<SaveData>;
       return {
-        money: typeof parsed.money === 'number' ? parsed.money : 0,
         completedMissions: Array.isArray(parsed.completedMissions)
           ? parsed.completedMissions.filter((x) => typeof x === 'string')
           : [],
+        districtCleared: parsed.districtCleared === true,
+        bestScore: typeof parsed.bestScore === 'number' ? parsed.bestScore : 0,
       };
     } catch {
-      return { money: 0, completedMissions: [] };
+      return { ...DEFAULTS };
     }
   }
 

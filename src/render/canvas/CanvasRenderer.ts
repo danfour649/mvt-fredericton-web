@@ -1,27 +1,27 @@
 /**
- * Route C renderer (stub-plus): plain Canvas 2D, zero map libraries.
+ * Route C renderer: plain Canvas 2D, zero map libraries.
  *
- * It implements the exact same core Renderer interface as the MapLibre
+ * Implements the exact same core Renderer interface as the MapLibre
  * adapter and draws the exact same core world (local metres in, pixels
- * out), which is the proof that Route C stays open: swap the adapter in
- * src/main.ts (`?renderer=canvas`) and the identical simulation runs with
- * no PMTiles, no MapLibre, no network tiles — a fully standalone build is
- * then "just" bundling downtown.json and polishing this draw.
- *
- * What it does in v0: dark ground, road ribbons, height-shaded building
- * polygons, mission markers with labels, cars as rotated rectangles, the
- * player as a dot. No labels on roads, no culling beyond a bounds check —
- * good enough to play the same game, deliberately not polished.
+ * out) with the same bright GTA-1 palette and the same generated
+ * sprites (src/render/sprites.ts), which is the proof that Route C
+ * stays open: swap the adapter in src/main.ts (`?renderer=canvas`) and
+ * the identical simulation runs with no PMTiles, no MapLibre, no
+ * network tiles.
  */
 import type { WorldModel } from '../../core/world';
 import type { Renderer, RenderFrame } from '../../core/renderer';
+import { carSprite, personSprite, drawSprite } from '../sprites';
 
-function heightShade(heightM: number): string {
-  if (heightM >= 30) return '#8a5638';
-  if (heightM >= 18) return '#7d6a4f';
-  if (heightM >= 8) return '#4d5f83';
-  return '#2b3a55';
-}
+const BUILDING_COLORS = ['#e07a5f', '#f2cc8f', '#81b29a', '#e8c547', '#db5461', '#7fa6d9', '#c97b4a', '#9d7bd8'];
+const ROOF_COLORS = ['#eda88f', '#f7ddad', '#a5cbb6', '#f2d673', '#e87f89', '#a7c2e6', '#da9c6d', '#bda3e6'];
+
+const MARKER_BG: Record<string, string> = {
+  payphone: '#1faa55',
+  objective: '#f5b301',
+  respray: '#2266cc',
+  exit: '#e0342b',
+};
 
 export class CanvasRenderer implements Renderer {
   readonly name = 'canvas';
@@ -58,73 +58,115 @@ export class CanvasRenderer implements Renderer {
     const scale = h / frame.viewHeightM; // px per metre
     const sx = (x: number) => w / 2 + (x - frame.camera.x) * scale;
     const sy = (z: number) => h / 2 + (z - frame.camera.z) * scale;
-    const viewM = { x: (w / scale) / 2 + 60, z: (h / scale) / 2 + 60 };
+    const viewM = { x: w / scale / 2 + 60, z: h / scale / 2 + 60 };
     const near = (x: number, z: number) =>
       Math.abs(x - frame.camera.x) < viewM.x && Math.abs(z - frame.camera.z) < viewM.z;
 
-    ctx.fillStyle = '#0d1117';
+    ctx.fillStyle = '#79b657';
     ctx.fillRect(0, 0, w, h);
 
-    // Roads.
+    // Roads: dark casing, light asphalt, dashed centre line.
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    for (const r of this.world.roads) {
-      if (!near(r.path[0].x, r.path[0].z) && !near(r.path[r.path.length - 1].x, r.path[r.path.length - 1].z)) continue;
-      ctx.strokeStyle = '#39435c';
-      ctx.lineWidth = Math.max(1.5, r.widthM * 0.72 * scale);
-      ctx.beginPath();
-      r.path.forEach((p, i) => (i === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
-      ctx.stroke();
-    }
-    // Buildings.
-    for (const b of this.world.buildings) {
-      if (!near(b.center.x, b.center.z)) continue;
-      ctx.fillStyle = heightShade(b.heightM);
-      ctx.strokeStyle = '#0a0d12';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      b.polygon.forEach((p, i) => (i === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    }
-    // Markers.
-    for (const m of frame.markers) {
-      ctx.strokeStyle = m.kind === 'objective' ? '#ffd23f' : '#3fd68f';
-      ctx.fillStyle = m.kind === 'objective' ? 'rgba(255,210,63,0.25)' : 'rgba(63,214,143,0.25)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(sx(m.pos.x), sy(m.pos.z), m.radius * scale, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = '#e8eef7';
-      ctx.font = 'bold 11px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(m.label, sx(m.pos.x), sy(m.pos.z) - m.radius * scale - 4);
-    }
-    // Entities.
-    for (const e of frame.entities) {
-      if (e.kind === 'player') {
-        ctx.fillStyle = e.color;
-        ctx.strokeStyle = '#0a0d12';
-        ctx.lineWidth = 2;
+    for (const pass of [0, 1, 2] as const) {
+      for (const r of this.world.roads) {
+        if (!near(r.path[0].x, r.path[0].z) && !near(r.path[r.path.length - 1].x, r.path[r.path.length - 1].z)) continue;
         ctx.beginPath();
-        ctx.arc(sx(e.pos.x), sy(e.pos.z), Math.max(3, 0.55 * scale), 0, Math.PI * 2);
-        ctx.fill();
+        r.path.forEach((p, i) => (i === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
+        if (pass === 0) {
+          ctx.strokeStyle = '#676c70';
+          ctx.lineWidth = Math.max(1.5, r.widthM * 0.98 * scale);
+        } else if (pass === 1) {
+          ctx.strokeStyle = '#ccd0d4';
+          ctx.lineWidth = Math.max(1.2, r.widthM * 0.8 * scale);
+        } else {
+          ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+          ctx.lineWidth = Math.max(0.6, 0.22 * scale);
+          ctx.setLineDash([2.2 * scale, 3 * scale]);
+        }
         ctx.stroke();
-      } else {
-        ctx.save();
-        ctx.translate(sx(e.pos.x), sy(e.pos.z));
-        ctx.rotate(e.heading);
-        ctx.fillStyle = e.color;
-        ctx.strokeStyle = '#05070a';
-        ctx.lineWidth = 1;
-        const len = 4.4 * scale;
-        const wid = 1.9 * scale;
-        ctx.fillRect(-len / 2, -wid / 2, len, wid);
-        ctx.strokeRect(-len / 2, -wid / 2, len, wid);
-        ctx.restore();
+        ctx.setLineDash([]);
       }
+    }
+    // Buildings + inset roofs.
+    this.world.buildings.forEach((b, i) => {
+      if (!near(b.center.x, b.center.z)) return;
+      const idx = (i * 7 + Math.floor(b.heightM)) % BUILDING_COLORS.length;
+      ctx.beginPath();
+      b.polygon.forEach((p, j) => (j === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
+      ctx.closePath();
+      ctx.fillStyle = BUILDING_COLORS[idx];
+      ctx.fill();
+      ctx.strokeStyle = '#38302c';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.beginPath();
+      b.polygon.forEach((p, j) => {
+        const ix = b.center.x + (p.x - b.center.x) * 0.84;
+        const iz = b.center.z + (p.z - b.center.z) * 0.84;
+        if (j === 0) ctx.moveTo(sx(ix), sy(iz));
+        else ctx.lineTo(sx(ix), sy(iz));
+      });
+      ctx.closePath();
+      ctx.fillStyle = ROOF_COLORS[idx];
+      ctx.fill();
+    });
+
+    const t = frame.timeSec;
+    const lightPhase = (Math.floor(t * 2.6) % 2) as 0 | 1;
+
+    // Entities via shared sprites.
+    const ordered = [...frame.entities].sort((a, b) => {
+      const rank = (k: string) => (k === 'ped' ? 0 : k === 'player' ? 2 : 1);
+      return rank(a.kind) - rank(b.kind);
+    });
+    for (const e of ordered) {
+      if (!near(e.pos.x, e.pos.z)) continue;
+      const px = sx(e.pos.x);
+      const py = sy(e.pos.z);
+      if (e.kind === 'player') drawSprite(ctx, personSprite(e.color, { player: true }), px, py, scale, e.heading, 13);
+      else if (e.kind === 'ped') drawSprite(ctx, personSprite(e.color, { down: e.down }), px, py, scale, e.heading, 10);
+      else if (e.kind === 'car-cop') drawSprite(ctx, carSprite(e.color, { police: true, lightPhase }), px, py, scale, e.heading);
+      else drawSprite(ctx, carSprite(e.color, { wrecked: e.wrecked }), px, py, scale, e.heading);
+    }
+
+    // Markers: screen-pixel badges.
+    for (const m of frame.markers) {
+      if (!near(m.pos.x, m.pos.z)) continue;
+      const px = sx(m.pos.x);
+      const py = sy(m.pos.z);
+      const y = py - 26 + (m.kind === 'objective' ? Math.sin(t * 5) * 2.5 : 0);
+      if (m.kind === 'payphone') {
+        ctx.beginPath();
+        ctx.arc(px, py, 15 + 5 * Math.sin(t * 4), 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(31,170,85,0.7)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      if (m.kind === 'objective' || m.kind === 'exit') {
+        ctx.beginPath();
+        ctx.arc(px, py, m.radius * scale, 0, Math.PI * 2);
+        ctx.fillStyle = m.kind === 'exit' ? 'rgba(224,52,43,0.13)' : 'rgba(245,179,1,0.13)';
+        ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.roundRect(px - 11, y - 11, 22, 22, 6);
+      ctx.fillStyle = MARKER_BG[m.kind];
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+      ctx.stroke();
+      ctx.fillStyle = m.kind === 'objective' ? '#20180a' : '#ffffff';
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(m.icon, px, y + 0.5);
+      ctx.font = 'bold 10px system-ui, sans-serif';
+      ctx.shadowColor = 'rgba(0,0,0,0.65)';
+      ctx.shadowBlur = 3;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(m.label, px, y - 19);
+      ctx.shadowBlur = 0;
     }
   }
 

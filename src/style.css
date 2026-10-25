@@ -1,17 +1,136 @@
-html, body { margin: 0; height: 100%; background: #0d1117; overflow: hidden; }
+html, body { margin: 0; height: 100%; background: #79b657; overflow: hidden; }
+body { font-family: system-ui, sans-serif; }
 #map { position: fixed; inset: 0; }
-#hud {
-  position: fixed; top: 12px; left: 12px; z-index: 10;
-  max-width: 340px; padding: 10px 14px;
-  background: rgba(10, 13, 18, 0.82); color: #e8eef7;
-  border: 1px solid rgba(143, 163, 191, 0.35); border-radius: 10px;
-  font: 13px/1.45 system-ui, sans-serif; backdrop-filter: blur(4px);
+
+/* --- goal hairline ---------------------------------------------------- */
+#goalbar {
+  position: fixed; top: 0; left: 0; right: 0; height: 5px; z-index: 30;
+  background: rgba(10, 20, 8, 0.45);
 }
-#hud h1 { margin: 0 0 4px; font-size: 17px; letter-spacing: 0.04em; }
-#hud h1 .web { color: #ffd23f; }
-#hud .stats { display: flex; gap: 14px; font-size: 15px; font-weight: 600; }
-#hud-stars { color: #ffd23f; letter-spacing: 0.1em; }
-#hud-objective { margin: 6px 0 0; color: #bcd0ea; }
-#hud-toast { margin: 4px 0 0; color: #ffd23f; min-height: 1.2em; font-weight: 600; }
-#hud .help { margin: 8px 0 0; color: #8fa3bf; font-size: 12px; }
-#hud .fine { margin: 6px 0 0; color: #5f7189; font-size: 10.5px; }
+#goalfill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, #ffd23f, #ff9d2e);
+  transition: width 0.4s ease;
+}
+
+/* --- top strip --------------------------------------------------------- */
+#topbar {
+  position: fixed; top: 5px; left: 0; right: 0; z-index: 20;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 6px 10px; pointer-events: none;
+}
+#topbar .left, #topbar .right { display: flex; align-items: center; gap: 8px; }
+#hud-score {
+  font-size: 26px; font-weight: 800; color: #fff; letter-spacing: 0.02em;
+  text-shadow: 0 2px 0 rgba(0,0,0,0.55), 0 0 6px rgba(0,0,0,0.35);
+}
+.chip {
+  font-size: 14px; font-weight: 800; color: #20180a; background: #ffd23f;
+  border: 2px solid rgba(0,0,0,0.55); border-radius: 999px; padding: 1px 9px;
+  box-shadow: 0 2px 0 rgba(0,0,0,0.4);
+}
+#hud-stars {
+  font-size: 20px; color: #ffd23f; letter-spacing: 0.08em;
+  text-shadow: 0 2px 0 rgba(0,0,0,0.55);
+}
+#hud-lives { font-size: 15px; color: #ff5a4e; text-shadow: 0 1px 0 rgba(0,0,0,0.6); letter-spacing: 0.15em; }
+#hud-speed {
+  font-size: 14px; font-weight: 700; color: #fff;
+  text-shadow: 0 2px 0 rgba(0,0,0,0.55); min-width: 4.5em; text-align: right;
+}
+
+/* --- pager -------------------------------------------------------------- */
+#pager {
+  position: fixed; left: 10px; bottom: 34px; z-index: 20;
+  max-width: min(330px, calc(100vw - 20px));
+  background: rgba(16, 22, 14, 0.88); color: #b6f09a;
+  border: 2px solid #3f6212; border-radius: 8px; padding: 7px 10px 8px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+}
+#pager .pager-head { font-size: 10px; letter-spacing: 0.22em; color: #7fb069; margin-bottom: 2px; }
+#hud-brief { margin: 0; font-size: 12.5px; line-height: 1.4; color: #d9f7c4; }
+#hud-objective { margin: 3px 0 0; font-size: 12.5px; line-height: 1.4; color: #fff; font-weight: 700; }
+#hud-brief:empty, #hud-objective:empty { display: none; }
+#hud-timer { margin: 4px 0 0; font-size: 15px; font-weight: 800; color: #ffd23f; }
+#hud-timer.low { color: #ff5a4e; }
+
+/* --- toast --------------------------------------------------------------- */
+#hud-toast {
+  position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
+  z-index: 25; max-width: calc(100vw - 24px); text-align: center;
+  font-size: 16px; font-weight: 800; color: #fff;
+  text-shadow: 0 2px 0 rgba(0,0,0,0.6), 0 0 8px rgba(0,0,0,0.4);
+  pointer-events: none;
+}
+#hud-toast:empty { display: none; }
+
+/* --- stamps + overlays ---------------------------------------------------- */
+#stamp {
+  position: fixed; inset: 0; z-index: 40; display: flex;
+  align-items: center; justify-content: center; pointer-events: none;
+  font-size: clamp(56px, 14vw, 130px); font-weight: 900; letter-spacing: 0.06em;
+  color: #fff; -webkit-text-stroke: 3px rgba(0,0,0,0.75);
+  text-shadow: 0 6px 0 rgba(0,0,0,0.55);
+  transform: rotate(-7deg);
+}
+#stamp.busted { color: #7fb2ff; }
+#stamp.wasted { color: #ff4b3e; }
+#stamp[hidden] { display: none; }
+
+#overlay {
+  position: fixed; inset: 0; z-index: 45; display: flex;
+  align-items: center; justify-content: center;
+  background: rgba(8, 12, 6, 0.55);
+}
+#overlay[hidden] { display: none; }
+#overlay .card {
+  background: #10160e; color: #eef7e6; border: 3px solid #ffd23f;
+  border-radius: 12px; padding: 22px 26px; text-align: center;
+  max-width: min(420px, calc(100vw - 32px));
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+}
+#overlay h2 { margin: 0 0 8px; font-size: 30px; letter-spacing: 0.04em; color: #ffd23f; }
+#overlay p { margin: 0 0 16px; font-size: 15px; line-height: 1.5; white-space: pre-line; }
+#overlay .buttons { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+#overlay button {
+  font: 700 14px system-ui, sans-serif; cursor: pointer;
+  padding: 9px 16px; border-radius: 8px; border: 2px solid #ffd23f;
+  background: #ffd23f; color: #20180a;
+}
+#overlay button#btn-restart { background: transparent; color: #ffd23f; }
+
+/* --- corner lines ---------------------------------------------------------- */
+#credit {
+  position: fixed; left: 8px; bottom: 6px; z-index: 15;
+  font-size: 10px; color: rgba(255,255,255,0.85);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.7); pointer-events: none;
+  max-width: calc(100vw - 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#help {
+  position: fixed; right: 8px; bottom: 6px; z-index: 15;
+  font-size: 10.5px; color: rgba(255,255,255,0.9);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+  max-width: 46vw; text-align: right;
+}
+#help-toggle { cursor: pointer; font-weight: 800; text-decoration: underline; }
+
+/* --- touch controls ---------------------------------------------------------- */
+#touch {
+  display: none; position: fixed; left: 0; right: 0; bottom: 26px; z-index: 22;
+  justify-content: space-between; padding: 0 10px; pointer-events: none;
+}
+#touch .cluster { display: flex; gap: 8px; align-items: flex-end; pointer-events: auto; }
+#touch button {
+  width: 54px; height: 54px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.75); background: rgba(10, 14, 8, 0.5);
+  color: #fff; font: 800 12px system-ui, sans-serif;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+#touch button:active { background: rgba(255, 210, 63, 0.65); color: #20180a; }
+#touch .e-btn { background: rgba(31, 170, 85, 0.55); }
+@media (pointer: coarse) {
+  #touch { display: flex; }
+  #pager { bottom: 96px; }
+  #credit { display: none; }
+}

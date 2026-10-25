@@ -1,12 +1,15 @@
 /**
- * Missions, ported from the desktop game's data/missions/*.json
- * (GTAfredericton repo, © OpenStreetMap contributors coordinate frame —
- * see README attribution).
+ * Missions. The first two are ported from the desktop game's
+ * data/missions/*.json (GTAfredericton repo, © OpenStreetMap contributors
+ * coordinate frame — see README attribution); v0.20 adds two more built
+ * from the same step kinds, one of them timed, all of them started at
+ * ringing payphones GTA-1-style.
  *
  * The desktop JSON positions live in the ROTATED MVT grid frame. They are
  * converted to the core frame at definition time with mvtGridToLocal()
  * (rotate by -GRID_ROTATION_DEG). The original grid coordinates are kept
- * alongside for traceability and tests.
+ * alongside for traceability and tests. The two added missions use the
+ * same grid conversion with hand-placed downtown grid coordinates.
  */
 import { mvtGridToLocal, type Vec2 } from './geo';
 
@@ -28,10 +31,13 @@ export interface MissionDef {
   id: string;
   title: string;
   brief: string;
+  /** Desktop payout in $ — the game awards it as score (see game.ts). */
   payout: number;
   startPos: Vec2;
   startGridPos: [number, number];
   startLabel: string;
+  /** Seconds on the clock once started; undefined = untimed. */
+  timeLimitSec?: number;
   steps: MissionStep[];
 }
 
@@ -105,23 +111,91 @@ export const MISSIONS: MissionDef[] = [
       },
     ],
   },
+  {
+    // v0.20 addition — TIMED. Steal a car up Queen and burn it downtown
+    // to the west-end drop against the clock.
+    id: 'downtown_burner',
+    title: 'Downtown Burner',
+    brief: 'Grab any car and burn it downtown to the west-end drop. Clock\'s ticking — don\'t be late.',
+    payout: 400,
+    timeLimitSec: 80,
+    ...(() => {
+      const g = grid(150.0, 30.0);
+      return { startPos: g.pos, startGridPos: g.gridPos };
+    })(),
+    startLabel: 'BURNER',
+    steps: [
+      { id: 'steal', kind: 'steal_vehicle', objective: 'Steal any parked car' },
+      {
+        id: 'drop',
+        kind: 'deliver_vehicle',
+        objective: 'Get the car to the west-end drop before time runs out',
+        ...(() => {
+          const g = grid(-150.0, 35.0);
+          return { pos: g.pos, gridPos: g.gridPos };
+        })(),
+        radius: 13,
+      },
+    ],
+  },
+  {
+    // v0.20 addition — a foot job on the south block (George/King area).
+    id: 'george_street_drop',
+    title: 'George Street Drop',
+    brief: 'Package is waiting on the south block. Pick it up and walk it to the George Street door. No car — keep it quiet.',
+    payout: 300,
+    ...(() => {
+      const g = grid(60.0, 110.0);
+      return { startPos: g.pos, startGridPos: g.gridPos };
+    })(),
+    startLabel: 'DROP',
+    steps: [
+      {
+        id: 'pickup',
+        kind: 'interact',
+        objective: 'Pick up the package on the south block',
+        ...(() => {
+          const g = grid(66.0, 112.0);
+          return { pos: g.pos, gridPos: g.gridPos };
+        })(),
+        radius: 7,
+        prompt: 'Take package',
+      },
+      {
+        id: 'dropoff',
+        kind: 'interact',
+        objective: 'Drop the package at the George Street door',
+        ...(() => {
+          const g = grid(-40.0, 115.0);
+          return { pos: g.pos, gridPos: g.gridPos };
+        })(),
+        radius: 7,
+        prompt: 'Leave package',
+      },
+    ],
+  },
 ];
 
 export type MissionEvent =
   | { type: 'started'; mission: MissionDef }
   | { type: 'step'; mission: MissionDef; step: MissionStep }
-  | { type: 'completed'; mission: MissionDef };
+  | { type: 'completed'; mission: MissionDef }
+  | { type: 'failed'; mission: MissionDef };
 
 /**
  * Mission state machine: at most one active mission. Positional steps are
  * completed by the game calling tryInteract() (interact steps, player near
  * and pressing E) or by state predicates in update() (vehicle steps).
+ * Timed missions count down via tick(); expiry fails the mission (it can
+ * be re-taken at its payphone — it is NOT marked completed).
  */
 export class MissionRunner {
   active: MissionDef | null = null;
   stepIndex = 0;
   completed = new Set<string>();
   events: MissionEvent[] = [];
+  /** Seconds left on the active timed mission; null when untimed/none. */
+  timeLeft: number | null = null;
 
   constructor(completedIds: string[] = []) {
     for (const id of completedIds) this.completed.add(id);
@@ -140,6 +214,7 @@ export class MissionRunner {
     if (this.active || this.completed.has(mission.id)) return false;
     this.active = mission;
     this.stepIndex = 0;
+    this.timeLeft = mission.timeLimitSec ?? null;
     this.events.push({ type: 'started', mission });
     return true;
   }
@@ -152,10 +227,28 @@ export class MissionRunner {
       this.completed.add(mission.id);
       this.active = null;
       this.stepIndex = 0;
+      this.timeLeft = null;
       this.events.push({ type: 'completed', mission });
     } else {
       this.events.push({ type: 'step', mission: this.active, step: this.currentStep! });
     }
+  }
+
+  /** Fail the active mission (timer expiry). It stays un-completed. */
+  fail(): void {
+    if (!this.active) return;
+    const mission = this.active;
+    this.active = null;
+    this.stepIndex = 0;
+    this.timeLeft = null;
+    this.events.push({ type: 'failed', mission });
+  }
+
+  /** Count down a timed mission; fails it at zero. */
+  tick(dt: number): void {
+    if (!this.active || this.timeLeft === null) return;
+    this.timeLeft -= dt;
+    if (this.timeLeft <= 0) this.fail();
   }
 
   /** Interact steps: call when the player presses E near the step pos. */

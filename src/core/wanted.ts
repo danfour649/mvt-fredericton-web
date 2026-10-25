@@ -9,7 +9,10 @@ export class Wanted {
   private decayPerSec = 1 / 20; // one star per 20 s of staying clean
 
   get stars(): number {
-    return Math.max(0, Math.min(5, Math.floor(this.heat + 1e-9)));
+    // All heat sources add whole stars, so display rounds: a fresh
+    // 2-star heat reads 2 until decay has eaten half a star (floor()
+    // would drop it to 1 the instant decay starts).
+    return Math.max(0, Math.min(5, Math.round(this.heat)));
   }
 
   /** Add heat (e.g. hitting another car = +1). Clamped to 5. */

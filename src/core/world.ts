@@ -139,6 +139,28 @@ export function pointAlongRoad(road: Road, d: number): { pos: Vec2; heading: num
   return { pos: { ...last }, heading: 0 };
 }
 
+/** Closest point on any road centreline to `p` (for snapping POIs). */
+export function nearestRoadPoint(
+  world: WorldModel,
+  p: Vec2,
+): { pos: Vec2; heading: number; road: Road } | null {
+  let best: { pos: Vec2; heading: number; road: Road } | null = null;
+  let bestD = Infinity;
+  for (const road of world.roads) {
+    for (let i = 0; i < road.path.length - 1; i++) {
+      const a = road.path[i];
+      const b = road.path[i + 1];
+      const c = closestPointOnSegment(p, a, b);
+      const d = Math.hypot(p.x - c.x, p.z - c.z);
+      if (d < bestD) {
+        bestD = d;
+        best = { pos: c, heading: Math.atan2(b.z - a.z, b.x - a.x), road };
+      }
+    }
+  }
+  return best;
+}
+
 /** Exact point-in-polygon (outer ring). */
 export function pointInPolygon(p: Vec2, poly: Vec2[]): boolean {
   let inside = false;
