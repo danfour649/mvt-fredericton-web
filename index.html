@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MVT Fredericton Web — top-down Fredericton</title>
+    <meta name="description" content="A minimalist, web-playable, top-down MVT Fredericton: real GeoNB buildings and roads for downtown Fredericton, NB, in your browser." />
+  </head>
+  <body>
+    <div id="map"></div>
+    <header id="hud">
+      <h1>MVT Fredericton <span class="web">WEB</span></h1>
+      <div class="row stats">
+        <span id="hud-money">$0</span>
+        <span id="hud-stars" aria-label="wanted stars">☆☆☆☆☆</span>
+        <span id="hud-speed"></span>
+      </div>
+      <p id="hud-objective">Loading Fredericton…</p>
+      <p id="hud-toast" role="status"></p>
+      <p class="help">
+        WASD / arrows — walk or drive · <b>E</b> — enter/exit car, take missions, interact<br />
+        Renderer: <span id="renderer-name">…</span> · add <code>?renderer=canvas</code> for Route C
+      </p>
+      <p class="fine">
+        Buildings &amp; roads © GeoNB / Service New Brunswick (Open Government Licence – NB).
+        Mission coordinates from MVT Fredericton (desktop), © OpenStreetMap contributors (ODbL).
+      </p>
+    </header>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
