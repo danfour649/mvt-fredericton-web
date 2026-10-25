@@ -104,8 +104,9 @@ that is the point of the seam.
 
 ## Known v0 simplifications
 
-- The world loader skips non-Polygon building geometries (10 of 1,235
-  features, MultiPolygons) and one sub-4 m road stub (218 of 219 loaded).
+- The world loader loads all 1,225 buildings in the dataset (all are
+  Polygons; non-Polygon geometries would be skipped) and 218 of 219 roads
+  (one sub-4 m stub is dropped).
 - No Wolastoq river polygon in the playable dataset (GeoNB extract layers
   used here don't carry it); the PMTiles context has no water layer either.
   The river is a data addition, not an architecture change.

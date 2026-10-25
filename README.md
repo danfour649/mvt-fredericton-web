@@ -27,8 +27,8 @@ npm run dev        # http://localhost:5173
 
 ## What's in v0
 
-- Downtown Fredericton dataset (`public/data/downtown.json`, ~1 MB):
-  **1,235 GeoNB buildings** with LiDAR heights and **219 roads** with names,
+- Downtown Fredericton dataset (`public/data/downtown.json`, ~0.5 MB):
+  **1,225 GeoNB buildings** with LiDAR heights and **219 roads** with names,
   lanes, speed limits and traffic-flow direction, bbox W −66.652, S 45.955,
   E −66.628, N 45.97 — the maps-of-nb downtown game-mesh extract.
 - Full-city context from `public/fredericton.pmtiles` (7.7 MB, the
