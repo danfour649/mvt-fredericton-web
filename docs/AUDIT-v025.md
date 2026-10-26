@@ -260,4 +260,8 @@ same HUD-transition hooks the haptics already use.
   including a re-run of the v0.21 physics metrics (0–100 km/h,
   handbrake 180°, brake distance) with no regressions — physics was
   not retuned.
-- Pushes: 1 (plus production verification below).
+- Pushes: **1** (d229df0 → 7cd18aa). Production verified after the
+  deploy: the live URL serves v0.25, cold-start frame counts 8 cars
+  within 60 m, and a driven frame shows 67 km/h with the stick
+  engaged and 1 wanted star — no corrective push needed.
+  Screenshots: `~/workspace/mvt-web-v025-shots/`.
