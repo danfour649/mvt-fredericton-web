@@ -23,10 +23,41 @@ npm run dev        # http://localhost:5173
 - **E** — answer a ringing payphone, interact, enter/exit a car
 - **Space** — handbrake (drift!)
 - **R / F** — new run / keep freeroaming on the end screens
-- Touch devices get on-screen controls (steer, GAS, BRK, DRIFT, E)
+- **Touch (v0.21)**: default is a floating **analog stick** (thumb down
+  anywhere on the left half — horizontal = proportional steering, push
+  up = gas, pull down = brake/reverse) plus big GAS/BRK pedals, DRIFT
+  and E on the right. A **Drag-steer** scheme (hold and drag; the car
+  steers toward your thumb and drives itself) and the legacy **Buttons**
+  scheme are switchable in the `?` overlay and remembered. **Gamepads**
+  work too: left stick steers, RT/LT are the pedals, A = E, X/Y =
+  handbrake. **Haptics** (Vibration API, Android/Chrome) tick on E,
+  thump on collisions, and play patterns for payphones, mission
+  complete, BUSTED and WASTED — toggle in the `?` overlay.
 - `?renderer=canvas` swaps the MapLibre renderer for the Route C canvas
   adapter — same game, same data. `?scenario=demo` boots into a scripted
   live-gameplay state (used for screenshots).
+
+## What's new in v0.21 — driving feel + input
+
+- **Real GTA 1 vehicle physics.** The v0.20 velocity-lerp hack (measured
+  0–100 km/h: **16.6 s**) is gone. Cars are now a 2D rigid body with
+  four approximate tyres, exactly the model from Pat Kerr's 1996
+  prototype that became GTA 1's handling: per-tyre velocity split into
+  forward/sideways, grip forces at the contact patches, torque for
+  free. Standard car: 113 km/h top speed, 0–100 in 5.6 s, ~9° of
+  visible slip in a full-lock 50 km/h turn, handbrake 180° in ~1.3 s.
+  Three classes (standard / fast / police), and traffic + cops run the
+  same physics as you. Full before/after table:
+  [tools/drive-metrics.md](tools/drive-metrics.md).
+- **Paved city.** Roads get pavement ribbons with sidewalk margins and
+  every building sits on a pavement apron — downtown reads as city,
+  not lawns. Green is open ground; the wetlands stay blue.
+- **Traffic circulates.** A junction graph over the road network means
+  traffic turns at intersections (preferring to continue its line,
+  U-turning only at dead ends) instead of ping-ponging at road ends.
+- **Feedback.** Fading rear-tyre skid marks while you slide, and a
+  small screen shake on hard impacts. Camera zoom now tracks speed
+  tightly (~0.3 s) with velocity-vector lookahead.
 
 ## The game (v0.20 — the GTA 1 loop)
 
@@ -89,7 +120,11 @@ Unit tests cover the geo conversion (against the desktop game's own
 constants: `mvtGridToLngLat(0, ~27)` lands on Queen St beside City Hall),
 the mission state machine incl. the timed failure path, multiplier
 application, the BUSTED penalty, respray cost/heat, and the district
-goal trigger.
+goal trigger. v0.21 adds **scripted drive-metrics tests** (top speed,
+0–100, turn slip/radius, handbrake behaviour, coast/brake, pivot —
+`src/core/physics.test.ts`, table in tools/drive-metrics.md) and
+**junction-routing tests** (a traffic car simulated for 120 s crosses
+onto other road segments; dead ends U-turn).
 
 ## Data pipeline
 
@@ -119,7 +154,9 @@ src/core/            renderer-agnostic simulation (no DOM/MapLibre/canvas)
 src/render/maplibre/ Route A adapter (MapLibre statics + sprite overlay)
 src/render/canvas/   Route C adapter (same sprites, plain Canvas 2D)
 src/render/sprites.ts generated top-down sprites shared by both adapters
-src/main.ts          boot, input, HUD wiring — no game logic
+src/render/groundwork.ts pavement geometry + skid tracks (both adapters)
+src/platform/        haptics (Vibration API) — platform layer, not core
+src/main.ts          boot, input (keyboard/touch/gamepad), HUD wiring
 public/data/         downtown.json (GeoNB extract)
 public/              fredericton.pmtiles (full-city context, from maps-of-nb)
 tools/               build_downtown.py — the GeoNB data pull

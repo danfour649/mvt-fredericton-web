@@ -18,7 +18,7 @@ adapter folders may import rendering tech.
         │ src/core/ — SIMULATION                         │
         │  geo.ts      projection + desktop-grid convert │
         │  world.ts    projected world model + collision │
-        │  physics.ts  on-foot movement, car w/ slide    │
+        │  physics.ts  rigid-body cars (4 tyres) + foot    │
         │  traffic.ts  cars following road polylines     │
         │  cops.ts     police pursuit steering           │
         │  peds.ts     pedestrians on road-offset paths  │
@@ -109,13 +109,45 @@ formulae from the desktop game's `tools/osm_import.py`
 - **Cars:** parked cars are deterministic (seeded RNG, same city every
   load). Traffic cars follow road polylines with `pointAlongRoad`, drive
   on the right, honour GeoNB `Dir_of_Traffic_Flow` ("Opposite Direction"
-  travels against the digitised path), ping-pong at road ends (still no
-  intersection routing), and brake when the player blocks them.
-- **Driving:** `physics.ts` keeps a velocity vector with grip: throttle/
-  steer is snappier than v0, steering fades with speed, and the
-  handbrake (Space) slashes grip so the car genuinely slides. Building
-  and car hits at speed damage the car (0 = wreck, driver ejected) and
-  raise wanted heat.
+  travels against the digitised path), and brake when the player blocks
+  them. **v0.21:** at road ends traffic consults the junction graph
+  (`routing.ts`): road endpoints are clustered into nodes (5 m snap),
+  and the car picks a connecting segment — preferring the exit that
+  continues its direction of travel, random otherwise, U-turn only at a
+  dead end — so traffic circulates downtown instead of ping-ponging.
+  Cops do NOT road-follow; they free-steer in pursuit (unchanged), so
+  routing applies where road-following is used: traffic.
+- **Driving (v0.21 — the actual GTA 1 model):** `physics.ts` is one
+  2D rigid body + four approximate tyres, after Pat Kerr's 1996
+  prototype ("2D Vehicles"; via Kočica's "The weekend prototype that
+  taught GTA how to drift", and Mike Dailly's account). At each tyre:
+  point velocity (body velocity + angular velocity × offset) is split
+  along/across the tyre's heading; a lateral grip force opposes the
+  sideways component (tanh saturation — rear grip RATE lower, rear CAP
+  higher, so the tail steps out at city speed but the car stays stable
+  at 100+), and longitudinal forces cover engine (linear taper to the
+  class top speed), brakes, reverse, and rolling lock. Forces at the
+  contact patches create torque naturally — slide-and-recover is
+  emergent, not scripted. Front tyres steer with an exponentially
+  speed-faded lock; the handbrake collapses rear grip to 6%, softens
+  the front, and locks the rear longitudinally. Substeps at 180 Hz.
+  Three parameter classes: `standard`, `fast` (every 4th parked car),
+  `police` (grippier, stronger). Player, cops and the BUSTED/WASTED
+  roll-out all run this same `stepCar`; only traffic *spawning* is
+  kinematic (a stolen traffic car becomes a rigid body on entry).
+  Measured feel targets live in `src/core/physics.test.ts` /
+  tools/drive-metrics.md — standard car 113 km/h, 0–100 in 5.6 s,
+  handbrake 180° in ~1.3 s shedding ~67% speed, coast 100→0 in ~8.6 s.
+  The v0.20 model it replaced measured 0–100 in 16.6 s and a coast
+  that never stopped.
+- **Ground treatment (v0.21, render adapters):** `render/groundwork.ts`
+  builds pavement ribbons under roads (width + 7 m sidewalk margin)
+  and pavement aprons under buildings (footprint pushed out 2.4 m) in
+  both adapters, so built-up blocks read as city instead of lawns;
+  the PMTiles context buildings are pavement-grey too. The same
+  module owns rear-tyre skid tracks (laid when |slip| > 13° or the
+  handbrake is on, fading over ~7 s) drawn by both adapters, and both
+  adapters shake the view on the frame's `impact` pulse.
 - **Score/multiplier (`wallet.ts`):** score IS money. `earn()` multiplies
   every gain; mission completion raises the multiplier; BUSTED halves it
   (floor ×1) plus a $1,000 fine. The game awards desktop mission payouts
@@ -142,8 +174,26 @@ formulae from the desktop game's `tools/osm_import.py`
   and fail (re-takable, not completed). Missions are started at their
   start positions, presented as ringing payphones by the renderers.
 - **Camera (in `game.ts`, not the adapters):** exponential smoothing
-  toward the player plus velocity lookahead; view height interpolates
-  from ~70 m on foot to ~300 m at full speed — the GTA 1 zoom-out.
+  toward the player plus velocity-vector lookahead (0.45 s of velocity,
+  lateral slide included); view height interpolates from ~70 m on foot
+  to ~300 m at full speed — the GTA 1 zoom-out. v0.21 tightens the
+  zoom response (rate 2.2 → 3.6/s, ~0.3 s to target) and the position
+  tracking (5 → 6.5/s).
+- **Input & haptics (platform layer, `src/main.ts` + `src/platform/`):**
+  the core only ever sees `carInput`/`moveInput`. Merged sources:
+  keyboard (unchanged), gamepad (standard mapping), and one of three
+  touch schemes — **Stick** (default: dynamic-origin analog stick,
+  proportional steering + push/pull throttle, plus GAS/BRK pedals —
+  either source wins), **Drag-steer** (hold anywhere; desired-heading
+  steering toward the thumb relative to screen centre + auto-throttle),
+  **Buttons** (the legacy binary layout). Scheme + haptics toggle live
+  in the `?` overlay and persist in localStorage. Haptics
+  (`platform/haptics.ts`) are inferred from HUD/state transitions in
+  the frame loop — E tick 12 ms, enter car [20], collisions 15–80 ms
+  scaled by health drop (≥120 ms apart), payphone [25,40,25], mission
+  complete [40,60,40], BUSTED [90,60,90,60,180], WASTED [200,80,200],
+  cancelled when stamps clear. Vibration API only: Android Chrome
+  yes, iOS Safari absent → no-op.
 - **Persistence:** `SaveStore` (key save-v2) archives { completedMissions,
   districtCleared, bestScore } through the injected `StorageAdapter`.
   Runs themselves are NOT restored (a fresh load = a fresh run, GTA
@@ -169,8 +219,10 @@ that is the point of the seam.
   used here don't carry it); the PMTiles wetlands layer stands in as
   water/marsh in the context area. The river is a data addition, not an
   architecture change.
-- Traffic and cop cars don't route through intersections (road-following
-  + ping-pong); cops occasionally take a wall the scenic route.
+- Traffic routes through junctions (v0.21), but the graph only joins
+  road ENDPOINTS — mid-block crossings where a road's polyline passes
+  through another without a shared endpoint are not junctions. Cops
+  free-steer and occasionally take a wall the scenic route.
 - Pedestrians are anchored to their spawn roads rather than roaming the
   whole graph; downed peds get up after ~6 s (GTA-forgiving).
 - Save v1 (v0's money/completed) is not migrated — save-v2 archives only
