@@ -1,11 +1,15 @@
 /**
  * Traffic: cars that follow road polylines in the core frame. Uses GeoNB's
  * Dir_of_Traffic_Flow where sensible: "Opposite Direction" roads are driven
- * against the digitised path direction; anything else follows it. Cars
- * ping-pong at road ends (v0 simplification — no intersection routing yet).
+ * against the digitised path direction; anything else follows it.
+ *
+ * v0.21: at road ends, traffic uses the junction graph (routing.ts) to
+ * continue onto a connecting segment — circulating downtown instead of
+ * the v0.20 ping-pong. Only dead ends U-turn.
  */
 import type { Vec2 } from './geo';
 import { pointAlongRoad, type Road } from './world';
+import { pickNextEdge, type RoadGraph } from './routing';
 
 export interface TrafficCar {
   road: Road;
@@ -47,15 +51,42 @@ function placeTraffic(car: TrafficCar): void {
   car.heading = travelHeading;
 }
 
-export function updateTraffic(car: TrafficCar, dt: number): void {
+export function updateTraffic(
+  car: TrafficCar,
+  dt: number,
+  graph?: RoadGraph,
+  rng: () => number = Math.random,
+): void {
   if (car.stopped) return;
   car.distAlong += car.dir * car.speedMps * dt;
-  if (car.distAlong >= car.road.lengthM - 2) {
-    car.distAlong = car.road.lengthM - 2;
-    car.dir = car.dir === 1 ? -1 : 1;
-  } else if (car.distAlong <= 2) {
-    car.distAlong = 2;
-    car.dir = car.dir === 1 ? -1 : 1;
+  const atEnd = car.distAlong >= car.road.lengthM - 2;
+  const atStart = car.distAlong <= 2;
+  if (!atEnd && !atStart) {
+    placeTraffic(car);
+    return;
   }
+  car.distAlong = atEnd ? car.road.lengthM - 2 : 2;
+  // Junction routing: continue onto a connecting road when one exists.
+  if (graph) {
+    const idx = graph.roadIndex.get(car.road);
+    const nodeIdx = idx === undefined ? -1 : atEnd ? graph.endNode[idx] : graph.startNode[idx];
+    if (nodeIdx >= 0) {
+      const next = pickNextEdge(graph, nodeIdx, car.road, car.heading, rng);
+      if (next) {
+        car.road = next.road;
+        if (next.atStart) {
+          car.distAlong = 2;
+          car.dir = 1;
+        } else {
+          car.distAlong = next.road.lengthM - 2;
+          car.dir = -1;
+        }
+        placeTraffic(car);
+        return;
+      }
+    }
+  }
+  // Dead end (or no graph): U-turn, the legacy behaviour.
+  car.dir = car.dir === 1 ? -1 : 1;
   placeTraffic(car);
 }

@@ -14,6 +14,7 @@ import { dist, mvtGridToLocal, type Vec2 } from './geo';
 import { nearestRoadPoint, pointAlongRoad, type WorldModel } from './world';
 import { moveCircle, stepCar, type CarInput, type CarState } from './physics';
 import { spawnTraffic, updateTraffic, type TrafficCar } from './traffic';
+import { buildRoadGraph, type RoadGraph } from './routing';
 import { spawnCop, updateCop, type CopCar } from './cops';
 import { spawnPeds, updatePed, nudgePed, type Ped } from './peds';
 import { Wanted } from './wanted';
@@ -133,6 +134,9 @@ export class Game {
   private resprayCooldown = 0;
   private copSpawnCooldown = 0;
   private healthRegenDelay = 0;
+  /** Last hard impact (render shake + haptics source). */
+  private lastImpactAt = -99;
+  private lastImpactMag = 0;
 
   // Smoothed camera (core-side so every renderer gets the same feel).
   private camPos: Vec2 = { ...SPAWN_POS };
@@ -140,8 +144,13 @@ export class Game {
 
   private world: WorldModel;
 
+  /** Junction graph for traffic routing (v0.21). */
+  readonly roadGraph: RoadGraph;
+  private trafficRng = mulberry32(777);
+
   constructor(world: WorldModel, storage: StorageAdapter) {
     this.world = world;
+    this.roadGraph = buildRoadGraph(world);
     this.saveStore = new SaveStore(storage);
     const save = this.saveStore.load();
     this.archive = {
@@ -183,6 +192,10 @@ export class Game {
         heading: side === 1 ? heading : heading + Math.PI,
         speed: 0,
         vel: { x: 0, z: 0 },
+        angVel: 0,
+        steer: 0,
+        slipAngle: 0,
+        classId: n % 4 === 3 ? 'fast' : 'standard',
         health: 100,
         wrecked: false,
         stolen: false,
@@ -203,6 +216,10 @@ export class Game {
         heading: traffic.heading,
         speed: 0,
         vel: { x: 0, z: 0 },
+        angVel: 0,
+        steer: 0,
+        slipAngle: 0,
+        classId: 'standard',
         traffic,
         health: 100,
         wrecked: false,
@@ -229,6 +246,8 @@ export class Game {
       this.playerHeading = car.heading;
       car.speed = 0;
       car.vel = { x: 0, z: 0 };
+      car.angVel = 0;
+      car.steer = 0;
       this.drivenCar = null;
       return;
     }
@@ -269,6 +288,8 @@ export class Game {
         z: Math.sin(car.heading) * car.traffic.speedMps,
       };
       car.speed = car.traffic.speedMps;
+      car.angVel = 0;
+      car.steer = 0;
     }
     if (!car.stolen) {
       car.stolen = true;
@@ -496,7 +517,7 @@ export class Game {
         d < 9 &&
         (toPlayer.x * Math.cos(car.heading) + toPlayer.z * Math.sin(car.heading)) / (d || 1) > 0.4;
       car.traffic.stopped = car.trafficStopT > 0 || ahead;
-      updateTraffic(car.traffic, dt);
+      updateTraffic(car.traffic, dt, this.roadGraph, this.trafficRng);
       car.pos = { ...car.traffic.pos };
       car.heading = car.traffic.heading;
       car.vel = {
@@ -535,6 +556,7 @@ export class Game {
       car.wrecked = true;
       car.speed = 0;
       car.vel = { x: 0, z: 0 };
+      car.angVel = 0;
       if (car === this.drivenCar) {
         this.showToast('WRECKED! Your car is dead');
         this.playerPos = {
@@ -553,6 +575,10 @@ export class Game {
     const stepped = stepCar(this.world, car, this.carInput, dt);
     const impact = stepped.impactSpeed;
     Object.assign(car, stepped.car);
+    if (stepped.hitBuilding && impact > 9) {
+      this.lastImpactAt = this.time;
+      this.lastImpactMag = Math.min(1, (impact - 9) / 15);
+    }
     if (stepped.hitBuilding && impact > 8 && this.crashCooldown === 0) {
       this.crashCooldown = 1.2;
       this.damageCar(car, (impact - 7) * 2.4);
@@ -661,6 +687,7 @@ export class Game {
           };
           cop.speed *= 0.35;
           cop.vel = { x: cop.vel.x * 0.35, z: cop.vel.z * 0.35 };
+          cop.angVel *= 0.4;
           this.showToast('Police ram!');
         } else if (!this.drivenCar && d < 2.4) {
           if (Math.abs(cop.speed) > 5) {
@@ -736,11 +763,14 @@ export class Game {
   }
 
   private updateCamera(dt: number): void {
+    // Lookahead BY THE VELOCITY VECTOR (v0.21): the camera leans into
+    // the direction of travel — including the lateral component when
+    // the car slides — so a drift reads before it bites.
     const targetPos = {
-      x: this.playerPos.x + this.playerVel.x * 0.4,
-      z: this.playerPos.z + this.playerVel.z * 0.4,
+      x: this.playerPos.x + this.playerVel.x * 0.45,
+      z: this.playerPos.z + this.playerVel.z * 0.45,
     };
-    const kp = 1 - Math.exp(-5 * dt);
+    const kp = 1 - Math.exp(-6.5 * dt);
     this.camPos = {
       x: this.camPos.x + (targetPos.x - this.camPos.x) * kp,
       z: this.camPos.z + (targetPos.z - this.camPos.z) * kp,
@@ -753,7 +783,9 @@ export class Game {
     // height" for the renderer; the MapLibre adapter clamps zoom so
     // sprites stay readable at the far end.
     const targetView = this.drivenCar ? 115 + speedRatio * 185 : 70;
-    const kv = 1 - Math.exp(-2.2 * dt);
+    // v0.21: GTA's zoom tracks speed aggressively — rate 3.6/s reaches
+    // the target view in ~0.3 s (was 2.2/s, a visible ~0.5 s+ lag).
+    const kv = 1 - Math.exp(-3.6 * dt);
     this.camViewM += (targetView - this.camViewM) * kv;
   }
 
@@ -850,6 +882,9 @@ export class Game {
         heading: car.heading,
         color: car.color,
         wrecked: car.wrecked,
+        slip: car.slipAngle,
+        speedMps: Math.hypot(car.vel.x, car.vel.z),
+        handbrake: car === this.drivenCar ? !!this.carInput.handbrake : false,
       });
     }
     for (const cop of this.cops) {
@@ -859,6 +894,8 @@ export class Game {
         pos: cop.pos,
         heading: cop.heading,
         color: '#f2f3f5',
+        slip: cop.slipAngle,
+        speedMps: Math.hypot(cop.vel.x, cop.vel.z),
       });
     }
     for (const ped of this.peds) {
@@ -900,6 +937,7 @@ export class Game {
     if (this.goalState === 'to-exit') {
       markers.push({ pos: this.exitPos, radius: 10, label: 'EXIT', icon: '⚑', kind: 'exit' });
     }
+    const impactAge = this.time - this.lastImpactAt;
     return {
       camera: { ...this.camPos },
       viewHeightM: this.camViewM,
@@ -907,6 +945,7 @@ export class Game {
       timeSec: this.time,
       entities,
       markers,
+      impact: impactAge < 0.45 ? this.lastImpactMag * (1 - impactAge / 0.45) : 0,
     };
   }
 }

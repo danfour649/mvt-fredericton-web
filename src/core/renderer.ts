@@ -29,6 +29,12 @@ export interface RenderEntity {
   wrecked?: boolean;
   /** Pedestrian is down on the ground. */
   down?: boolean;
+  /** Slip angle in degrees (nose vs velocity) — drives skid marks. */
+  slip?: number;
+  /** Speed magnitude, m/s. */
+  speedMps?: number;
+  /** Handbrake currently held (driven car only). */
+  handbrake?: boolean;
 }
 
 export interface RenderMarker {
@@ -53,6 +59,8 @@ export interface RenderFrame {
   timeSec: number;
   entities: RenderEntity[];
   markers: RenderMarker[];
+  /** 0..1 hard-impact pulse, decaying — adapters shake the view. */
+  impact: number;
 }
 
 export interface Renderer {

@@ -24,6 +24,10 @@ export function spawnCop(pos: Vec2, heading: number): CopCar {
     heading,
     speed: 0,
     vel: { x: 0, z: 0 },
+    angVel: 0,
+    steer: 0,
+    slipAngle: 0,
+    classId: 'police',
     ramCooldown: 0,
   };
 }
