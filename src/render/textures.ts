@@ -143,9 +143,12 @@ export function generateTexture(kind: TextureKind, seed = SEEDS[kind]): TextureI
         f =
           1 +
           grain * 0.08 +
-          (valueNoise(x, y, size, 4, seed + 1) - 0.5) * 0.26 +
-          (valueNoise(x, y, size, 11, seed + 2) - 0.5) * 0.12;
-        if (valueNoise(x, y, size, 3, seed + 6) > 0.68) f *= 0.8; // worn patches
+          (valueNoise(x, y, size, 4, seed + 1) - 0.5) * 0.15 +
+          (valueNoise(x, y, size, 11, seed + 2) - 0.5) * 0.08;
+        // Worn patches as a SMOOTH multiplier — the first cut used a
+        // hard threshold and tiled into leopard spots.
+        const blotch = valueNoise(x, y, size, 5, seed + 6);
+        f *= 0.95 + (blotch - 0.5) * 0.14;
       } else {
         // water — flat-ISH by design, but still mottled, never a fill.
         f = 1 + grain * 0.1 + (valueNoise(x, y, size, 5, seed + 1) - 0.5) * 0.34;

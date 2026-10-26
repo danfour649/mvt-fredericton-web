@@ -17,8 +17,14 @@ describe('cameraMath', () => {
 
   it('on-foot framing (50 m across 1280 px) is a tight street-level zoom', () => {
     const z = zoomForViewWidth(50, 1280, LAT);
-    expect(z).toBeGreaterThan(20.5);
-    expect(z).toBeLessThan(22.5);
+    expect(z).toBeGreaterThan(19.8);
+    expect(z).toBeLessThan(21.2);
+  });
+
+  it('uses the 512-px-tile Mercator constant (MapLibre GL, not OSM)', () => {
+    // At the equator, zoom 0: one 512-px tile spans the whole world
+    // circumference → 40075016.686 / 512 ≈ 78271.5 m/px.
+    expect(viewWidthForZoom(0, 512, 0)).toBeCloseTo(40075016.686, 0);
   });
 
   it('top-speed framing (130 m) stays at/below the on-foot zoom', () => {

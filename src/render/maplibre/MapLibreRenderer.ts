@@ -38,7 +38,7 @@ import type { Renderer, RenderFrame, RenderMarker } from '../../core/renderer';
 import { carSprite, personSprite, drawSprite } from '../sprites';
 import { SkidTracks, ribbonPolygon, expandedPolygon } from '../groundwork';
 import { segmentRoof, shadeHex } from '../segment';
-import { generateAllTextures, type TextureKind } from '../textures';
+import { generateAllTextures, type TextureKind, type TextureImage } from '../textures';
 import { WALL_COLORS, roofVariant, GROUND_BASE, CONTEXT_BUILDING, ROAD_CASING, ROAD_KERB, CENTRE_LINE } from '../palette';
 import { shadowRing, roofClutter, crosswalkStripes, scatterTrees, TREE_FILLS } from '../dressing';
 import { zoomForViewWidth } from '../cameraMath';
@@ -58,11 +58,12 @@ const TEX_NAMES: Record<TextureKind, string> = {
 
 /** Line-width factor: world metres → screen px at zoom stops. */
 function widthStops(factor: number): unknown {
-  // ppm(18) ≈ 2.41, ppm(22) ≈ 38.57 at LAT0; base-2 exponential = exact.
+  // ppm(18) ≈ 4.82, ppm(22) ≈ 77.15 at LAT0 (512-px-tile Mercator);
+  // base-2 exponential interpolation = exact between the stops.
   return [
     'interpolate', ['exponential', 2], ['zoom'],
-    18, ['*', ['get', 'widthM'], 2.41 * factor],
-    22, ['*', ['get', 'widthM'], 38.57 * factor],
+    18, ['*', ['get', 'widthM'], 4.82 * factor],
+    22, ['*', ['get', 'widthM'], 77.15 * factor],
   ];
 }
 
@@ -78,6 +79,30 @@ function ensureProtocol(): void {
 function ll(p: Vec2): [number, number] {
   const { lng, lat } = unproject(p.x, p.z);
   return [lng, lat];
+}
+
+/**
+ * Tile a texture image `repeat`× per side for GL registration. GL
+ * fill-patterns render larger than authored at this game's zooms
+ * (pattern scale snaps with the tile pyramid), so ground/pavement
+ * images are registered pre-shrunk 2× — features land nearer world
+ * scale. The Canvas adapter doesn't need this (true world scaling).
+ */
+function tiledImageData(tex: TextureImage, repeat: number): { width: number; height: number; data: Uint8Array } {
+  if (repeat === 1) return { width: tex.size, height: tex.size, data: new Uint8Array(tex.data) };
+  const size = tex.size * repeat;
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const si = ((y % tex.size) * tex.size + (x % tex.size)) * 4;
+      const di = (y * size + x) * 4;
+      data[di] = tex.data[si];
+      data[di + 1] = tex.data[si + 1];
+      data[di + 2] = tex.data[si + 2];
+      data[di + 3] = tex.data[si + 3];
+    }
+  }
+  return { width: size, height: size, data };
 }
 
 function polyFeature(ring: Vec2[], properties: Record<string, unknown>): Feature {
@@ -251,7 +276,7 @@ export class MapLibreRenderer implements Renderer {
             id: 'roads-label', type: 'symbol', source: 'game-roads', minzoom: 19.3,
             layout: {
               'symbol-placement': 'line',
-              'symbol-spacing': 140,
+              'symbol-spacing': 480,
               'text-field': ['get', 'name'],
               'text-size': 11,
               'text-font': ['Noto Sans Regular'],
@@ -287,15 +312,13 @@ export class MapLibreRenderer implements Renderer {
       else this.map.on('load', () => resolve());
     });
     // Register the procedural textures as GL pattern images (once).
+    // Grass + pavement are pre-shrunk 2× (see tiledImageData).
     const textures = generateAllTextures();
     for (const kind of Object.keys(textures) as TextureKind[]) {
       const tex = textures[kind];
       if (!this.map.hasImage(TEX_NAMES[kind])) {
-        this.map.addImage(TEX_NAMES[kind], {
-          width: tex.size,
-          height: tex.size,
-          data: new Uint8Array(tex.data),
-        });
+        const repeat = kind === 'grass' || kind === 'pavement' ? 2 : 1;
+        this.map.addImage(TEX_NAMES[kind], tiledImageData(tex, repeat));
       }
     }
 

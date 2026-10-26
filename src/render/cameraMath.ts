@@ -3,15 +3,18 @@
  *
  * The core frame now specifies metres across the viewport WIDTH.
  * MapLibre zoom is defined by metres-per-pixel at the centre latitude:
- * mPerPx(z) = 156543.03392 · cos(lat) / 2^z (Web Mercator, 512px tiles
- * in MapLibre GL's convention — the same constant the adapter has
- * always used). These helpers convert between the core's view width
- * and MapLibre zoom, and metres ↔ screen pixels at a given zoom.
+ * mPerPx(z) = 78271.51696 · cos(lat) / 2^z. The constant is the Web
+ * Mercator world circumference over MapLibre GL's 512-px tile size
+ * (40075016.686 / 512) — NOT the 156543 figure for 256-px OSM tiles.
+ * (v0.23's first cut used 156543 and framed everything 2× too tight;
+ * the production screenshots caught it. These helpers convert between
+ * the core's view width and MapLibre zoom, and metres ↔ screen pixels
+ * at a given zoom.
  */
 
 /** Metres per pixel at zoom 0 for a latitude (degrees). */
 export function mPerPxAtZoom0(latDeg: number): number {
-  return 156543.03392 * Math.cos((latDeg * Math.PI) / 180);
+  return 78271.51696 * Math.cos((latDeg * Math.PI) / 180);
 }
 
 /** MapLibre zoom at which `viewWidthM` metres span `viewportWidthPx`. */
