@@ -15,6 +15,7 @@ import type { Renderer } from './core/renderer';
 import type { StorageAdapter } from './core/save';
 import { MapLibreRenderer } from './render/maplibre/MapLibreRenderer';
 import { CanvasRenderer } from './render/canvas/CanvasRenderer';
+import { Haptics } from './platform/haptics';
 
 const localStorageAdapter: StorageAdapter = {
   read: (key) => {
@@ -60,11 +61,33 @@ async function boot(): Promise<void> {
   el('renderer-name').textContent = renderer.name === 'canvas' ? 'Canvas 2D (Route C)' : 'MapLibre (Route A)';
   await renderer.init(world);
 
-  // --- input -------------------------------------------------------------
+  // --- input ---------------------------------------------------------------
+  // v0.21: three touch schemes (stick / drag-steer / legacy buttons) +
+  // gamepad, all merged with the keyboard into the same core inputs.
+  // Haptics fire from state transitions observed in the frame loop.
+  const store = {
+    get(k: string): string | null {
+      try { return window.localStorage.getItem(k); } catch { return null; }
+    },
+    set(k: string, v: string): void {
+      try { window.localStorage.setItem(k, v); } catch { /* ignore */ }
+    },
+  };
+  type Scheme = 'stick' | 'drag' | 'buttons';
+  let scheme: Scheme = (['stick', 'drag', 'buttons'].includes(store.get('mvt-input-scheme') ?? '')
+    ? store.get('mvt-input-scheme')
+    : 'stick') as Scheme;
+  let hapticsOn = store.get('mvt-haptics') !== 'off';
+  const haptics = new Haptics(() => hapticsOn);
+  const interact = (): void => {
+    haptics.tick();
+    game.pressInteract();
+  };
+
   const keys = new Set<string>();
   window.addEventListener('keydown', (e) => {
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
-    if (e.code === 'KeyE' && !e.repeat) game.pressInteract();
+    if (e.code === 'KeyE' && !e.repeat) interact();
     if (e.code === 'KeyR' && !e.repeat) game.pressRestart();
     if (e.code === 'KeyF' && !e.repeat) game.confirmFreeroam();
     keys.add(e.code);
@@ -72,23 +95,233 @@ async function boot(): Promise<void> {
   window.addEventListener('keyup', (e) => keys.delete(e.code));
   const down = (...codes: string[]) => (codes.some((c) => keys.has(c)) ? 1 : 0);
 
-  // Touch controls feed the same key set / interact path.
-  document.querySelectorAll<HTMLButtonElement>('#touch button').forEach((btn) => {
+  // Analog stick (dynamic origin, left half of the screen).
+  const stickZone = el('stick-zone');
+  const stickBase = el('stick-base');
+  const stickKnob = el('stick-knob');
+  const stick = { id: -1, ox: 0, oy: 0, dx: 0, dy: 0, active: false };
+  const STICK_R = 48;
+  function stickVisual(): void {
+    stickKnob.style.transform = `translate(${stick.dx * 34}px, ${stick.dy * 34}px)`;
+  }
+  stickZone.addEventListener('pointerdown', (e) => {
+    if (stick.id !== -1) return;
+    stick.id = e.pointerId;
+    stick.ox = e.clientX;
+    stick.oy = e.clientY;
+    stick.dx = 0;
+    stick.dy = 0;
+    stick.active = true;
+    stickZone.setPointerCapture(e.pointerId);
+    stickBase.style.left = `${e.clientX - 59}px`;
+    stickBase.style.top = `${e.clientY - 59}px`;
+    stickBase.style.bottom = 'auto';
+    stickBase.classList.add('active');
+    stickVisual();
+  });
+  stickZone.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== stick.id) return;
+    let dx = (e.clientX - stick.ox) / STICK_R;
+    let dy = (e.clientY - stick.oy) / STICK_R;
+    const len = Math.hypot(dx, dy);
+    if (len > 1) { dx /= len; dy /= len; }
+    stick.dx = Math.abs(dx) < 0.07 ? 0 : dx;
+    stick.dy = Math.abs(dy) < 0.07 ? 0 : dy;
+    stickVisual();
+  });
+  const stickEnd = (e: PointerEvent): void => {
+    if (e.pointerId !== stick.id) return;
+    stick.id = -1;
+    stick.active = false;
+    stick.dx = 0;
+    stick.dy = 0;
+    stickBase.classList.remove('active');
+    stickBase.style.left = '';
+    stickBase.style.top = '';
+    stickBase.style.bottom = '';
+    stickVisual();
+  };
+  stickZone.addEventListener('pointerup', stickEnd);
+  stickZone.addEventListener('pointercancel', stickEnd);
+
+  // Drag-steer: hold anywhere; the car steers toward the thumb's
+  // position relative to screen centre (where the car sits).
+  const dragZone = el('drag-zone');
+  const drag = { id: -1, x: 0, y: 0, active: false };
+  dragZone.addEventListener('pointerdown', (e) => {
+    if (drag.id !== -1) return;
+    drag.id = e.pointerId;
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    drag.active = true;
+    dragZone.setPointerCapture(e.pointerId);
+  });
+  dragZone.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== drag.id) return;
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+  });
+  const dragEnd = (e: PointerEvent): void => {
+    if (e.pointerId !== drag.id) return;
+    drag.id = -1;
+    drag.active = false;
+  };
+  dragZone.addEventListener('pointerup', dragEnd);
+  dragZone.addEventListener('pointercancel', dragEnd);
+
+  // Hold-buttons (pedals / DRIFT / E) with a visible pressed state.
+  const pedal = { gas: false, brk: false };
+  let driftTouch = false;
+  function holdButton(elm: HTMLElement, on: () => void, off: () => void): void {
+    elm.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      elm.setPointerCapture(e.pointerId);
+      elm.classList.add('pressed');
+      on();
+    });
+    const end = (): void => {
+      elm.classList.remove('pressed');
+      off();
+    };
+    elm.addEventListener('pointerup', end);
+    elm.addEventListener('pointercancel', end);
+  }
+  holdButton(el('btn-e'), () => interact(), () => undefined);
+  holdButton(el('btn-drift'), () => { driftTouch = true; }, () => { driftTouch = false; });
+  holdButton(el('btn-gas'), () => { pedal.gas = true; }, () => { pedal.gas = false; });
+  holdButton(el('btn-brk'), () => { pedal.brk = true; }, () => { pedal.brk = false; });
+
+  // Buttons scheme: the legacy binary wiring (keys + interact action).
+  document.querySelectorAll<HTMLButtonElement>('#ctl-buttons button').forEach((btn) => {
     const code = btn.dataset.code;
     const action = btn.dataset.action;
-    const press = (e: Event) => {
+    btn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      if (action === 'interact') game.pressInteract();
+      if (action === 'interact') interact();
       else if (code) keys.add(code);
-    };
+    });
     const release = () => {
       if (code) keys.delete(code);
     };
-    btn.addEventListener('pointerdown', press);
     btn.addEventListener('pointerup', release);
     btn.addEventListener('pointercancel', release);
     btn.addEventListener('pointerleave', release);
   });
+
+  // Scheme selector + haptics toggle (in the ? overlay, persisted).
+  function applyScheme(): void {
+    document.querySelectorAll<HTMLElement>('.scheme-el').forEach((elm) => {
+      const list = (elm.dataset.schemes ?? '').split(' ');
+      elm.hidden = !list.includes(scheme);
+    });
+    document.querySelectorAll<HTMLButtonElement>('[data-set-scheme]').forEach((b) => {
+      b.classList.toggle('on', b.dataset.setScheme === scheme);
+    });
+  }
+  document.querySelectorAll<HTMLButtonElement>('[data-set-scheme]').forEach((b) => {
+    b.addEventListener('click', () => {
+      scheme = (b.dataset.setScheme ?? 'stick') as Scheme;
+      store.set('mvt-input-scheme', scheme);
+      applyScheme();
+    });
+  });
+  applyScheme();
+  const hapticsToggle = el('haptics-toggle') as HTMLInputElement;
+  hapticsToggle.checked = hapticsOn;
+  hapticsToggle.addEventListener('change', () => {
+    hapticsOn = hapticsToggle.checked;
+    store.set('mvt-haptics', hapticsOn ? 'on' : 'off');
+    if (!hapticsOn) haptics.cancel();
+  });
+
+  // Gamepad (standard mapping). A is E (edge), B is a brake fallback,
+  // X/Y handbrake, RT/LT analog pedals, left stick steers.
+  const padSeen = new Set<string>();
+  let padAPrev = false;
+  interface PadState { steer: number; throttle: number; brake: number; handbrake: boolean; moveX: number; moveZ: number }
+  function pollPad(): PadState | null {
+    const pads = navigator.getGamepads?.() ?? [];
+    for (const p of pads) {
+      if (!p || !p.connected) continue;
+      if (!padSeen.has(p.id)) {
+        padSeen.add(p.id);
+        el('hud-toast').textContent = `🎮 Gamepad connected: ${p.id.slice(0, 48)}`;
+      }
+      const dz = (v: number): number => (Math.abs(v) < 0.12 ? 0 : v);
+      const aPressed = !!p.buttons[0]?.pressed;
+      if (aPressed && !padAPrev) interact();
+      padAPrev = aPressed;
+      return {
+        steer: dz(p.axes[0] ?? 0),
+        throttle: p.buttons[7]?.value ?? 0,
+        brake: Math.max(p.buttons[6]?.value ?? 0, p.buttons[1]?.pressed ? 1 : 0),
+        handbrake: !!(p.buttons[2]?.pressed || p.buttons[3]?.pressed),
+        moveX: dz(p.axes[0] ?? 0),
+        moveZ: dz(p.axes[1] ?? 0),
+      };
+    }
+    padAPrev = false;
+    return null;
+  }
+
+  /** Merge keyboard + touch scheme + gamepad into the core inputs. */
+  function gatherInputs(): void {
+    const pad = pollPad();
+    const maxAbs = (...vals: number[]): number =>
+      vals.reduce((a, b) => (Math.abs(b) > Math.abs(a) ? b : a), 0);
+    if (game.drivenCar) {
+      let steer = maxAbs(
+        down('KeyD', 'ArrowRight') - down('KeyA', 'ArrowLeft'),
+        pad?.steer ?? 0,
+      );
+      let throttle = maxAbs(
+        down('KeyW', 'ArrowUp') - down('KeyS', 'ArrowDown'),
+        pedal.gas ? 1 : pedal.brk ? -1 : 0,
+        (pad?.throttle ?? 0) - (pad?.brake ?? 0),
+      );
+      let handbrake = keys.has('Space') || driftTouch || !!pad?.handbrake;
+      if (scheme === 'stick' && stick.active) {
+        steer = maxAbs(steer, stick.dx);
+        throttle = maxAbs(throttle, -stick.dy);
+      }
+      if (scheme === 'drag' && drag.active) {
+        const vx = drag.x - window.innerWidth / 2;
+        const vy = drag.y - window.innerHeight / 2;
+        if (Math.hypot(vx, vy) > 26) {
+          const desired = Math.atan2(vy, vx);
+          let err = desired - game.drivenCar.heading;
+          while (err > Math.PI) err -= Math.PI * 2;
+          while (err < -Math.PI) err += Math.PI * 2;
+          steer = Math.max(-1, Math.min(1, err * 2.2));
+          throttle = pedal.brk ? -1 : 0.85;
+          handbrake = handbrake || driftTouch;
+        } else {
+          throttle = 0;
+        }
+      }
+      game.carInput = { throttle, steer, handbrake };
+      game.moveInput = { x: 0, z: 0 };
+    } else {
+      let mx = maxAbs(down('KeyD', 'ArrowRight') - down('KeyA', 'ArrowLeft'), pad?.moveX ?? 0);
+      let mz = maxAbs(down('KeyS', 'ArrowDown') - down('KeyW', 'ArrowUp'), pad?.moveZ ?? 0);
+      if (scheme === 'stick' && stick.active) {
+        mx = maxAbs(mx, stick.dx);
+        mz = maxAbs(mz, stick.dy);
+      }
+      if (scheme === 'drag' && drag.active) {
+        const vx = drag.x - window.innerWidth / 2;
+        const vy = drag.y - window.innerHeight / 2;
+        const len = Math.hypot(vx, vy);
+        if (len > 14) {
+          const m = Math.min(1, len / 90);
+          mx = (vx / len) * m;
+          mz = (vy / len) * m;
+        }
+      }
+      game.moveInput = { x: mx, z: mz };
+      game.carInput = { throttle: 0, steer: 0 };
+    }
+  }
 
   el('help-toggle').addEventListener('click', () => {
     const full = el('help-full');
@@ -119,6 +352,13 @@ async function boot(): Promise<void> {
   const btnPrimary = el('btn-primary');
   let lastHud = '';
   let typedBriefFor = '';
+  // Haptics transition trackers.
+  let prevInCar = false;
+  let prevStamp = '';
+  let prevToast = '';
+  let prevBrief = '';
+  let prevCarHealth: number | null = null;
+  let prevPlayerHealth = 100;
 
   // Pager brief typing effect.
   let typeTimer = 0;
@@ -140,24 +380,34 @@ async function boot(): Promise<void> {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
 
-    if (game.drivenCar) {
-      game.carInput = {
-        throttle: down('KeyW', 'ArrowUp') - down('KeyS', 'ArrowDown'),
-        steer: down('KeyD', 'ArrowRight') - down('KeyA', 'ArrowLeft'),
-        handbrake: keys.has('Space'),
-      };
-      game.moveInput = { x: 0, z: 0 };
-    } else {
-      game.moveInput = {
-        x: down('KeyD', 'ArrowRight') - down('KeyA', 'ArrowLeft'),
-        z: down('KeyS', 'ArrowDown') - down('KeyW', 'ArrowUp'),
-      };
-      game.carInput = { throttle: 0, steer: 0 };
-    }
+    gatherInputs();
     game.update(dt);
     renderer.sync(game.buildFrame());
 
     const hud = game.hud();
+    // Haptics: fire on observed state transitions (platform layer).
+    if (!prevInCar && hud.inCar) haptics.enterCar();
+    prevInCar = hud.inCar;
+    if (hud.stamp !== prevStamp) {
+      if (hud.stamp === 'BUSTED') haptics.busted();
+      else if (hud.stamp === 'WASTED') haptics.wasted();
+      else if (prevStamp) haptics.cancel();
+      prevStamp = hud.stamp;
+    }
+    if (hud.toast !== prevToast) {
+      if (hud.toast.includes(' complete!')) haptics.missionComplete();
+      prevToast = hud.toast;
+    }
+    if (hud.brief && !prevBrief) haptics.payphone();
+    prevBrief = hud.brief;
+    {
+      const carDrop = prevCarHealth !== null && hud.carHealth !== null ? prevCarHealth - hud.carHealth : 0;
+      const playerDrop = prevPlayerHealth - game.playerHealth;
+      const drop = Math.max(carDrop, playerDrop);
+      if (drop >= 2) haptics.collision(Math.min(1, drop / 22));
+      prevCarHealth = hud.carHealth;
+      prevPlayerHealth = game.playerHealth;
+    }
     const key = JSON.stringify({ ...hud, brief: hud.brief ? '…' : '' });
     if (key !== lastHud) {
       lastHud = key;

@@ -51,25 +51,57 @@
       </div>
     </div>
 
-    <!-- Touch controls (shown on coarse pointers only). -->
+    <!-- Touch controls (shown on coarse pointers only). Three schemes,
+         switchable in the ? overlay; default "stick". -->
     <div id="touch">
-      <div class="cluster">
-        <button type="button" data-code="KeyA" aria-label="left">◀</button>
-        <button type="button" data-code="KeyD" aria-label="right">▶</button>
+      <!-- Stick scheme: dynamic-origin analog stick, left half. -->
+      <div id="stick-zone" class="scheme-el" data-schemes="stick">
+        <div id="stick-base"><div id="stick-knob"></div></div>
       </div>
-      <div class="cluster">
-        <button type="button" data-action="interact" class="e-btn" aria-label="interact">E</button>
-        <button type="button" data-code="Space" aria-label="handbrake">DRIFT</button>
-        <button type="button" data-code="KeyS" aria-label="brake/reverse">BRK</button>
-        <button type="button" data-code="KeyW" aria-label="accelerate">GAS</button>
+      <!-- Drag-steer scheme: hold anywhere, car steers toward the drag. -->
+      <div id="drag-zone" class="scheme-el" data-schemes="drag" hidden>
+        <div id="drag-hint">hold &amp; drag to steer — car follows your thumb</div>
+      </div>
+      <!-- Shared right-hand controls for stick + drag schemes. -->
+      <div id="ctl-right" class="scheme-el" data-schemes="stick drag">
+        <div class="ctl-col">
+          <button id="btn-e" type="button" class="e-btn round" aria-label="interact">E</button>
+          <button id="btn-drift" type="button" class="round" aria-label="handbrake">DRIFT</button>
+        </div>
+        <div class="pedals">
+          <button id="btn-brk" type="button" class="pedal brk" aria-label="brake/reverse">BRK</button>
+          <button id="btn-gas" type="button" class="pedal gas" aria-label="accelerate">GAS</button>
+        </div>
+      </div>
+      <!-- Buttons scheme: the legacy binary layout. -->
+      <div id="ctl-buttons" class="scheme-el" data-schemes="buttons" hidden>
+        <div class="cluster">
+          <button type="button" data-code="KeyA" aria-label="left">◀</button>
+          <button type="button" data-code="KeyD" aria-label="right">▶</button>
+        </div>
+        <div class="cluster">
+          <button type="button" data-action="interact" class="e-btn" aria-label="interact">E</button>
+          <button type="button" data-code="Space" aria-label="handbrake">DRIFT</button>
+          <button type="button" data-code="KeyS" aria-label="brake/reverse">BRK</button>
+          <button type="button" data-code="KeyW" aria-label="accelerate">GAS</button>
+        </div>
       </div>
     </div>
 
     <div id="credit">
-      MVT Fredericton Web v0.20 · <span id="renderer-name">…</span> · buildings &amp; roads © GeoNB (OGL-NB) · mission coords © OpenStreetMap contributors (ODbL)
+      MVT Fredericton Web v0.21 · <span id="renderer-name">…</span> · buildings &amp; roads © GeoNB (OGL-NB) · mission coords © OpenStreetMap contributors (ODbL)
     </div>
     <div id="help" title="Controls">WASD drive/walk · E interact · Space handbrake · <span id="help-toggle">?</span>
-      <span id="help-full" hidden> — steal cars, answer payphones ☎, watch the stars, respray on Queen St kills the heat. R restarts a finished run.</span>
+      <span id="help-full" hidden> — steal cars, answer payphones ☎, watch the stars, respray on Queen St kills the heat. R restarts a finished run.
+        <span class="ctl-settings">
+          Touch controls:
+          <button type="button" data-set-scheme="stick">Stick</button>
+          <button type="button" data-set-scheme="drag">Drag-steer</button>
+          <button type="button" data-set-scheme="buttons">Buttons</button>
+          <label><input type="checkbox" id="haptics-toggle" checked /> Haptics</label>
+          <span class="ctl-note">Stick: thumb anywhere left = analog steer + push up/down for gas/brake. Drag-steer: hold and drag, the car steers toward your thumb and drives itself. Haptics use the Vibration API — Android/Chrome only; iOS Safari has none. Gamepad: left stick steers, RT/LT are the pedals, A = E, X/Y = handbrake.</span>
+        </span>
+      </span>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

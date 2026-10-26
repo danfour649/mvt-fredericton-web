@@ -115,32 +115,98 @@ body { font-family: system-ui, sans-serif; }
 }
 #help-toggle { cursor: pointer; font-weight: 800; text-decoration: underline; }
 
-/* --- touch controls ---------------------------------------------------------- */
+/* --- touch controls ---------------------------------------------------- */
 #touch {
-  display: none; position: fixed; left: 0; right: 0; bottom: 26px; z-index: 22;
-  justify-content: space-between; padding: 0 10px; pointer-events: none;
+  display: none; position: fixed; inset: 0; z-index: 22; pointer-events: none;
 }
-#touch .cluster { display: flex; gap: 8px; align-items: flex-end; pointer-events: auto; }
-#touch button {
+#touch .scheme-el[hidden] { display: none !important; }
+/* Floating analog stick: base rests bottom-left, jumps to the thumb. */
+#stick-zone {
+  position: absolute; left: 0; top: 22%; bottom: 0; width: 55%;
+  pointer-events: auto; touch-action: none;
+}
+#stick-base {
+  position: absolute; left: 52px; bottom: 74px; width: 118px; height: 118px;
+  border-radius: 50%; border: 2px solid rgba(255,255,255,0.5);
+  background: rgba(10, 14, 8, 0.28); opacity: 0.55;
+}
+#stick-base.active { opacity: 1; background: rgba(10, 14, 8, 0.42); }
+#stick-knob {
+  position: absolute; left: 50%; top: 50%; width: 54px; height: 54px;
+  margin: -27px 0 0 -27px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.85); background: rgba(255,255,255,0.28);
+}
+/* Drag-steer: full-screen catch layer + hint. */
+#drag-zone {
+  position: absolute; inset: 0; pointer-events: auto; touch-action: none;
+}
+#drag-hint {
+  position: absolute; left: 50%; bottom: 108px; transform: translateX(-50%);
+  font: 700 12px system-ui, sans-serif; color: rgba(255,255,255,0.85);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8); white-space: nowrap;
+}
+/* Right-hand controls: E / DRIFT circles + GAS/BRK pedals. */
+#ctl-right {
+  position: absolute; right: 10px; bottom: 30px;
+  display: flex; gap: 12px; align-items: flex-end; pointer-events: none;
+}
+#ctl-right .ctl-col { display: flex; flex-direction: column; gap: 10px; pointer-events: auto; }
+#ctl-right button {
+  border: 2px solid rgba(255,255,255,0.75); background: rgba(10, 14, 8, 0.5);
+  color: #fff; font: 800 13px system-ui, sans-serif;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+#ctl-right button.round { width: 60px; height: 60px; border-radius: 50%; }
+#ctl-right button.e-btn { background: rgba(31, 170, 85, 0.55); }
+#ctl-right .pedals { display: flex; gap: 10px; align-items: flex-end; pointer-events: auto; }
+#ctl-right button.pedal {
+  width: 66px; height: 92px; border-radius: 14px; font-size: 15px;
+}
+#ctl-right button.pedal.gas { height: 108px; background: rgba(31, 140, 60, 0.5); }
+#ctl-right button.pedal.brk { background: rgba(170, 45, 35, 0.5); }
+#ctl-right button.pressed {
+  background: rgba(255, 210, 63, 0.7); color: #20180a; transform: translateY(2px);
+}
+/* Buttons scheme (legacy binary layout). */
+#ctl-buttons {
+  position: absolute; left: 0; right: 0; bottom: 26px;
+  display: flex; justify-content: space-between; padding: 0 10px; pointer-events: none;
+}
+#ctl-buttons .cluster { display: flex; gap: 8px; align-items: flex-end; pointer-events: auto; }
+#ctl-buttons button {
   width: 54px; height: 54px; border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.75); background: rgba(10, 14, 8, 0.5);
   color: #fff; font: 800 12px system-ui, sans-serif;
   touch-action: none; user-select: none; -webkit-user-select: none;
 }
-#touch button:active { background: rgba(255, 210, 63, 0.65); color: #20180a; }
-#touch .e-btn { background: rgba(31, 170, 85, 0.55); }
+#ctl-buttons button:active { background: rgba(255, 210, 63, 0.65); color: #20180a; }
+#ctl-buttons .e-btn { background: rgba(31, 170, 85, 0.55); }
+/* Settings row inside the ? overlay. */
+#help .ctl-settings {
+  display: block; margin-top: 4px; font-size: 11px; pointer-events: auto;
+}
+#help .ctl-settings button {
+  font: 700 11px system-ui, sans-serif; cursor: pointer;
+  border: 1.5px solid rgba(255,255,255,0.8); border-radius: 6px;
+  background: rgba(10, 14, 8, 0.55); color: #fff; padding: 2px 7px;
+}
+#help .ctl-settings button.on { background: #ffd23f; color: #20180a; border-color: #ffd23f; }
+#help .ctl-settings label { cursor: pointer; font-weight: 700; }
+#help .ctl-note { display: block; margin-top: 3px; font-weight: 400; opacity: 0.9; }
+
 @media (pointer: coarse) {
-  #touch { display: flex; }
-  #pager { bottom: 96px; }
+  #touch { display: block; }
+  /* Pager moves up: the stick lives bottom-left now. */
+  #pager { bottom: auto; top: 58px; }
   #credit { display: none; }
-  /* Keep the help line / ? toggle clear of the touch button row. */
-  #help { bottom: 92px; }
+  #help { bottom: 8px; }
 }
 @media (max-width: 560px) {
   /* The one-line help crowds the corner on narrow screens (its text
      is a bare text node, so shrink the line away); the ? toggle —
      which expands the full controls text — stays readable. */
   #help { font-size: 0; }
+  #help .ctl-settings, #help .ctl-settings button { font-size: 11px; }
   #help-toggle { font-size: 0.85rem; }
   #hud-score { font-size: 1.35rem; }
 }
