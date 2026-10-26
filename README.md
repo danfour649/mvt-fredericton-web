@@ -37,6 +37,25 @@ npm run dev        # http://localhost:5173
   adapter — same game, same data. `?scenario=demo` boots into a scripted
   live-gameplay state (used for screenshots).
 
+## What's new in v0.24 — the cold start is alive
+
+Through v0.23, opening the plain link could drop you on an **empty
+street**: cars were scattered over the whole extract (the nearest car
+to spawn was 156 m away) and every proof screenshot used the staged
+`?scenario=demo`, which masked it. v0.24 fixes the first frame:
+
+- **Alive spawn:** ≥4 parked cars kerbside within 60 m of spawn and a
+  traffic stream already rolling on the spawn street (measured on the
+  real dataset: 0 → 4 parked ≤60 m, 0 → 6 traffic ≤150 m; nearest car
+  156 m → 4.7 m).
+- **Population bubble:** wherever you go, ~10 traffic cars are kept
+  within 220 m and a few untouched parked cars within 150 m. Cars are
+  recycled only from outside the bubble to spots inside it but beyond
+  the current view, so nothing ever pops in on screen.
+- **On-foot framing** tightens 50 m → 30 m across, and a soft pulsing
+  anchor ring sits under the player until your first car entry
+  (persisted in the save), then never returns.
+
 ## What's new in v0.23 — the visual rebuild (GTA 1 school)
 
 v0.22 rendered a *map*: flat colour at satellite distance. v0.23 is a

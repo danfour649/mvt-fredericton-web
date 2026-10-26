@@ -19,7 +19,7 @@ import type { Vec2 } from '../../core/geo';
 import type { WorldModel } from '../../core/world';
 import { buildRoadGraph } from '../../core/routing';
 import type { Renderer, RenderFrame } from '../../core/renderer';
-import { carSprite, personSprite, drawSprite } from '../sprites';
+import { carSprite, personSprite, drawSprite, drawAnchorRing } from '../sprites';
 import { SkidTracks, expandedPolygon } from '../groundwork';
 import { segmentRoof, shadeHex, type RoofPiece } from '../segment';
 import { generateAllTextures, textureToCanvas, type TextureImage, type TextureKind } from '../textures';
@@ -276,7 +276,10 @@ export class CanvasRenderer implements Renderer {
       if (!near(e.pos.x, e.pos.z)) continue;
       const px = sx(e.pos.x);
       const py = sy(e.pos.z);
-      if (e.kind === 'player') drawSprite(ctx, personSprite(e.color, { player: true }), px, py, scale, e.heading, 13);
+      if (e.kind === 'player') {
+        if (e.anchor) drawAnchorRing(ctx, px, py, scale, t);
+        drawSprite(ctx, personSprite(e.color, { player: true }), px, py, scale, e.heading, 13);
+      }
       else if (e.kind === 'ped') drawSprite(ctx, personSprite(e.color, { down: e.down }), px, py, scale, e.heading, 10);
       else if (e.kind === 'car-cop') drawSprite(ctx, carSprite(e.color, { police: true, lightPhase }), px, py, scale, e.heading);
       else drawSprite(ctx, carSprite(e.color, { wrecked: e.wrecked }), px, py, scale, e.heading);

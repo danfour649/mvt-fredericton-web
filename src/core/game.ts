@@ -7,11 +7,15 @@
  * police with a bust timer, pedestrians, a respray garage, car/player
  * damage, 5 lives, and a $250,000 district goal with an exit point.
  *
+ * v0.24 — the cold start: spawn is a living street (guaranteed kerbside
+ * + rolling traffic at t=0) and a population bubble keeps traffic and
+ * parked cars around the player everywhere (see maintainPopulation).
+ *
  * Feed it inputs, call update(dt), hand buildFrame() to any Renderer.
  * No DOM, no MapLibre, no canvas anywhere in here.
  */
 import { dist, mvtGridToLocal, type Vec2 } from './geo';
-import { nearestRoadPoint, pointAlongRoad, type WorldModel } from './world';
+import { nearestRoadPoint, pointAlongRoad, type Road, type WorldModel } from './world';
 import { moveCircle, stepCar, type CarInput, type CarState } from './physics';
 import { spawnTraffic, updateTraffic, type TrafficCar } from './traffic';
 import { buildRoadGraph, type RoadGraph } from './routing';
@@ -73,6 +77,15 @@ export const GOAL_SCORE = 250000;
 export const MISSION_SCORE_SCALE = 100;
 export const RESPRAY_COST_PER_STAR = 500;
 export const START_LIVES = 5;
+/**
+ * v0.24 population bubble: traffic is kept rolling around the player
+ * wherever they go; parked cars are kept on the kerbs nearby. Radii in
+ * metres from the player, counts are the floors we recycle toward.
+ */
+export const BUBBLE_R = 220;
+export const TRAFFIC_TARGET = 10;
+export const PARKED_NEAR_R = 150;
+export const PARKED_TARGET = 4;
 const PED_SCORE = 100;
 const THEFT_SCORE = 500;
 const WALK_SPEED = 5.4;
@@ -94,12 +107,66 @@ function snapToRoad(world: WorldModel, gridX: number, gridZ: number): Vec2 {
   return near ? near.pos : local;
 }
 
+/** Closest distance from a point to a road's centreline path (m). */
+function roadMinDist(road: Road, p: Vec2): number {
+  let best = Infinity;
+  for (let i = 0; i < road.path.length - 1; i++) {
+    const a = road.path[i];
+    const b = road.path[i + 1];
+    const abx = b.x - a.x;
+    const abz = b.z - a.z;
+    const len2 = abx * abx + abz * abz;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.z - a.z) * abz) / len2)) : 0;
+    const d = Math.hypot(p.x - (a.x + abx * t), p.z - (a.z + abz * t));
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+/** distAlong of the point on a road closest to `p` (m). */
+function closestAlong(road: Road, p: Vec2): number {
+  let best = Infinity;
+  let bestAlong = 0;
+  for (let i = 0; i < road.path.length - 1; i++) {
+    const a = road.path[i];
+    const b = road.path[i + 1];
+    const abx = b.x - a.x;
+    const abz = b.z - a.z;
+    const len2 = abx * abx + abz * abz;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.z - a.z) * abz) / len2)) : 0;
+    const d = Math.hypot(p.x - (a.x + abx * t), p.z - (a.z + abz * t));
+    if (d < best) {
+      best = d;
+      bestAlong = road.segLens.slice(0, i).reduce((s, l) => s + l, 0) + road.segLens[i] * t;
+    }
+  }
+  return bestAlong;
+}
+
+/** Kerbside placement on a road at `along` (clamped): parked just off
+ *  the carriageway, facing along the road on a random side. */
+function kerbPlacement(road: Road, along: number, rng: () => number): { pos: Vec2; heading: number } {
+  const d = Math.max(3, Math.min(road.lengthM - 3, along));
+  const { pos, heading } = pointAlongRoad(road, d);
+  const off = road.widthM / 2 - 0.6;
+  const side = rng() > 0.5 ? 1 : -1;
+  return {
+    pos: {
+      x: pos.x + Math.cos(heading + Math.PI / 2) * off * side,
+      z: pos.z + Math.sin(heading + Math.PI / 2) * off * side,
+    },
+    heading: side === 1 ? heading : heading + Math.PI,
+  };
+}
+
 export class Game {
   readonly wanted = new Wanted();
   readonly wallet = new Wallet();
   missions: MissionRunner;
   private saveStore: SaveStore;
   private archive: { completed: string[]; districtCleared: boolean; bestScore: number };
+  /** v0.24: persisted — the spawn anchor ring shows until this flips. */
+  private enteredCar = false;
 
   phase: GamePhase = 'play';
   goalState: GoalState = 'progress';
@@ -139,9 +206,14 @@ export class Game {
   private lastImpactMag = 0;
 
   // Smoothed camera (core-side so every renderer gets the same feel).
-  // camViewM is the view WIDTH in metres (v0.23 GTA-1 framing).
+  // camViewM is the view WIDTH in metres (v0.23 GTA-1 framing;
+  // on-foot width tightened to 30 m in v0.24).
   private camPos: Vec2 = { ...SPAWN_POS };
-  private camViewM = 50;
+  private camViewM = 30;
+
+  // v0.24 population bubble (see ARCHITECTURE.md): traffic and parked
+  // cars are recycled around the player so the street is never empty.
+  private bubbleTimer = 0;
 
   private world: WorldModel;
 
@@ -159,6 +231,7 @@ export class Game {
       districtCleared: save.districtCleared,
       bestScore: save.bestScore,
     };
+    this.enteredCar = save.hasEnteredCar;
     if (save.districtCleared) this.goalState = 'done';
     this.missions = new MissionRunner(); // a fresh run: payphones ring again
     this.resprayPos = snapToRoad(world, 95, 55);
@@ -169,28 +242,29 @@ export class Game {
 
   // --- world population ---------------------------------------------------
 
+  /**
+   * v0.24: the cold start must be a LIVING street (GTA 1 drops you in
+   * traffic; the v0.20–0.23 spawner scattered cars over the whole
+   * extract and could leave the spawn block completely empty — the
+   * nearest car was 156 m away). Placement order is now:
+   *   1. guaranteed kerbside parked cars within 60 m of spawn;
+   *   2. guaranteed traffic already rolling within 150 m of spawn;
+   *   3. the old wide fill for the rest of the extract;
+   * and maintainPopulation() keeps the bubble full wherever the
+   * player goes afterwards.
+   */
   private spawnCars(): void {
     const rng = mulberry32(20261025);
     this.cars = [];
-    const near = this.world.roads.filter(
-      (r) => r.lengthM > 45 && dist(r.path[0], SPAWN_POS) < 900,
-    );
     let n = 0;
-    for (let i = 0; i < near.length && n < 16; i += 3) {
-      const road = near[i];
-      const d = road.lengthM * (0.25 + 0.5 * rng());
-      const { pos, heading } = pointAlongRoad(road, d);
-      const off = road.widthM / 2 - 0.6;
-      const side = rng() > 0.5 ? 1 : -1;
-      this.cars.push({
+    const addParked = (road: Road, along: number): CarEntity => {
+      const at = kerbPlacement(road, along, rng);
+      const car: CarEntity = {
         id: `parked-${n}`,
         kind: 'parked',
         color: CAR_COLORS[n % CAR_COLORS.length],
-        pos: {
-          x: pos.x + Math.cos(heading + Math.PI / 2) * off * side,
-          z: pos.z + Math.sin(heading + Math.PI / 2) * off * side,
-        },
-        heading: side === 1 ? heading : heading + Math.PI,
+        pos: at.pos,
+        heading: at.heading,
         speed: 0,
         vel: { x: 0, z: 0 },
         angVel: 0,
@@ -201,14 +275,14 @@ export class Game {
         wrecked: false,
         stolen: false,
         trafficStopT: 0,
-      });
+      };
+      this.cars.push(car);
       n++;
-    }
-    const longest = [...this.world.roads].sort((a, b) => b.lengthM - a.lengthM).slice(0, 14);
+      return car;
+    };
     let t = 0;
-    for (let i = 0; i < longest.length && t < 8; i += 2) {
-      const road = longest[i];
-      const traffic = spawnTraffic(road, road.lengthM * (0.2 + 0.6 * rng()));
+    const addTraffic = (road: Road, along: number): void => {
+      const traffic = spawnTraffic(road, along);
       this.cars.push({
         id: `traffic-${t}`,
         kind: 'traffic',
@@ -228,7 +302,172 @@ export class Game {
         trafficStopT: 0,
       });
       t++;
+    };
+    /** Place a parked car; reject (and un-place) when it would land
+     *  on top of another parked car or outside `maxFromSpawn`. */
+    const tryParked = (road: Road, along: number, maxFromSpawn?: number): boolean => {
+      const car = addParked(road, along);
+      const ok =
+        (maxFromSpawn === undefined || dist(car.pos, SPAWN_POS) <= maxFromSpawn) &&
+        !this.cars.some((c) => c !== car && c.kind === 'parked' && dist(c.pos, car.pos) < 7);
+      if (!ok) {
+        this.cars.splice(this.cars.indexOf(car), 1);
+        n--;
+      }
+      return ok;
+    };
+
+    const usable = this.world.roads.filter((r) => r.lengthM > 45);
+    const byDist = usable
+      .map((road) => ({ road, d: roadMinDist(road, SPAWN_POS) }))
+      .sort((a, b) => a.d - b.d);
+
+    // 1. Kerbside at spawn: ≥4 parked cars within 60 m, each placed at
+    // its road's closest approach to spawn (staggered along the road
+    // when one street has to carry more than one).
+    let nearParked = 0;
+    for (const { road, d } of byDist) {
+      if (d > 60 || nearParked >= 4) break;
+      const at = closestAlong(road, SPAWN_POS);
+      for (const off of [0, 9, -9, 18, -18, 27, -27]) {
+        if (nearParked >= 4) break;
+        if (tryParked(road, at + off, 60)) nearParked++;
+      }
     }
+
+    // 2. Rolling at spawn: a traffic STREAM on the spawn street
+    // (four cars spaced upstream + one leaving downstream, so cars
+    // keep passing the spawn block for tens of seconds) plus one
+    // cross-traffic car on the next-nearest street within 150 m.
+    let nearTraffic = 0;
+    for (const { road, d } of byDist) {
+      if (d > 150 || nearTraffic >= 6) break;
+      const at = closestAlong(road, SPAWN_POS);
+      if (nearTraffic === 0) {
+        const dir = road.dirFlow.includes('Opposite') ? -1 : 1;
+        for (const back of [30, 70, 110, 150]) {
+          addTraffic(road, at - dir * back);
+          nearTraffic++;
+        }
+        addTraffic(road, at + dir * 24);
+        nearTraffic++;
+      } else {
+        addTraffic(road, at + (nearTraffic - 2) * 22);
+        nearTraffic++;
+      }
+    }
+
+    // 3. Wide fill (the pre-v0.24 scheme, separation-checked): parked
+    // across the extract, traffic topped up on the longest roads.
+    const wide = this.world.roads.filter(
+      (r) => r.lengthM > 45 && dist(r.path[0], SPAWN_POS) < 900,
+    );
+    for (let i = 0; i < wide.length && n < 20; i += 3) {
+      const road = wide[i];
+      tryParked(road, road.lengthM * (0.25 + 0.5 * rng()));
+    }
+    const longest = [...this.world.roads].sort((a, b) => b.lengthM - a.lengthM).slice(0, 14);
+    for (let i = 0; i < longest.length && t < 12; i += 2) {
+      addTraffic(longest[i], longest[i].lengthM * (0.2 + 0.6 * rng()));
+    }
+  }
+
+  // --- population bubble (v0.24) -------------------------------------------
+
+  /**
+   * Keeps the street alive around the player: ~TRAFFIC_TARGET traffic
+   * cars inside BUBBLE_R at all times, plus a kerb population of
+   * untouched parked cars. Recycling only ever moves a car that is
+   * OUTSIDE the bubble ONTO a spot that is inside the bubble but
+   * beyond the current view (view width × 1.2 + 30 m — covers the
+   * frame diagonal on any aspect), so a recycled car never pops in
+   * on screen. The driven car, stolen/wrecked cars and cars mid-stop
+   * after a hit are never recycled. Deterministic (trafficRng).
+   */
+  private maintainPopulation(dt: number): void {
+    this.bubbleTimer += dt;
+    if (this.bubbleTimer < 0.4) return;
+    this.bubbleTimer = 0;
+    const player = this.playerPos;
+    const viewMargin = this.camViewM * 1.2 + 30;
+    const rng = this.trafficRng;
+
+    // Traffic: top the bubble up from the far pool. Usually one car
+    // per tick; up to 3 when a burst has left (at 31 m/s the player
+    // outruns the tail of the bubble faster than 1-per-tick inflow).
+    const live = this.cars.filter((c) => c.traffic && !c.wrecked);
+    const inBubble = live.filter((c) => c !== this.drivenCar && dist(c.pos, player) <= BUBBLE_R);
+    let deficit = TRAFFIC_TARGET - inBubble.length;
+    for (let k = 0; k < 3 && deficit > 0; k++) {
+      const far = live.filter((c) => c !== this.drivenCar && dist(c.pos, player) > BUBBLE_R);
+      if (!far.length) break;
+      const car = far[Math.floor(rng() * far.length)];
+      const spot = this.pickBubbleSpot(player, viewMargin, BUBBLE_R, true);
+      if (!spot) break;
+      car.traffic = spawnTraffic(spot.road, spot.along);
+      car.trafficStopT = 0;
+      car.pos = { ...car.traffic.pos };
+      car.heading = car.traffic.heading;
+      car.speed = car.traffic.speedMps;
+      car.vel = {
+        x: Math.cos(car.traffic.heading) * car.traffic.speedMps,
+        z: Math.sin(car.traffic.heading) * car.traffic.speedMps,
+      };
+      deficit--;
+    }
+
+    // Parked: lighter touch — just keep a few stealable cars near.
+    const nearParked = this.cars.filter(
+      (c) => c.kind === 'parked' && !c.stolen && !c.wrecked && dist(c.pos, player) <= PARKED_NEAR_R,
+    );
+    if (nearParked.length < PARKED_TARGET) {
+      const far = this.cars.filter(
+        (c) =>
+          c.kind === 'parked' && !c.stolen && !c.wrecked &&
+          c !== this.drivenCar && dist(c.pos, player) > BUBBLE_R + 80,
+      );
+      if (far.length) {
+        const car = far[Math.floor(rng() * far.length)];
+        const spot = this.pickBubbleSpot(player, viewMargin, PARKED_NEAR_R, false);
+        if (spot) {
+          const at = kerbPlacement(spot.road, spot.along, rng);
+          car.pos = at.pos;
+          car.heading = at.heading;
+        }
+      }
+    }
+  }
+
+  /**
+   * A random (road, distAlong) whose resulting car position sits
+   * between `minD` and `maxD` of the player — inside the bubble,
+   * outside the view. Samples `along` around the road's closest
+   * approach to the player (uniform-over-the-whole-road sampling
+   * almost never lands inside a 220 m bubble on a 2 km street).
+   * Null when nothing qualifies (retry next tick).
+   */
+  private pickBubbleSpot(
+    player: Vec2,
+    minD: number,
+    maxD: number,
+    rolling: boolean,
+  ): { road: Road; along: number } | null {
+    const candidates = this.world.roads.filter(
+      (r) => r.lengthM > 45 && roadMinDist(r, player) <= maxD,
+    );
+    if (!candidates.length) return null;
+    const rng = this.trafficRng;
+    for (let i = 0; i < 60; i++) {
+      const road = candidates[Math.floor(rng() * candidates.length)];
+      const near = closestAlong(road, player);
+      const along = Math.max(4, Math.min(road.lengthM - 4, near + (rng() * 2 - 1) * maxD));
+      const pos = rolling
+        ? spawnTraffic(road, along).pos
+        : kerbPlacement(road, along, rng).pos;
+      const d = dist(pos, player);
+      if (d >= minD && d <= maxD) return { road, along };
+    }
+    return null;
   }
 
   // --- interaction ----------------------------------------------------------
@@ -281,6 +520,11 @@ export class Game {
 
   private enterCar(car: CarEntity): void {
     this.drivenCar = car;
+    if (!this.enteredCar) {
+      // v0.24: first entry retires the spawn anchor ring for good.
+      this.enteredCar = true;
+      this.persist();
+    }
     if (car.traffic) {
       // car.heading is already the travel heading (traffic.placeTraffic
       // bakes the direction flip in); traffic speed is a positive scalar.
@@ -376,6 +620,7 @@ export class Game {
       completedMissions: [...this.archive.completed],
       districtCleared: this.archive.districtCleared,
       bestScore: this.archive.bestScore,
+      hasEnteredCar: this.enteredCar,
     });
   }
 
@@ -459,6 +704,7 @@ export class Game {
     // Traffic always rolls (except end overlays) so stamp scenes stay alive.
     if (this.phase !== 'gameover' && this.phase !== 'district-done') {
       this.updateTrafficCars(dt);
+      this.maintainPopulation(dt);
     }
 
     if (this.phase === 'busted' || this.phase === 'wasted') {
@@ -782,10 +1028,11 @@ export class Game {
     // Zoom-out-with-speed (the GTA 1 signature), retargeted in v0.23
     // to GTA-1 framing: values are now metres across the viewport
     // WIDTH. GTA 1 shows ~35–50 m across with a car ≈15 % of the
-    // frame width; we sit at 50 m on foot and pull out to at most
+    // frame width; we sit at 30 m on foot (v0.24 — at 50 m the player
+    // read as a dot on an empty street) and pull out to at most
     // 130 m at top speed (the extra reach is driving lookahead —
     // at 31 m/s a 50 m frame is under a second of road).
-    const targetView = this.drivenCar ? 54 + speedRatio * 76 : 50;
+    const targetView = this.drivenCar ? 54 + speedRatio * 76 : 30;
     // v0.21: GTA's zoom tracks speed aggressively — rate 3.6/s reaches
     // the target view in ~0.3 s (was 2.2/s, a visible ~0.5 s+ lag).
     const kv = 1 - Math.exp(-3.6 * dt);
@@ -834,6 +1081,7 @@ export class Game {
 
   private enterCarSilent(car: CarEntity): void {
     this.drivenCar = car;
+    this.enteredCar = true;
     car.stolen = true;
     this.playerPos = { ...car.pos };
     this.playerHeading = car.heading;
@@ -918,6 +1166,8 @@ export class Game {
         pos: this.playerPos,
         heading: this.playerHeading,
         color: '#ffd23f',
+        // v0.24: anchor ring until the first car entry, then never.
+        anchor: !this.enteredCar,
       });
     }
     const markers: RenderMarker[] = [];

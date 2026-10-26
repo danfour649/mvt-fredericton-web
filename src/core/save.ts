@@ -30,10 +30,15 @@ export interface SaveData {
   completedMissions: string[];
   districtCleared: boolean;
   bestScore: number;
+  /**
+   * v0.24: the player has entered a car at least once. Drives the
+   * spawn anchor ring (drawn only until the first car entry).
+   */
+  hasEnteredCar: boolean;
 }
 
 const SAVE_KEY = 'mvt-fredericton-web/save-v2';
-const DEFAULTS: SaveData = { completedMissions: [], districtCleared: false, bestScore: 0 };
+const DEFAULTS: SaveData = { completedMissions: [], districtCleared: false, bestScore: 0, hasEnteredCar: false };
 
 export class SaveStore {
   private storage: StorageAdapter;
@@ -52,6 +57,7 @@ export class SaveStore {
           : [],
         districtCleared: parsed.districtCleared === true,
         bestScore: typeof parsed.bestScore === 'number' ? parsed.bestScore : 0,
+        hasEnteredCar: parsed.hasEnteredCar === true,
       };
     } catch {
       return { ...DEFAULTS };

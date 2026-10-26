@@ -35,7 +35,7 @@ import { unproject, type Vec2 } from '../../core/geo';
 import type { WorldModel } from '../../core/world';
 import { buildRoadGraph } from '../../core/routing';
 import type { Renderer, RenderFrame, RenderMarker } from '../../core/renderer';
-import { carSprite, personSprite, drawSprite } from '../sprites';
+import { carSprite, personSprite, drawSprite, drawAnchorRing } from '../sprites';
 import { SkidTracks, ribbonPolygon, expandedPolygon } from '../groundwork';
 import { segmentRoof, shadeHex } from '../segment';
 import { generateAllTextures, type TextureKind, type TextureImage } from '../textures';
@@ -503,6 +503,7 @@ export class MapLibreRenderer implements Renderer {
       if (p.x < -60 || p.y < -60 || p.x > w + 60 || p.y > h + 60) continue;
       const ppm = this.ppmAt(e.pos);
       if (e.kind === 'player') {
+        if (e.anchor) drawAnchorRing(ctx, p.x, p.y, ppm, t);
         drawSprite(ctx, personSprite(e.color, { player: true }), p.x, p.y, ppm, e.heading, 13);
       } else if (e.kind === 'ped') {
         drawSprite(ctx, personSprite(e.color, { down: e.down }), p.x, p.y, ppm, e.heading, 10);

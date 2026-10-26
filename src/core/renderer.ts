@@ -35,6 +35,11 @@ export interface RenderEntity {
   speedMps?: number;
   /** Handbrake currently held (driven car only). */
   handbrake?: boolean;
+  /**
+   * v0.24: draw the pulsing spawn anchor ring under this entity
+   * (player only, until the first car entry).
+   */
+  anchor?: boolean;
 }
 
 export interface RenderMarker {
@@ -52,8 +57,9 @@ export interface RenderFrame {
   /** Camera centre, core metres (already smoothed by the core). */
   camera: Vec2;
   /** Metres visible across the viewport WIDTH (v0.23: the camera is
-   *  framed GTA-1-style by width — ~50 m on foot, up to ~130 m at top
-   *  speed — so horizontal framing is identical on any aspect ratio).
+   *  framed GTA-1-style by width — ~30 m on foot since v0.24, up to
+   *  ~130 m at top speed — so horizontal framing is identical on any
+   *  aspect ratio).
    *  Adapters translate this to a MapLibre zoom / canvas scale using
    *  their own viewport size. */
   viewWidthM: number;

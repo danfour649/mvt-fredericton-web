@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { Game, GOAL_SCORE, RESPRAY_COST_PER_STAR } from './game';
+import { Game, GOAL_SCORE, RESPRAY_COST_PER_STAR, BUBBLE_R } from './game';
 import { Wallet, BUSTED_FINE } from './wallet';
 import { loadWorld } from './world';
-import { unproject } from './geo';
+import { unproject, dist } from './geo';
 import { MemoryStorage } from './save';
 import { SPAWN_POS } from './missions';
+import downtownRaw from '../../public/data/downtown.json?raw';
 
 /**
  * A toy world: one long east-west road through the spawn area, no
@@ -160,5 +161,132 @@ describe('demo scenario hook', () => {
     expect(g.drivenCar).not.toBeNull();
     expect(g.wanted.stars).toBe(2);
     expect(g.wallet.multiplier).toBe(3);
+  });
+});
+
+/**
+ * A road grid for the bubble tests: long east-west streets every
+ * 120 m through and around the spawn area, so a 60 s drive stays on
+ * the network the whole way.
+ */
+function gridWorld() {
+  const roadAt = (dz: number) => ({
+    type: 'Feature',
+    geometry: {
+      type: 'LineString',
+      coordinates: [-2200, 0, 2200].map((x) => {
+        const ll = unproject(SPAWN_POS.x + x, SPAWN_POS.z + dz);
+        return [ll.lng, ll.lat];
+      }),
+    },
+    properties: {
+      Number_Of_Lanes: 2,
+      Formatted_Street_Name: 'GRID Street',
+      Speed_Restrictions_Both: 50,
+      Dir_of_Traffic_Flow: 'Both Directions',
+    },
+  });
+  const features = [];
+  for (let k = -5; k <= 5; k++) features.push(roadAt(k * 120));
+  return loadWorld({ buildings: { features: [] }, roads: { features } });
+}
+
+/**
+ * Put the player behind the wheel of a kerbside car for the bubble
+ * tests. Prefers a west-facing car: grid traffic all flows east on
+ * the far kerb lane, so westbound is a clean run with no head-ons.
+ * Crash damage is taken out of scope (health) — these tests isolate
+ * the population system; police are held out the same way.
+ */
+function stealForDrive(g: Game): void {
+  const parked = g.cars.filter((c) => c.kind === 'parked');
+  const car = parked.find((c) => Math.cos(c.heading) < -0.99) ?? parked[0];
+  car.stolen = true;
+  car.health = 1e9;
+  g.drivenCar = car;
+  g.playerPos = { ...car.pos };
+  g.playerHeading = car.heading;
+  g.carInput = { throttle: 1, steer: 0 };
+}
+
+describe('v0.24 cold start & population bubble', () => {
+  it('cold start on the REAL dataset: parked cars at the kerb + traffic rolling at spawn', () => {
+    const g = new Game(loadWorld(JSON.parse(downtownRaw)), new MemoryStorage());
+    const parked60 = g.cars.filter((c) => c.kind === 'parked' && dist(c.pos, SPAWN_POS) <= 60);
+    const traffic150 = g.cars.filter((c) => c.kind === 'traffic' && dist(c.pos, SPAWN_POS) <= 150);
+    expect(parked60.length).toBeGreaterThanOrEqual(3);
+    expect(traffic150.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('anchor ring shows until the first car entry, then never again (persisted)', () => {
+    const storage = new MemoryStorage();
+    const g = new Game(toyWorld(), storage);
+    const playerOf = (game: Game) => game.buildFrame().entities.find((e) => e.kind === 'player');
+    expect(playerOf(g)?.anchor).toBe(true);
+    // Get into a parked car that is NOT beside a payphone (interact
+    // would answer the phone instead of opening the door).
+    const starts = g.missions.available().map((m) => m.startPos);
+    const clearance = (p: { x: number; z: number }) => Math.min(...starts.map((s) => dist(s, p)));
+    const car = g.cars
+      .filter((c) => c.kind === 'parked')
+      .sort((a, b) => clearance(b.pos) - clearance(a.pos))[0];
+    expect(clearance(car.pos)).toBeGreaterThan(7);
+    g.playerPos = { ...car.pos };
+    g.pressInteract();
+    expect(g.drivenCar).toBe(car);
+    g.pressInteract(); // step back out
+    expect(g.drivenCar).toBeNull();
+    expect(playerOf(g)?.anchor).toBe(false);
+    // Persisted: a fresh Game on the same storage never shows it.
+    const g2 = new Game(toyWorld(), storage);
+    expect(playerOf(g2)?.anchor).toBe(false);
+  });
+
+  it('traffic bubble holds at ≥8 within 220 m through a 60 s cross-map drive', () => {
+    const g = new Game(gridWorld(), new MemoryStorage());
+    stealForDrive(g);
+    const step = 1 / 20;
+    let samples = 0;
+    for (let s = 0; s < 60 / step; s++) {
+      g.wanted.heat = 0;
+      g.cops = [];
+      g.update(step);
+      if (s % (5 / step) === (5 / step) - 1) {
+        const n = g.cars.filter((c) => c.traffic && dist(c.pos, g.playerPos) <= BUBBLE_R).length;
+        expect(n).toBeGreaterThanOrEqual(8);
+        samples++;
+      }
+    }
+    expect(samples).toBe(12);
+    // The drive really crossed the map, it did not idle at spawn.
+    expect(Math.abs(g.playerPos.x - SPAWN_POS.x)).toBeGreaterThan(500);
+  });
+
+  it('recycled traffic never pops in inside the view width', () => {
+    const g = new Game(gridWorld(), new MemoryStorage());
+    stealForDrive(g);
+    const step = 1 / 20;
+    const prev = new Map<string, { x: number; z: number }>();
+    let teleports = 0;
+    for (let s = 0; s < 60 / step; s++) {
+      g.wanted.heat = 0;
+      g.cops = [];
+      g.update(step);
+      const viewW = g.buildFrame().viewWidthM;
+      for (const c of g.cars) {
+        if (!c.traffic) continue;
+        const before = prev.get(c.id);
+        prev.set(c.id, { ...c.pos });
+        if (!before) continue;
+        const jump = Math.hypot(c.pos.x - before.x, c.pos.z - before.z);
+        if (jump > 10) {
+          // A discontinuity traffic flow can't produce (≤0.6 m/step):
+          // this car was recycled — it must land outside the view.
+          teleports++;
+          expect(dist(c.pos, g.playerPos)).toBeGreaterThan(viewW);
+        }
+      }
+    }
+    expect(teleports).toBeGreaterThan(0); // the bubble actually recycled
   });
 });

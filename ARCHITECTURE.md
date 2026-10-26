@@ -104,6 +104,24 @@ formulae from the desktop game's `tools/osm_import.py`
 
 ## Simulation notes
 
+- **Population bubble (v0.24):** the world has fixed pools (20 parked,
+  12 traffic in the extract) but the player only ever meets the ones
+  near them, so `Game.maintainPopulation()` (0.4 s cadence, seeded
+  RNG) recycles the far end of each pool around the player: traffic is
+  topped up to 10 cars within 220 m, untouched parked cars to 4
+  within 150 m (parked recycling pauses at speed — at a 130 m view
+  the "inside 150 m but outside the view" band vanishes, which is
+  correct behaviour). A recycle spot must sit between (view width ×
+  1.2 + 30 m) and the bubble radius — beyond the frame diagonal on
+  any aspect ratio — so recycled cars never visibly pop in; the
+  driven car and stolen/wrecked cars are never recycled. Cold start
+  is the bubble at spawn, seeded directly by `spawnCars()`: parked
+  cars at the closest kerbs to spawn, a traffic stream spaced
+  upstream on the spawn street. Peds are not bubbled (they stay
+  around the spawn neighbourhood). Unit tests pin the cold-start
+  minimums on the real dataset, the in-bubble floor through a 60 s
+  drive, and the no-pop-in invariant (any >10 m position jump must
+  land outside the view width).
 - **Collision:** circle vs building-polygon (bbox reject → nearest-edge
   push-out, with an inside-polygon case), shared by the player, cars,
   cops and peds.

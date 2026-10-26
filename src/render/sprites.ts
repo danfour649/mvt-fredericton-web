@@ -178,6 +178,33 @@ export function carSprite(color: string, opts: { police?: boolean; wrecked?: boo
   return sprite;
 }
 
+/**
+ * v0.24 spawn anchor: a soft pulsing ring under the player, drawn by
+ * both renderers until the player's first car entry (core flags the
+ * player entity with `anchor`). One steady ring keeps it findable; an
+ * expanding ring pulses outward and fades. All in world metres so it
+ * sits on the street, not the screen.
+ */
+export function drawAnchorRing(
+  ctx: CanvasRenderingContext2D,
+  px: number,
+  py: number,
+  ppm: number,
+  t: number,
+): void {
+  const phase = (t * 0.8) % 1;
+  ctx.beginPath();
+  ctx.arc(px, py, (1.35 + phase * 1.7) * ppm, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(255,210,63,${(0.5 * (1 - phase)).toFixed(3)})`;
+  ctx.lineWidth = Math.max(1.5, ppm * 0.06);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(px, py, 1.3 * ppm, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,210,63,0.85)';
+  ctx.lineWidth = Math.max(1.5, ppm * 0.05);
+  ctx.stroke();
+}
+
 export function personSprite(color: string, opts: { player?: boolean; down?: boolean } = {}): Sprite {
   const key = `person|${color}|${opts.player ? 'P' : ''}|${opts.down ? 'd' : ''}`;
   const hit = cache.get(key);
