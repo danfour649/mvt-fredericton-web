@@ -139,8 +139,9 @@ export class Game {
   private lastImpactMag = 0;
 
   // Smoothed camera (core-side so every renderer gets the same feel).
+  // camViewM is the view WIDTH in metres (v0.23 GTA-1 framing).
   private camPos: Vec2 = { ...SPAWN_POS };
-  private camViewM = 62;
+  private camViewM = 50;
 
   private world: WorldModel;
 
@@ -778,11 +779,13 @@ export class Game {
     const speedRatio = this.drivenCar
       ? Math.min(1, Math.abs(this.drivenCar.speed) / 31)
       : Math.min(1, Math.hypot(this.playerVel.x, this.playerVel.z) / 8);
-    // Zoom-out-with-speed (the GTA 1 signature): tight on foot, pulling
-    // out as the car speeds up. Values are "metres across viewport
-    // height" for the renderer; the MapLibre adapter clamps zoom so
-    // sprites stay readable at the far end.
-    const targetView = this.drivenCar ? 115 + speedRatio * 185 : 70;
+    // Zoom-out-with-speed (the GTA 1 signature), retargeted in v0.23
+    // to GTA-1 framing: values are now metres across the viewport
+    // WIDTH. GTA 1 shows ~35–50 m across with a car ≈15 % of the
+    // frame width; we sit at 50 m on foot and pull out to at most
+    // 130 m at top speed (the extra reach is driving lookahead —
+    // at 31 m/s a 50 m frame is under a second of road).
+    const targetView = this.drivenCar ? 54 + speedRatio * 76 : 50;
     // v0.21: GTA's zoom tracks speed aggressively — rate 3.6/s reaches
     // the target view in ~0.3 s (was 2.2/s, a visible ~0.5 s+ lag).
     const kv = 1 - Math.exp(-3.6 * dt);
@@ -821,7 +824,7 @@ export class Game {
       this.cops.push(cop);
     }
     this.camPos = { ...this.playerPos };
-    this.camViewM = 120;
+    this.camViewM = 76; // ≈ the settled width at the demo's 9 m/s roll
   }
 
   private drainBriefForDemo(): void {
@@ -940,7 +943,7 @@ export class Game {
     const impactAge = this.time - this.lastImpactAt;
     return {
       camera: { ...this.camPos },
-      viewHeightM: this.camViewM,
+      viewWidthM: this.camViewM,
       playerInCar: !!this.drivenCar,
       timeSec: this.time,
       entities,

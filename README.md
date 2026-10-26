@@ -37,6 +37,37 @@ npm run dev        # http://localhost:5173
   adapter — same game, same data. `?scenario=demo` boots into a scripted
   live-gameplay state (used for screenshots).
 
+## What's new in v0.23 — the visual rebuild (GTA 1 school)
+
+v0.22 rendered a *map*: flat colour at satellite distance. v0.23 is a
+ground-up visual pass against actual GTA 1 frames (`gta1-ref/` study
+frames: a traffic street, a downtown canyon):
+
+- **Camera.** Framing is now by view **width**: ~50 m across on foot
+  (GTA 1 shows ~35–50 m; a car is ~9 % of frame width at rest),
+  pulling out with speed to at most ~130 m at top speed — the extra
+  reach is driving lookahead. Zoom responsiveness is unchanged.
+- **Texture everywhere.** Procedural, seeded, tileable textures
+  generated once at load (`src/render/textures.ts`): grainy dark
+  asphalt, GTA's big 1.5 m sidewalk slabs, three tar/gravel roof
+  variants, mottled dark grass, water. Zero flat fills left. Canvas
+  adapter scales pattern transforms so features hold true world size
+  at any zoom; MapLibre GL patterns are screen-space, so Route A
+  textures are authored to land at world scale mid-zoom-range and
+  breathe slightly with zoom — the one honest compromise.
+- **Buildings are mass.** SE drop shadows, parapet rims, textured
+  roofs with the v0.22 shade steps, and deterministic rooftop clutter
+  (AC boxes, vents, skylights). The palette is brick / slate /
+  concrete / tar / brownstone — the candy colours, including the
+  purple slab, are gone.
+- **Sprites have weight.** Inked outlines, windshield glare, roof
+  highlight, and a soft south-east drop shadow under every car and
+  pedestrian.
+- **Street dressing.** Kerbs, worn-yellow centre dashes, zebra
+  crosswalks at junctions (positions from the v0.21 routing graph),
+  and ~200 street trees with canopy shadows scattered along
+  sidewalks.
+
 ## What's new in v0.22 — giant roofs, GTA scale
 
 The scale audit against GTA 1 (one cube = 4.5 m = one car length) found

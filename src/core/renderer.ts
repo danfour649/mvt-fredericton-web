@@ -51,9 +51,12 @@ export interface RenderMarker {
 export interface RenderFrame {
   /** Camera centre, core metres (already smoothed by the core). */
   camera: Vec2;
-  /** Metres visible across the viewport height, roughly. Camera adapters
-   *  translate this to a MapLibre zoom / canvas scale. */
-  viewHeightM: number;
+  /** Metres visible across the viewport WIDTH (v0.23: the camera is
+   *  framed GTA-1-style by width — ~50 m on foot, up to ~130 m at top
+   *  speed — so horizontal framing is identical on any aspect ratio).
+   *  Adapters translate this to a MapLibre zoom / canvas scale using
+   *  their own viewport size. */
+  viewWidthM: number;
   playerInCar: boolean;
   /** Seconds since boot, for pulse/blink animation phases. */
   timeSec: number;

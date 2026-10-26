@@ -74,8 +74,9 @@ export function carSprite(color: string, opts: { police?: boolean; wrecked?: boo
   rr(ctx, 1, 3, W - 2, H - 6, 10);
   ctx.fillStyle = body;
   ctx.fill();
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = 'rgba(10,10,14,0.6)';
+  // v0.23: a real outline — GTA 1 sprites are inked, not pastel.
+  ctx.lineWidth = 3.4;
+  ctx.strokeStyle = 'rgba(8,8,12,0.88)';
   ctx.stroke();
   // Hood shading (front = +X).
   ctx.fillStyle = 'rgba(255,255,255,0.10)';
@@ -94,13 +95,40 @@ export function carSprite(color: string, opts: { police?: boolean; wrecked?: boo
   ctx.fillStyle = opts.wrecked ? '#5c6468' : 'rgba(196,228,245,0.95)';
   rr(ctx, W * 0.56, H * 0.14, W * 0.09, H * 0.72, 4);
   ctx.fill();
+  if (!opts.wrecked) {
+    // Windshield glare: a diagonal slash of sky reflection.
+    ctx.save();
+    rr(ctx, W * 0.56, H * 0.14, W * 0.09, H * 0.72, 4);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath();
+    ctx.moveTo(W * 0.545, H * 0.95);
+    ctx.lineTo(W * 0.6, H * 0.05);
+    ctx.lineTo(W * 0.635, H * 0.05);
+    ctx.lineTo(W * 0.58, H * 0.95);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
   ctx.fillStyle = opts.wrecked ? '#4a5054' : 'rgba(140,180,205,0.9)';
   rr(ctx, W * 0.3, H * 0.16, W * 0.07, H * 0.68, 4);
   ctx.fill();
-  // Roof.
+  // Roof, with a lengthwise highlight so the panel reads as a surface.
   rr(ctx, W * 0.375, H * 0.15, W * 0.175, H * 0.7, 6);
   ctx.fillStyle = shade(body === '#f2f3f5' ? '#dfe3e8' : body, 1.18);
   ctx.fill();
+  if (!opts.wrecked) {
+    ctx.save();
+    rr(ctx, W * 0.375, H * 0.15, W * 0.175, H * 0.7, 6);
+    ctx.clip();
+    const grad = ctx.createLinearGradient(0, H * 0.15, 0, H * 0.85);
+    grad.addColorStop(0, 'rgba(255,255,255,0.20)');
+    grad.addColorStop(0.45, 'rgba(255,255,255,0.02)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.14)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(W * 0.375, H * 0.15, W * 0.175, H * 0.7);
+    ctx.restore();
+  }
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = 'rgba(10,10,14,0.35)';
   ctx.stroke();
@@ -217,7 +245,14 @@ export function personSprite(color: string, opts: { player?: boolean; down?: boo
   return sprite;
 }
 
-/** Draw a sprite centred at (px,py), rotated, sized by px-per-metre. */
+/**
+ * Draw a sprite centred at (px,py), rotated, sized by px-per-metre.
+ * v0.23: every sprite first stamps a soft drop shadow offset to the
+ * screen south-east (unrotated light, rotated body — the shadow keeps
+ * the sprite's silhouette but is shifted +x/+y in SCREEN space, like
+ * the building shadows in dressing.ts), so cars and peds sit ON the
+ * street instead of floating over it.
+ */
 export function drawSprite(
   ctx: CanvasRenderingContext2D,
   sprite: Sprite,
@@ -229,6 +264,20 @@ export function drawSprite(
 ): void {
   const w = Math.max(sprite.wM * ppm, minPx);
   const h = Math.max(sprite.hM * ppm, minPx * (sprite.hM / sprite.wM));
+  // Shadow pass.
+  ctx.save();
+  ctx.translate(px + w * 0.07 + 1.5, py + h * 0.16 + 2);
+  ctx.rotate(heading);
+  ctx.beginPath();
+  if (sprite.wM > sprite.hM * 1.6) {
+    ctx.roundRect(-w / 2, -h / 2, w, h, Math.min(8, h * 0.3));
+  } else {
+    ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
+  }
+  ctx.fillStyle = 'rgba(12,12,16,0.34)';
+  ctx.fill();
+  ctx.restore();
+  // Sprite pass.
   ctx.save();
   ctx.translate(px, py);
   ctx.rotate(heading);

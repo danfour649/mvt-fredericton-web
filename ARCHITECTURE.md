@@ -50,11 +50,12 @@ interface Renderer {
 ```
 
 `RenderFrame` is plain data: camera centre (already smoothed by the core,
-with velocity lookahead and speed-driven view height), view height in
-metres, a frame clock, entity list (player, parked/traffic/driven/cop
-cars, pedestrians — with wreck/down flags), and markers (payphone,
-objective, respray, exit). Adapters own all presentation choices
-(colours, line widths, zoom math).
+with velocity lookahead and speed-driven zoom), view **width** in
+metres (v0.23 — framing is width-based so horizontal framing is
+identical on any aspect ratio), a frame clock, entity list (player,
+parked/traffic/driven/cop cars, pedestrians — with wreck/down flags),
+and markers (payphone, objective, respray, exit). Adapters own all
+presentation choices (colours, line widths, zoom math).
 
 ## Sprites (v0.20 — the dot is dead)
 
@@ -140,6 +141,24 @@ formulae from the desktop game's `tools/osm_import.py`
   handbrake 180° in ~1.3 s shedding ~67% speed, coast 100→0 in ~8.6 s.
   The v0.20 model it replaced measured 0–100 in 16.6 s and a coast
   that never stopped.
+- **Visual rebuild (v0.23, render adapters):** the world stopped being
+  flat fills. `render/textures.ts` generates seeded tileable bitmaps
+  once at load (asphalt grain, 1.5 m pavement slabs, three roof
+  variants, grass, water; pure + deterministic, unit-tested). Route A
+  registers them as MapLibre pattern images — GL patterns are
+  screen-space, so features hold world scale only near the authored
+  nominal ppm (documented compromise); Route C rescales
+  `CanvasPattern` transforms per frame and holds true world scale at
+  any zoom. `render/dressing.ts` derives, once at load: building
+  drop shadows (footprint offset 1.6 m SE), per-piece roof clutter
+  (AC/vents/skylights, seeded by building index), zebra crosswalks at
+  junction nodes from the routing graph, and a seeded roadside tree
+  scatter (rejected inside buildings/roads). `render/palette.ts` is
+  the shared grit palette (brick/slate/concrete/tar). The camera is
+  GTA-1 tight — 50 m across on foot, ≤130 m at top speed — with
+  MapLibre zoom math factored into `render/cameraMath.ts`
+  (round-trip unit-tested). Sprites gained inked outlines, glass
+  glare and SE drop shadows in `render/sprites.ts`.
 - **Giant-roof segmentation (v0.22, render adapters):** `render/segment.ts`
   (shared by both adapters) subdivides the roof treatment of giant
   footprints — principal-axis (min-area bounding box) long side > 35 m,
