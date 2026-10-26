@@ -27,6 +27,7 @@ import { unproject, type Vec2 } from '../../core/geo';
 import type { WorldModel } from '../../core/world';
 import type { Renderer, RenderFrame, RenderMarker } from '../../core/renderer';
 import { carSprite, personSprite, drawSprite } from '../sprites';
+import { SkidTracks, ribbonPolygon, expandedPolygon } from '../groundwork';
 
 const TILES_URL = '/fredericton.pmtiles';
 
@@ -68,6 +69,7 @@ export class MapLibreRenderer implements Renderer {
   private ctx: CanvasRenderingContext2D;
   private ready = false;
   private pending: RenderFrame | null = null;
+  private skids = new SkidTracks();
 
   constructor(container: HTMLElement) {
     ensureProtocol();
@@ -79,6 +81,7 @@ export class MapLibreRenderer implements Renderer {
         sources: {
           nbtiles: { type: 'vector', url: 'pmtiles://' + TILES_URL },
           'game-buildings': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+          'game-pavement': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-roofs': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-roads': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         },
@@ -90,11 +93,21 @@ export class MapLibreRenderer implements Renderer {
           },
           {
             id: 'ctx-buildings', type: 'fill', source: 'nbtiles', 'source-layer': 'buildings',
-            paint: { 'fill-color': '#97a97e', 'fill-opacity': 0.9 },
+            paint: { 'fill-color': '#a8a49a', 'fill-opacity': 0.85 },
           },
           {
             id: 'ctx-roads', type: 'line', source: 'nbtiles', 'source-layer': 'roads',
             paint: { 'line-color': '#b9bcb4', 'line-width': 3 },
+          },
+          {
+            id: 'pavement-aprons', type: 'fill', source: 'game-pavement',
+            filter: ['==', ['get', 'kind'], 'apron'],
+            paint: { 'fill-color': '#a39e92', 'fill-opacity': 1 },
+          },
+          {
+            id: 'pavement-ribbons', type: 'fill', source: 'game-pavement',
+            filter: ['==', ['get', 'kind'], 'ribbon'],
+            paint: { 'fill-color': '#b3afa4', 'fill-opacity': 1 },
           },
           {
             id: 'roads-casing', type: 'line', source: 'game-roads',
@@ -202,6 +215,28 @@ export class MapLibreRenderer implements Renderer {
       properties: { name: r.name, widthM: r.widthM },
       geometry: { type: 'LineString', coordinates: r.path.map(ll) },
     }));
+    // v0.21 paved blocks: pavement ribbons under roads (sidewalk
+    // margin) + aprons under buildings, so blocks read as city.
+    const pavement: Feature[] = [];
+    for (const r of world.roads) {
+      const ring = ribbonPolygon(r.path, r.widthM / 2 + 3.5);
+      if (ring.length >= 3) {
+        pavement.push({
+          type: 'Feature', properties: { kind: 'ribbon' },
+          geometry: { type: 'Polygon', coordinates: [[...ring.map(ll), ll(ring[0])]] },
+        });
+      }
+    }
+    for (const b of world.buildings) {
+      const ring = expandedPolygon(b.polygon, b.center, 2.4);
+      pavement.push({
+        type: 'Feature', properties: { kind: 'apron' },
+        geometry: { type: 'Polygon', coordinates: [[...ring.map(ll), ll(ring[0])]] },
+      });
+    }
+    (this.map.getSource('game-pavement') as maplibregl.GeoJSONSource).setData({
+      type: 'FeatureCollection', features: pavement,
+    });
     (this.map.getSource('game-buildings') as maplibregl.GeoJSONSource).setData({
       type: 'FeatureCollection', features: buildings,
     });
@@ -245,6 +280,15 @@ export class MapLibreRenderer implements Renderer {
     if (Math.abs(cur.lng - center[0]) > 1e-7 || Math.abs(cur.lat - center[1]) > 1e-7 || Math.abs(this.map.getZoom() - zoom) > 0.01) {
       this.map.jumpTo({ center, zoom });
     }
+    // Impact shake: transform the whole canvas container (map + the
+    // sprite overlay riding inside it) so the world judders together.
+    const cc = this.map.getCanvasContainer();
+    if (frame.impact > 0.02) {
+      const m = frame.impact * 7;
+      cc.style.transform = `translate(${(Math.random() * 2 - 1) * m}px, ${(Math.random() * 2 - 1) * m}px)`;
+    } else if (cc.style.transform) {
+      cc.style.transform = '';
+    }
     this.drawOverlay(frame);
   }
 
@@ -279,6 +323,10 @@ export class MapLibreRenderer implements Renderer {
       ctx.stroke();
       ctx.setLineDash([]);
     }
+
+    // Skid marks (under the cars that made them).
+    this.skids.update(frame.entities, t);
+    this.skids.draw(ctx, (p) => this.projectPx(p), 0.3 * this.ppmAt(frame.camera), t);
 
     // Entities: peds under cars, player on top.
     const ordered = [...frame.entities].sort((a, b) => {

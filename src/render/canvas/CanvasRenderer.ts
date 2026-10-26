@@ -12,6 +12,7 @@
 import type { WorldModel } from '../../core/world';
 import type { Renderer, RenderFrame } from '../../core/renderer';
 import { carSprite, personSprite, drawSprite } from '../sprites';
+import { SkidTracks, expandedPolygon, PAVEMENT_RIBBON, PAVEMENT_APRON } from '../groundwork';
 
 const BUILDING_COLORS = ['#e07a5f', '#f2cc8f', '#81b29a', '#e8c547', '#db5461', '#7fa6d9', '#c97b4a', '#9d7bd8'];
 const ROOF_COLORS = ['#eda88f', '#f7ddad', '#a5cbb6', '#f2d673', '#e87f89', '#a7c2e6', '#da9c6d', '#bda3e6'];
@@ -28,6 +29,7 @@ export class CanvasRenderer implements Renderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private world: WorldModel | null = null;
+  private skids = new SkidTracks();
 
   constructor(container: HTMLElement) {
     this.canvas = document.createElement('canvas');
@@ -64,6 +66,32 @@ export class CanvasRenderer implements Renderer {
 
     ctx.fillStyle = '#79b657';
     ctx.fillRect(0, 0, w, h);
+    if (frame.impact > 0.02) {
+      const m = frame.impact * 7;
+      ctx.translate((Math.random() * 2 - 1) * m, (Math.random() * 2 - 1) * m);
+    }
+
+    // v0.21 paved blocks: building aprons + road pavement ribbons
+    // (sidewalk margin) under the road paint, so blocks read as city.
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const b of this.world.buildings) {
+      if (!near(b.center.x, b.center.z)) continue;
+      const ring = expandedPolygon(b.polygon, b.center, 2.4);
+      ctx.beginPath();
+      ring.forEach((p, j) => (j === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
+      ctx.closePath();
+      ctx.fillStyle = PAVEMENT_APRON;
+      ctx.fill();
+    }
+    for (const r of this.world.roads) {
+      if (!near(r.path[0].x, r.path[0].z) && !near(r.path[r.path.length - 1].x, r.path[r.path.length - 1].z)) continue;
+      ctx.beginPath();
+      r.path.forEach((p, i) => (i === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
+      ctx.strokeStyle = PAVEMENT_RIBBON;
+      ctx.lineWidth = Math.max(2, (r.widthM + 7) * scale);
+      ctx.stroke();
+    }
 
     // Roads: dark casing, light asphalt, dashed centre line.
     ctx.lineCap = 'round';
@@ -114,6 +142,10 @@ export class CanvasRenderer implements Renderer {
 
     const t = frame.timeSec;
     const lightPhase = (Math.floor(t * 2.6) % 2) as 0 | 1;
+
+    // Skid marks under the cars.
+    this.skids.update(frame.entities, t);
+    this.skids.draw(ctx, (p) => ({ x: sx(p.x), y: sy(p.z) }), 0.3 * scale, t);
 
     // Entities via shared sprites.
     const ordered = [...frame.entities].sort((a, b) => {
