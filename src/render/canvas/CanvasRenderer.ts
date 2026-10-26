@@ -13,6 +13,7 @@ import type { WorldModel } from '../../core/world';
 import type { Renderer, RenderFrame } from '../../core/renderer';
 import { carSprite, personSprite, drawSprite } from '../sprites';
 import { SkidTracks, expandedPolygon, PAVEMENT_RIBBON, PAVEMENT_APRON } from '../groundwork';
+import { segmentRoof, shadeHex, type RoofPiece } from '../segment';
 
 const BUILDING_COLORS = ['#e07a5f', '#f2cc8f', '#81b29a', '#e8c547', '#db5461', '#7fa6d9', '#c97b4a', '#9d7bd8'];
 const ROOF_COLORS = ['#eda88f', '#f7ddad', '#a5cbb6', '#f2d673', '#e87f89', '#a7c2e6', '#da9c6d', '#bda3e6'];
@@ -29,6 +30,8 @@ export class CanvasRenderer implements Renderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private world: WorldModel | null = null;
+  /** v0.22 roof pieces per building, derived once at init (segment.ts). */
+  private pieces: RoofPiece[][] = [];
   private skids = new SkidTracks();
 
   constructor(container: HTMLElement) {
@@ -44,6 +47,7 @@ export class CanvasRenderer implements Renderer {
 
   init(world: WorldModel): void {
     this.world = world;
+    this.pieces = world.buildings.map((b, i) => segmentRoof(b.polygon, i));
   }
 
   sync(frame: RenderFrame): void {
@@ -116,28 +120,45 @@ export class CanvasRenderer implements Renderer {
         ctx.setLineDash([]);
       }
     }
-    // Buildings + inset roofs.
+    // Buildings + inset roofs. v0.22: giants draw as GTA-scale roof
+    // pieces (segment.ts, precomputed in init) — fill shade + toned
+    // seam per piece, true outer outline over the top, inset roof per
+    // piece. Normal buildings are a single shade-0 piece = unchanged.
     this.world.buildings.forEach((b, i) => {
       if (!near(b.center.x, b.center.z)) return;
       const idx = (i * 7 + Math.floor(b.heightM)) % BUILDING_COLORS.length;
+      const base = BUILDING_COLORS[idx];
+      const pieces = this.pieces[i];
+      for (const piece of pieces) {
+        ctx.beginPath();
+        piece.ring.forEach((p, j) => (j === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
+        ctx.closePath();
+        ctx.fillStyle = shadeHex(base, piece.shade);
+        ctx.fill();
+        if (piece.segmented) {
+          ctx.strokeStyle = shadeHex(base, piece.shade - 0.22);
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
       ctx.beginPath();
       b.polygon.forEach((p, j) => (j === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
       ctx.closePath();
-      ctx.fillStyle = BUILDING_COLORS[idx];
-      ctx.fill();
       ctx.strokeStyle = '#38302c';
       ctx.lineWidth = 1;
       ctx.stroke();
-      ctx.beginPath();
-      b.polygon.forEach((p, j) => {
-        const ix = b.center.x + (p.x - b.center.x) * 0.84;
-        const iz = b.center.z + (p.z - b.center.z) * 0.84;
-        if (j === 0) ctx.moveTo(sx(ix), sy(iz));
-        else ctx.lineTo(sx(ix), sy(iz));
-      });
-      ctx.closePath();
-      ctx.fillStyle = ROOF_COLORS[idx];
-      ctx.fill();
+      for (const piece of pieces) {
+        ctx.beginPath();
+        piece.ring.forEach((p, j) => {
+          const ix = piece.center.x + (p.x - piece.center.x) * 0.84;
+          const iz = piece.center.z + (p.z - piece.center.z) * 0.84;
+          if (j === 0) ctx.moveTo(sx(ix), sy(iz));
+          else ctx.lineTo(sx(ix), sy(iz));
+        });
+        ctx.closePath();
+        ctx.fillStyle = shadeHex(ROOF_COLORS[idx], piece.shade);
+        ctx.fill();
+      }
     });
 
     const t = frame.timeSec;

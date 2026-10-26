@@ -28,18 +28,12 @@ import type { WorldModel } from '../../core/world';
 import type { Renderer, RenderFrame, RenderMarker } from '../../core/renderer';
 import { carSprite, personSprite, drawSprite } from '../sprites';
 import { SkidTracks, ribbonPolygon, expandedPolygon } from '../groundwork';
+import { segmentRoof, shadeHex } from '../segment';
 
 const TILES_URL = '/fredericton.pmtiles';
 
 const BUILDING_COLORS = ['#e07a5f', '#f2cc8f', '#81b29a', '#e8c547', '#db5461', '#7fa6d9', '#c97b4a', '#9d7bd8'];
 const ROOF_COLORS = ['#eda88f', '#f7ddad', '#a5cbb6', '#f2d673', '#e87f89', '#a7c2e6', '#da9c6d', '#bda3e6'];
-
-function colorMatch(prop: string, palette: string[]): unknown[] {
-  const expr: unknown[] = ['match', ['get', prop]];
-  palette.forEach((c, i) => expr.push(i, c));
-  expr.push('#cccccc');
-  return expr;
-}
 
 let protocolRegistered = false;
 function ensureProtocol(): void {
@@ -81,6 +75,7 @@ export class MapLibreRenderer implements Renderer {
         sources: {
           nbtiles: { type: 'vector', url: 'pmtiles://' + TILES_URL },
           'game-buildings': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+          'game-outlines': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-pavement': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-roofs': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-roads': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
@@ -146,15 +141,24 @@ export class MapLibreRenderer implements Renderer {
             paint: { 'text-color': '#3c4147', 'text-halo-color': 'rgba(255,255,255,0.85)', 'text-halo-width': 1.2 },
           },
           {
+            // v0.22: fill colour is per-piece (segment shade applied at
+            // load in segment.ts), not a palette match.
             id: 'buildings-fill', type: 'fill', source: 'game-buildings',
-            paint: { 'fill-color': colorMatch('colorIdx', BUILDING_COLORS) as never, 'fill-opacity': 1 },
+            paint: { 'fill-color': ['get', 'fill'] as never, 'fill-opacity': 1 },
           },
           {
             id: 'roofs-fill', type: 'fill', source: 'game-roofs',
-            paint: { 'fill-color': colorMatch('colorIdx', ROOF_COLORS) as never, 'fill-opacity': 1 },
+            paint: { 'fill-color': ['get', 'fill'] as never, 'fill-opacity': 1 },
           },
           {
-            id: 'buildings-outline', type: 'line', source: 'game-buildings',
+            // Segment seams: thin toned outline around each piece of a
+            // segmented giant; the true outer outline draws over it.
+            id: 'buildings-seams', type: 'line', source: 'game-buildings',
+            filter: ['==', ['get', 'segmented'], 1],
+            paint: { 'line-color': ['get', 'seam'] as never, 'line-width': 0.7 },
+          },
+          {
+            id: 'buildings-outline', type: 'line', source: 'game-outlines',
             paint: { 'line-color': '#38302c', 'line-width': 0.9 },
           },
         ],
@@ -185,29 +189,42 @@ export class MapLibreRenderer implements Renderer {
       else this.map.on('load', () => resolve());
     });
     const buildings: Feature[] = [];
+    const outlines: Feature[] = [];
     const roofs: Feature[] = [];
     world.buildings.forEach((b, i) => {
       const colorIdx = (i * 7 + Math.floor(b.heightM)) % BUILDING_COLORS.length;
-      buildings.push({
+      outlines.push({
         type: 'Feature',
-        properties: { colorIdx },
+        properties: {},
         geometry: { type: 'Polygon', coordinates: [[...b.polygon.map(ll), ll(b.polygon[0])]] },
       });
-      // Inset "roof": polygon shrunk toward its centroid — fakes height.
-      const area = Math.abs(b.polygon.reduce((acc, p, j) => {
-        const q = b.polygon[(j + 1) % b.polygon.length];
-        return acc + (p.x * q.z - q.x * p.z);
-      }, 0)) / 2;
-      if (area > 42) {
-        const inset = b.polygon.map((p) => ({
-          x: b.center.x + (p.x - b.center.x) * 0.84,
-          z: b.center.z + (p.z - b.center.z) * 0.84,
-        }));
-        roofs.push({
+      // v0.22: giant roofs segment into GTA-scale pieces (segment.ts);
+      // normal buildings come back as one piece, shade 0 = unchanged.
+      for (const piece of segmentRoof(b.polygon, i)) {
+        const base = BUILDING_COLORS[colorIdx];
+        buildings.push({
           type: 'Feature',
-          properties: { colorIdx },
-          geometry: { type: 'Polygon', coordinates: [[...inset.map(ll), ll(inset[0])]] },
+          properties: {
+            fill: shadeHex(base, piece.shade),
+            seam: shadeHex(base, piece.shade - 0.22),
+            segmented: piece.segmented ? 1 : 0,
+          },
+          geometry: { type: 'Polygon', coordinates: [[...piece.ring.map(ll), ll(piece.ring[0])]] },
         });
+        // Inset "roof" per piece: polygon shrunk toward its own
+        // centroid — fakes height, and the gap between neighbouring
+        // pieces' roofs is the visible seam on a segmented giant.
+        if (piece.area > 42) {
+          const inset = piece.ring.map((p) => ({
+            x: piece.center.x + (p.x - piece.center.x) * 0.84,
+            z: piece.center.z + (p.z - piece.center.z) * 0.84,
+          }));
+          roofs.push({
+            type: 'Feature',
+            properties: { fill: shadeHex(ROOF_COLORS[colorIdx], piece.shade) },
+            geometry: { type: 'Polygon', coordinates: [[...inset.map(ll), ll(inset[0])]] },
+          });
+        }
       }
     });
     const roads: Feature[] = world.roads.map((r) => ({
@@ -239,6 +256,9 @@ export class MapLibreRenderer implements Renderer {
     });
     (this.map.getSource('game-buildings') as maplibregl.GeoJSONSource).setData({
       type: 'FeatureCollection', features: buildings,
+    });
+    (this.map.getSource('game-outlines') as maplibregl.GeoJSONSource).setData({
+      type: 'FeatureCollection', features: outlines,
     });
     (this.map.getSource('game-roofs') as maplibregl.GeoJSONSource).setData({
       type: 'FeatureCollection', features: roofs,

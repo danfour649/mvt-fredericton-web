@@ -140,6 +140,17 @@ formulae from the desktop game's `tools/osm_import.py`
   handbrake 180° in ~1.3 s shedding ~67% speed, coast 100→0 in ~8.6 s.
   The v0.20 model it replaced measured 0–100 in 16.6 s and a coast
   that never stopped.
+- **Giant-roof segmentation (v0.22, render adapters):** `render/segment.ts`
+  (shared by both adapters) subdivides the roof treatment of giant
+  footprints — principal-axis (min-area bounding box) long side > 35 m,
+  or area > 1,100 m² — into GTA-scale segments of ~20 m along the long
+  axis: footprint clipped to bands, per-piece inset roof, deterministic
+  per-segment shade step (±~5 %) and a toned seam stroke. The true
+  outline never changes (pieces exactly tile it); the scale audit showed
+  the car/streets already match GTA 1's 4.5 m cube, but real GeoNB giants
+  (max 197 m ≈ 45 car lengths) had no GTA counterpart. 125 of 1,225
+  buildings segment into 1,466 roof pieces total. PMTiles context
+  buildings outside the downtown extract are not segmented.
 - **Ground treatment (v0.21, render adapters):** `render/groundwork.ts`
   builds pavement ribbons under roads (width + 7 m sidewalk margin)
   and pavement aprons under buildings (footprint pushed out 2.4 m) in

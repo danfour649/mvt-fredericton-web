@@ -37,6 +37,18 @@ npm run dev        # http://localhost:5173
   adapter — same game, same data. `?scenario=demo` boots into a scripted
   live-gameplay state (used for screenshots).
 
+## What's new in v0.22 — giant roofs, GTA scale
+
+The scale audit against GTA 1 (one cube = 4.5 m = one car length) found
+the car and streets already match; the mismatch was real-data building
+giants (max footprint 197 m ≈ 45 car lengths — GTA 1's hand-built city
+never exceeds ~30 m). v0.22 segments the *roof treatment* of any
+footprint with a long side over 35 m (or area over 1,100 m²) into
+~20 m GTA-scale pieces along its principal axis — per-piece inset roofs
+and shade steps so a slab reads as a row of attached buildings. True
+outlines are untouched; 125 of 1,225 buildings segment. See
+`src/render/segment.ts`.
+
 ## What's new in v0.21 — driving feel + input
 
 - **Real GTA 1 vehicle physics.** The v0.20 velocity-lerp hack (measured
