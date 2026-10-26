@@ -17,6 +17,7 @@ import { MapLibreRenderer } from './render/maplibre/MapLibreRenderer';
 import { CanvasRenderer } from './render/canvas/CanvasRenderer';
 import { Haptics } from './platform/haptics';
 import { GameAudio, type AudioStateSnapshot } from './platform/audio';
+import { shapeSteer, stickDeflection } from './platform/stickMath';
 
 const localStorageAdapter: StorageAdapter = {
   read: (key) => {
@@ -107,12 +108,44 @@ async function boot(): Promise<void> {
   window.addEventListener('keyup', (e) => keys.delete(e.code));
   const down = (...codes: string[]) => (codes.some((c) => keys.has(c)) ? 1 : 0);
 
+  // v0.27 diagnostics: rolling pointer-event ring buffer, readable
+  // via window.__mvtInputLog(). If driving still feels wrong on a
+  // real device, one screenshot of the Input readout (below) plus
+  // this log shows the ACTUAL input values instead of another round
+  // of guessing. Move events are thinned (≥3 px or ≥100 ms per
+  // pointer) so the buffer holds minutes, not seconds.
+  interface InputLogEntry {
+    t: number; type: string; id?: number; x?: number; y?: number;
+    target?: string; dx?: number; dy?: number;
+  }
+  const inputLog: InputLogEntry[] = [];
+  let lastStickLogged = { dx: 0, dy: 0 };
+  const lastLoggedMove = new Map<number, { x: number; y: number; t: number }>();
+  function logPointer(e: PointerEvent): void {
+    const now = Math.round(performance.now());
+    if (e.type === 'pointermove') {
+      const last = lastLoggedMove.get(e.pointerId);
+      if (last && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 3 && now - last.t < 100) return;
+      lastLoggedMove.set(e.pointerId, { x: e.clientX, y: e.clientY, t: now });
+    }
+    const tgt = e.target as HTMLElement | null;
+    inputLog.push({
+      t: now, type: e.type, id: e.pointerId,
+      x: Math.round(e.clientX), y: Math.round(e.clientY),
+      target: tgt?.id || (typeof tgt?.className === 'string' ? tgt.className : '') || String(e.target),
+    });
+    if (inputLog.length > 400) inputLog.splice(0, inputLog.length - 400);
+  }
+  for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'lostpointercapture']) {
+    window.addEventListener(t, logPointer as EventListener, { capture: true, passive: true });
+  }
+  (window as unknown as { __mvtInputLog?: () => InputLogEntry[] }).__mvtInputLog = () => inputLog.slice();
+
   // Analog stick (dynamic origin, left half of the screen).
   const stickZone = el('stick-zone');
   const stickBase = el('stick-base');
   const stickKnob = el('stick-knob');
   const stick = { id: -1, ox: 0, oy: 0, dx: 0, dy: 0, active: false };
-  const STICK_R = 48;
   function stickVisual(): void {
     stickKnob.style.transform = `translate(${stick.dx * 34}px, ${stick.dy * 34}px)`;
   }
@@ -133,12 +166,23 @@ async function boot(): Promise<void> {
   });
   stickZone.addEventListener('pointermove', (e) => {
     if (e.pointerId !== stick.id) return;
-    let dx = (e.clientX - stick.ox) / STICK_R;
-    let dy = (e.clientY - stick.oy) / STICK_R;
-    const len = Math.hypot(dx, dy);
-    if (len > 1) { dx /= len; dy /= len; }
-    stick.dx = Math.abs(dx) < 0.07 ? 0 : dx;
-    stick.dy = Math.abs(dy) < 0.07 ? 0 : dy;
+    // v0.27: shared stick math (R=32, deadzone 0.04, origin chase) —
+    // see platform/stickMath.ts for why: a real thumb ROLLS ~24 px,
+    // and the old R=48 linear map turned that into half a wheel.
+    const d = stickDeflection(stick.ox, stick.oy, e.clientX, e.clientY);
+    if (d.ox !== stick.ox || d.oy !== stick.oy) {
+      stick.ox = d.ox;
+      stick.oy = d.oy;
+      stickBase.style.left = `${stick.ox - 59}px`;
+      stickBase.style.top = `${stick.oy - 59}px`;
+    }
+    stick.dx = d.dx;
+    stick.dy = d.dy;
+    if (Math.abs(d.dx - lastStickLogged.dx) >= 0.03 || Math.abs(d.dy - lastStickLogged.dy) >= 0.03) {
+      lastStickLogged = { dx: d.dx, dy: d.dy };
+      inputLog.push({ t: Math.round(performance.now()), type: 'stick', dx: Math.round(d.dx * 100) / 100, dy: Math.round(d.dy * 100) / 100 });
+      if (inputLog.length > 400) inputLog.splice(0, inputLog.length - 400);
+    }
     stickVisual();
   });
   const stickEnd = (e: PointerEvent): void => {
@@ -268,6 +312,18 @@ async function boot(): Promise<void> {
     if (!audioOn) audio.silence();
     else audio.refreshMaster();
   });
+  // Input readout (v0.27): live STEER / THR / WHEEL° / km/h corner
+  // box for diagnosing real-device input. Persisted, default OFF.
+  let readoutOn = store.get('mvt-input-readout') === 'on';
+  const readoutToggle = el('readout-toggle') as HTMLInputElement;
+  const readout = el('input-readout');
+  readoutToggle.checked = readoutOn;
+  readout.hidden = !readoutOn;
+  readoutToggle.addEventListener('change', () => {
+    readoutOn = readoutToggle.checked;
+    store.set('mvt-input-readout', readoutOn ? 'on' : 'off');
+    readout.hidden = !readoutOn;
+  });
 
   // Gamepad (standard mapping). A is E (edge), B is a brake fallback,
   // X/Y handbrake, RT/LT analog pedals, left stick steers.
@@ -334,7 +390,10 @@ async function boot(): Promise<void> {
           throttle = 0;
         }
       }
-      game.carInput = { throttle, steer, handbrake };
+      // v0.27: steer response curve (|s|^0.7) — endpoints 0/±1 are
+      // exact, so keyboard full-lock and the drive metrics don't
+      // move; the mid-range a thumb actually reaches is amplified.
+      game.carInput = { throttle, steer: shapeSteer(steer), handbrake };
       game.moveInput = { x: 0, z: 0 };
     } else {
       let mx = maxAbs(down('KeyD', 'ArrowRight') - down('KeyA', 'ArrowLeft'), pad?.moveX ?? 0);
@@ -546,6 +605,12 @@ async function boot(): Promise<void> {
       } else {
         overlay.hidden = true;
       }
+    }
+    if (readoutOn) {
+      const car = game.drivenCar;
+      readout.textContent = car
+        ? `STEER ${game.carInput.steer.toFixed(2)} · THR ${game.carInput.throttle.toFixed(2)} · WHEEL ${((car.steer * 180) / Math.PI).toFixed(1)}° · ${hud.speedKmh} km/h`
+        : `MOVE ${game.moveInput.x.toFixed(2)} / ${game.moveInput.z.toFixed(2)} · on foot · stick ${stick.active ? `${stick.dx.toFixed(2)},${stick.dy.toFixed(2)}` : '—'}`;
     }
     requestAnimationFrame(frame);
   }

@@ -37,6 +37,32 @@ npm run dev        # http://localhost:5173
   adapter — same game, same data. `?scenario=demo` boots into a scripted
   live-gameplay state (used for screenshots).
 
+## What's new in v0.27 — steering for actual thumbs
+
+v0.25's rig proved the steering chain correct for synthetic points
+teleported to full deflection — and a real thumb still couldn't
+drive. The v0.27 rig reproduced it like a human: a thumb mostly
+ROLLS on glass (~24 px of centroid travel, not a 48+ px slide), and
+the old linear map at radius 48 turned that into steerIn 0.50 → **53%
+of the wheel angle** (0.141 rad vs 0.264 rad measured at ~50 km/h;
+speed-normalized yaw ratio 0.64). Fixes (`src/platform/stickMath.ts`):
+
+- **Steer response curve** |s|^0.7 in the input merge — endpoints 0
+  and ±1 exact (full lock and the v0.21 drive metrics untouched),
+  mid-range amplified (0.5 → 0.62, 0.75 → 0.82).
+- **Stick radius 48 → 32 px, deadzone 0.07 → 0.04**, and the stick
+  origin now chases the thumb past the rim instead of pinning.
+- A 24 px roll now reaches raw 0.75 → steerIn 0.82 after the curve
+  (measured post-fix on the rig: steerIn 0.50 → 0.82, speed-normalized
+  yaw ratio 0.64 → 0.89, target ≥0.70).
+
+Also shipped: an **Input readout** toggle in the `?` overlay (live
+STEER / THR / WHEEL° / km/h) and a `window.__mvtInputLog()` pointer
+ring buffer — if a real device still misbehaves, one screenshot of
+that readout shows the actual input values. An audio on/off A/B in
+the rig exonerated the v0.26 sound layer (frame-time medians
+identical, 249.9 vs 250.0 ms on the rig host).
+
 ## What's new in v0.26 — the game has a voice
 
 The v0.25 audit's one GAP was total silence; v0.26 closes it with a
