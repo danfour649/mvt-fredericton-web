@@ -73,6 +73,25 @@ export function spawnPeds(
   return peds;
 }
 
+/**
+ * v0.25: re-anchor a ped onto a (usually different) road — the
+ * pedestrian bubble's recycle step. State resets to a plain walk:
+ * a ped being recycled is by definition far from the player, so any
+ * flee/down state it carried is stale. Placement goes through the
+ * same path placer as spawning, so recycled peds are indistinguishable
+ * from fresh ones (and still flee — updatePed is untouched).
+ */
+export function reanchorPed(ped: Ped, road: Road, rng: () => number): void {
+  ped.road = road;
+  ped.distAlong = road.lengthM * (0.1 + 0.8 * rng());
+  ped.dir = rng() > 0.5 ? 1 : -1;
+  ped.side = rng() > 0.5 ? 1 : -1;
+  ped.state = 'walk';
+  ped.fleeT = 0;
+  ped.downT = 0;
+  placeOnPath(ped);
+}
+
 export interface PedThreat {
   pos: Vec2;
   speed: number;

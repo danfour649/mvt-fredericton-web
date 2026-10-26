@@ -143,6 +143,10 @@ async function boot(): Promise<void> {
   };
   stickZone.addEventListener('pointerup', stickEnd);
   stickZone.addEventListener('pointercancel', stickEnd);
+  // v0.25: if capture is lost without an up/cancel (browser gesture
+  // takeover, element teardown), end the stick too — a stale dx would
+  // otherwise steer forever, or the stick would silently stay dead.
+  stickZone.addEventListener('lostpointercapture', stickEnd);
 
   // Drag-steer: hold anywhere; the car steers toward the thumb's
   // position relative to screen centre (where the car sits).
@@ -168,23 +172,34 @@ async function boot(): Promise<void> {
   };
   dragZone.addEventListener('pointerup', dragEnd);
   dragZone.addEventListener('pointercancel', dragEnd);
+  dragZone.addEventListener('lostpointercapture', dragEnd);
 
   // Hold-buttons (pedals / DRIFT / E) with a visible pressed state.
   const pedal = { gas: false, brk: false };
   let driftTouch = false;
   function holdButton(elm: HTMLElement, on: () => void, off: () => void): void {
+    // v0.25: the button is OWNED by the pointer that pressed it. The
+    // old wiring ended the hold on ANY pointer's up/cancel, so a
+    // second finger tapping the same pedal (or a stray cancel) cut
+    // the throttle while the first thumb was still holding it.
+    let ownerId = -1;
     elm.addEventListener('pointerdown', (e) => {
+      if (ownerId !== -1) return;
       e.preventDefault();
+      ownerId = e.pointerId;
       elm.setPointerCapture(e.pointerId);
       elm.classList.add('pressed');
       on();
     });
-    const end = (): void => {
+    const end = (e: PointerEvent): void => {
+      if (e.pointerId !== ownerId) return;
+      ownerId = -1;
       elm.classList.remove('pressed');
       off();
     };
     elm.addEventListener('pointerup', end);
     elm.addEventListener('pointercancel', end);
+    elm.addEventListener('lostpointercapture', end);
   }
   holdButton(el('btn-e'), () => interact(), () => undefined);
   holdButton(el('btn-drift'), () => { driftTouch = true; }, () => { driftTouch = false; });
@@ -376,9 +391,16 @@ async function boot(): Promise<void> {
 
   // --- loop ---------------------------------------------------------------
   let last = performance.now();
+  // Debug/diagnostics handle: accumulated GAME time (post-clamp dt).
+  // Lets test harnesses measure behaviour per game-second on hosts
+  // whose frame rate differs from real time. Harmless in production.
+  let gameTimeS = 0;
+  (window as unknown as { __mvtTime?: number }).__mvtTime = 0;
   function frame(now: number) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
+    gameTimeS += dt;
+    (window as unknown as { __mvtTime?: number }).__mvtTime = gameTimeS;
 
     gatherInputs();
     game.update(dt);

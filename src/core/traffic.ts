@@ -17,20 +17,31 @@ export interface TrafficCar {
   distAlong: number;
   /** +1 travelling along the path, -1 against it. */
   dir: 1 | -1;
+  /** Live speed (m/s): the game caps this each tick by the car ahead
+   *  (v0.25 follow behaviour); it is the speed the car advances at. */
   speedMps: number;
+  /** Cruise speed for the current road (its speed limit, capped) —
+   *  the ceiling the follow logic caps toward. */
+  baseSpeedMps: number;
   pos: Vec2;
   heading: number;
   stopped: boolean;
 }
 
+/** Cruise speed on a road: its posted limit, capped at 11 m/s city pace. */
+export function cruiseFor(road: Road): number {
+  return Math.min(11, ((road.speedKmh || 40) * 1000) / 3600);
+}
+
 export function spawnTraffic(road: Road, distAlong: number): TrafficCar {
   const dir: 1 | -1 = road.dirFlow.includes('Opposite') ? -1 : 1;
-  const speedMps = Math.min(11, ((road.speedKmh || 40) * 1000) / 3600);
+  const speedMps = cruiseFor(road);
   const car: TrafficCar = {
     road,
     distAlong,
     dir,
     speedMps,
+    baseSpeedMps: speedMps,
     pos: { x: 0, z: 0 },
     heading: 0,
     stopped: false,
@@ -74,6 +85,7 @@ export function updateTraffic(
       const next = pickNextEdge(graph, nodeIdx, car.road, car.heading, rng);
       if (next) {
         car.road = next.road;
+        car.baseSpeedMps = cruiseFor(next.road); // adopt the new road's limit
         if (next.atStart) {
           car.distAlong = 2;
           car.dir = 1;

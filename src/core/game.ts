@@ -11,6 +11,15 @@
  * + rolling traffic at t=0) and a population bubble keeps traffic and
  * parked cars around the player everywhere (see maintainPopulation).
  *
+ * v0.25 — the audit release (docs/AUDIT-v025.md): E-interact resolves
+ * by NEAREST interactable (spawn geometry put a parked car inside
+ * payphone radius — one fixed priority always ate the other action);
+ * traffic follows/brakes behind leaders instead of driving through
+ * them; pedestrians bubble like cars; a cop ram that wrecks the
+ * player's car no longer dereferences the nulled drivenCar (that
+ * crash froze the frame loop); bubble top-up cadence 0.4 s → 0.1 s
+ * with burst 6 so the ≥8 traffic floor holds at every tick.
+ *
  * Feed it inputs, call update(dt), hand buildFrame() to any Renderer.
  * No DOM, no MapLibre, no canvas anywhere in here.
  */
@@ -20,7 +29,7 @@ import { moveCircle, stepCar, type CarInput, type CarState } from './physics';
 import { spawnTraffic, updateTraffic, type TrafficCar } from './traffic';
 import { buildRoadGraph, type RoadGraph } from './routing';
 import { spawnCop, updateCop, type CopCar } from './cops';
-import { spawnPeds, updatePed, nudgePed, type Ped } from './peds';
+import { spawnPeds, updatePed, nudgePed, reanchorPed, type Ped } from './peds';
 import { Wanted } from './wanted';
 import { Wallet, BUSTED_FINE, HOSPITAL_FEE } from './wallet';
 import { MissionRunner, SPAWN_POS, type MissionDef } from './missions';
@@ -86,6 +95,10 @@ export const BUBBLE_R = 220;
 export const TRAFFIC_TARGET = 10;
 export const PARKED_NEAR_R = 150;
 export const PARKED_TARGET = 4;
+/** v0.25: pedestrians bubble too — peds beyond PED_BUBBLE_R are
+ *  re-anchored near the player until PED_TARGET are within range. */
+export const PED_BUBBLE_R = 260;
+export const PED_TARGET = 12;
 const PED_SCORE = 100;
 const THEFT_SCORE = 500;
 const WALK_SPEED = 5.4;
@@ -220,6 +233,11 @@ export class Game {
   /** Junction graph for traffic routing (v0.21). */
   readonly roadGraph: RoadGraph;
   private trafficRng = mulberry32(777);
+  /** v0.25: peds draw from their OWN stream. The ped bubble must not
+   *  consume trafficRng — sharing it couples the two systems through
+   *  the PRNG sequence and measurably perturbed the traffic bubble's
+   *  top-up history (the v0.24 ≥8-within-220 m invariant dipped to 7). */
+  private pedRng = mulberry32(31337);
 
   constructor(world: WorldModel, storage: StorageAdapter) {
     this.world = world;
@@ -388,19 +406,28 @@ export class Game {
    */
   private maintainPopulation(dt: number): void {
     this.bubbleTimer += dt;
-    if (this.bubbleTimer < 0.4) return;
+    // v0.25: 0.1 s cadence (was 0.4 s). The bubble floor (≥8 traffic
+    // within 220 m) is a gameplay guarantee, and at 0.4 s a deficit
+    // could survive a whole tick — measured: the count sat below 8
+    // for 1.7–2.2% of ticks in BOTH v0.24 and v0.25 dynamics, which
+    // made the v0.24 invariant test a coin flip for any build whose
+    // traffic history shifted. At 0.1 s the top-up corrects a dip
+    // before it can persist.
+    if (this.bubbleTimer < 0.1) return;
     this.bubbleTimer = 0;
     const player = this.playerPos;
     const viewMargin = this.camViewM * 1.2 + 30;
     const rng = this.trafficRng;
 
     // Traffic: top the bubble up from the far pool. Usually one car
-    // per tick; up to 3 when a burst has left (at 31 m/s the player
-    // outruns the tail of the bubble faster than 1-per-tick inflow).
+    // per tick; burst up to 6 when a fast crossing has emptied a
+    // whole side at once (v0.25: at 31 m/s the player can outrun 4+
+    // bubble cars between ticks — a burst cap of 3 left a one-tick
+    // hole below the ≥8 floor even at the faster 0.1 s cadence).
     const live = this.cars.filter((c) => c.traffic && !c.wrecked);
     const inBubble = live.filter((c) => c !== this.drivenCar && dist(c.pos, player) <= BUBBLE_R);
     let deficit = TRAFFIC_TARGET - inBubble.length;
-    for (let k = 0; k < 3 && deficit > 0; k++) {
+    for (let k = 0; k < 6 && deficit > 0; k++) {
       const far = live.filter((c) => c !== this.drivenCar && dist(c.pos, player) > BUBBLE_R);
       if (!far.length) break;
       const car = far[Math.floor(rng() * far.length)];
@@ -435,6 +462,51 @@ export class Game {
           const at = kerbPlacement(spot.road, spot.along, rng);
           car.pos = at.pos;
           car.heading = at.heading;
+        }
+      }
+    }
+
+    // Peds (v0.25): before this, the 20 walkers were spawned around
+    // SPAWN_POS and stayed there forever — drive two blocks and the
+    // city was pedestrian-free. Now the far pool is re-anchored onto
+    // roads near the player, a few per tick, until PED_TARGET are
+    // within PED_BUBBLE_R. Recycled spots sit beyond the view margin
+    // like the car spots, so nobody pops in on screen.
+    const nearPeds = this.peds.filter((p) => dist(p.pos, player) <= PED_BUBBLE_R).length;
+    if (nearPeds < PED_TARGET) {
+      const candidates = this.world.roads.filter(
+        (r) => r.lengthM > 50 && roadMinDist(r, player) <= PED_BUBBLE_R - 40,
+      );
+      if (candidates.length) {
+        const farPeds = this.peds.filter((p) => dist(p.pos, player) > PED_BUBBLE_R);
+        let moved = 0;
+        for (const ped of farPeds) {
+          if (nearPeds + moved >= PED_TARGET || moved >= 3) break;
+          // Try sampled roads until one lands the ped inside the
+          // bubble but outside the current view; restore the ped
+          // untouched when nothing qualifies (retry next tick).
+          const saved = {
+            road: ped.road, distAlong: ped.distAlong, dir: ped.dir, side: ped.side,
+            state: ped.state, pos: { ...ped.pos }, heading: ped.heading,
+          };
+          let placed = false;
+          for (let i = 0; i < 24 && !placed; i++) {
+            const road = candidates[Math.floor(this.pedRng() * candidates.length)];
+            reanchorPed(ped, road, this.pedRng);
+            const d = dist(ped.pos, player);
+            if (d >= viewMargin && d <= PED_BUBBLE_R) placed = true;
+          }
+          if (placed) {
+            moved++;
+          } else {
+            ped.road = saved.road;
+            ped.distAlong = saved.distAlong;
+            ped.dir = saved.dir;
+            ped.side = saved.side;
+            ped.state = saved.state;
+            ped.pos = saved.pos;
+            ped.heading = saved.heading;
+          }
         }
       }
     }
@@ -498,15 +570,15 @@ export class Game {
       this.afterMissionEvents();
       return;
     }
-    if (!this.missions.active) {
-      for (const m of this.missions.available()) {
-        if (dist(this.playerPos, m.startPos) <= 7) {
-          this.missions.start(m);
-          this.afterMissionEvents();
-          return;
-        }
-      }
-    }
+    // v0.25: NEAREST interactable wins between cars and payphones.
+    // The old fixed priority (payphone first) silently ate car entry
+    // at the cold start: the spawn kerb's first parked car sits ~4 m
+    // from spawn and the Errand payphone ~4.8 m, so a player standing
+    // at the car pressing E to get in got a mission instead — E felt
+    // broken. The reverse priority would eat the payphone the same
+    // way (the player AT the phone is ~2.6 m from that car). Distance
+    // is the only honest arbiter: whichever you're actually standing
+    // next to is the one E means.
     let best: CarEntity | null = null;
     let bestD = 4;
     for (const car of this.cars) {
@@ -516,6 +588,23 @@ export class Game {
         bestD = d;
         best = car;
       }
+    }
+    let phone: MissionDef | null = null;
+    let phoneD = 7;
+    if (!this.missions.active) {
+      for (const m of this.missions.available()) {
+        const d = dist(this.playerPos, m.startPos);
+        if (d < phoneD) {
+          phoneD = d;
+          phone = m;
+        }
+      }
+    }
+    if (best && (!phone || bestD <= phoneD)) return this.enterCar(best);
+    if (phone) {
+      this.missions.start(phone);
+      this.afterMissionEvents();
+      return;
     }
     if (best) this.enterCar(best);
   }
@@ -766,6 +855,45 @@ export class Game {
         d < 9 &&
         (toPlayer.x * Math.cos(car.heading) + toPlayer.z * Math.sin(car.heading)) / (d || 1) > 0.4;
       car.traffic.stopped = car.trafficStopT > 0 || ahead;
+      // v0.25 follow behaviour: cap this car's speed by whatever is
+      // rolling ahead of it in its lane corridor — another traffic car
+      // or the player's car. Before this, traffic had NO car-ahead
+      // braking at all: a follower drove straight through a stopped
+      // leader (measured overlap −21 m in the audit test) and every
+      // queue collapsed into one point. The cap is a closing-speed
+      // profile: match the leader's speed plus a term that grows
+      // with the bumper gap, so the follower creeps up to ~1.6 m
+      // behind a stopped leader and never touches it. Parked cars
+      // are excluded — they're kerbside (lateral offset ~2 m from
+      // the traffic lane), outside the 1.7 m corridor anyway.
+      if (car.traffic.stopped) {
+        car.traffic.speedMps = 0;
+      } else {
+        let cap = Infinity;
+        const hvx = Math.cos(car.heading);
+        const hvz = Math.sin(car.heading);
+        for (const other of this.cars) {
+          if (other === car || other.wrecked) continue;
+          const isDriven = other === this.drivenCar;
+          if (!isDriven && !other.traffic) continue; // parked: not in the lane
+          const rx = other.pos.x - car.pos.x;
+          const rz = other.pos.z - car.pos.z;
+          const along = rx * hvx + rz * hvz;
+          if (along <= 0 || along > 17) continue;
+          const lateral = Math.abs(rx * -hvz + rz * hvx);
+          if (lateral > 1.7) continue;
+          const leaderSpeed = isDriven
+            ? Math.abs(other.speed)
+            : other.traffic!.stopped || other.trafficStopT > 0
+              ? 0
+              : other.traffic!.speedMps;
+          const bumperGap = along - 4.4;
+          let capHere = leaderSpeed + Math.max(0, bumperGap - 1.6) * 0.85;
+          if (bumperGap <= 0.2) capHere = 0;
+          if (capHere < cap) cap = capHere;
+        }
+        car.traffic.speedMps = Math.max(0, Math.min(car.traffic.baseSpeedMps, cap));
+      }
       updateTraffic(car.traffic, dt, this.roadGraph, this.trafficRng);
       car.pos = { ...car.traffic.pos };
       car.heading = car.traffic.heading;
@@ -928,12 +1056,20 @@ export class Game {
         if (this.drivenCar && d < 3.5) {
           this.ramCooldown = 0.9;
           cop.ramCooldown = 0.9;
-          const rel = Math.max(0, Math.abs(cop.speed) - Math.abs(this.drivenCar.speed)) + Math.abs(cop.speed) * 0.4;
-          this.damageCar(this.drivenCar, 4 + rel * 1.4);
-          this.drivenCar.vel = {
-            x: this.drivenCar.vel.x + cop.vel.x * 0.35,
-            z: this.drivenCar.vel.z + cop.vel.z * 0.35,
-          };
+          const mine = this.drivenCar;
+          const rel = Math.max(0, Math.abs(cop.speed) - Math.abs(mine.speed)) + Math.abs(cop.speed) * 0.4;
+          this.damageCar(mine, 4 + rel * 1.4);
+          // v0.25 fix: damageCar may have WRECKED the car, which
+          // ejects the player and nulls drivenCar — dereferencing it
+          // for the shove threw a TypeError that killed the frame
+          // loop (found by the drive-level audit test). Only shove
+          // a car the player is still sitting in.
+          if (this.drivenCar === mine) {
+            mine.vel = {
+              x: mine.vel.x + cop.vel.x * 0.35,
+              z: mine.vel.z + cop.vel.z * 0.35,
+            };
+          }
           cop.speed *= 0.35;
           cop.vel = { x: cop.vel.x * 0.35, z: cop.vel.z * 0.35 };
           cop.angVel *= 0.4;
