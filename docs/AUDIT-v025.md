@@ -236,12 +236,27 @@ test after FIXED-1 landed.
 
 | Item | Status |
 |------|--------|
-| **The game has NO audio at all** — no engine, no siren, no pager blip, no UI sound; there are no audio assets or code paths anywhere in the repo | **GAP** |
+| **The game has NO audio at all** — no engine, no siren, no pager blip, no UI sound; there are no audio assets or code paths anywhere in the repo | **GAP** → **BUILT in v0.26** |
 
 Recommendation (one line, not built in this release): a small WebAudio
 synth layer in `src/platform/` — oscillator engine hum tied to speed,
 two-tone siren, pager blip — needs zero assets and can hang off the
 same HUD-transition hooks the haptics already use.
+
+**Addendum (v0.26): built as recommended.** `src/platform/audio.ts`
+hangs off exactly those hooks: continuous engine (sawtooth + lowpass,
+pitch = 55 Hz idle rising with the speed ratio per car class),
+two-tone siren (720/960 Hz, gain by nearest-cop distance, 120 m
+range), and skid (band-passed noise on the core's slip signal), plus
+one-shots mirroring the haptics table above (tick, door thunks,
+collision thud on the same health-drop signal + ≥120 ms throttle,
+payphone beeps, mission/district arpeggios, BUSTED/WASTED stings).
+Context is gesture-gated per autoplay policy; sound toggle persists
+as `mvt-audio`. Evidence: 12 unit tests against a fake AudioContext
+(`src/platform/audio.test.ts`) + production rig readings via the
+`window.__mvtAudio()` state seam (engine freq at idle/cruise,
+siren gain vs measured cop distance) — audio itself cannot be
+*heard* headlessly; Daniel's Pixel is the ear check.
 
 ---
 

@@ -37,6 +37,17 @@ npm run dev        # http://localhost:5173
   adapter — same game, same data. `?scenario=demo` boots into a scripted
   live-gameplay state (used for screenshots).
 
+## What's new in v0.26 — the game has a voice
+
+The v0.25 audit's one GAP was total silence; v0.26 closes it with a
+WebAudio synth layer (`src/platform/audio.ts`, zero audio assets):
+engine hum pitched off your speed, a two-tone cop siren that swells
+as they close in, tyre skid on the same slip that lays the marks,
+and one-shots (door thunks, collision thuds, payphone beeps,
+mission stings, BUSTED/WASTED) mirroring the haptics table. Sound
+starts on your first tap/keypress (browser autoplay rules) and has
+its own toggle beside Haptics in the `?` overlay.
+
 ## What's new in v0.24 — the cold start is alive
 
 Through v0.23, opening the plain link could drop you on an **empty
@@ -217,7 +228,7 @@ src/render/maplibre/ Route A adapter (MapLibre statics + sprite overlay)
 src/render/canvas/   Route C adapter (same sprites, plain Canvas 2D)
 src/render/sprites.ts generated top-down sprites shared by both adapters
 src/render/groundwork.ts pavement geometry + skid tracks (both adapters)
-src/platform/        haptics (Vibration API) — platform layer, not core
+src/platform/        haptics (Vibration API) + audio (WebAudio synth) — platform layer, not core
 src/main.ts          boot, input (keyboard/touch/gamepad), HUD wiring
 public/data/         downtown.json (GeoNB extract)
 public/              fredericton.pmtiles (full-city context, from maps-of-nb)

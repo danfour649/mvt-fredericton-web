@@ -16,6 +16,7 @@ import type { StorageAdapter } from './core/save';
 import { MapLibreRenderer } from './render/maplibre/MapLibreRenderer';
 import { CanvasRenderer } from './render/canvas/CanvasRenderer';
 import { Haptics } from './platform/haptics';
+import { GameAudio, type AudioStateSnapshot } from './platform/audio';
 
 const localStorageAdapter: StorageAdapter = {
   read: (key) => {
@@ -79,8 +80,19 @@ async function boot(): Promise<void> {
     : 'stick') as Scheme;
   let hapticsOn = store.get('mvt-haptics') !== 'off';
   const haptics = new Haptics(() => hapticsOn);
+  // Audio (v0.26): WebAudio synth layer, same shape as haptics — the
+  // context stays uncreated until the first user gesture (autoplay
+  // policy), and every event is inferred from state transitions in
+  // the frame loop below.
+  let audioOn = store.get('mvt-audio') !== 'off';
+  const audio = new GameAudio(() => audioOn);
+  (window as unknown as { __mvtAudio?: () => AudioStateSnapshot }).__mvtAudio = () => audio.state();
+  const unlockAudio = (): void => audio.unlock();
+  window.addEventListener('pointerdown', unlockAudio, { passive: true });
+  window.addEventListener('keydown', unlockAudio);
   const interact = (): void => {
     haptics.tick();
+    audio.tick();
     game.pressInteract();
   };
 
@@ -248,6 +260,14 @@ async function boot(): Promise<void> {
     store.set('mvt-haptics', hapticsOn ? 'on' : 'off');
     if (!hapticsOn) haptics.cancel();
   });
+  const audioToggle = el('audio-toggle') as HTMLInputElement;
+  audioToggle.checked = audioOn;
+  audioToggle.addEventListener('change', () => {
+    audioOn = audioToggle.checked;
+    store.set('mvt-audio', audioOn ? 'on' : 'off');
+    if (!audioOn) audio.silence();
+    else audio.refreshMaster();
+  });
 
   // Gamepad (standard mapping). A is E (edge), B is a brake fallback,
   // X/Y handbrake, RT/LT analog pedals, left stick steers.
@@ -369,6 +389,7 @@ async function boot(): Promise<void> {
   let typedBriefFor = '';
   // Haptics transition trackers.
   let prevInCar = false;
+  let prevPhase = 'play';
   let prevStamp = '';
   let prevToast = '';
   let prevBrief = '';
@@ -407,29 +428,72 @@ async function boot(): Promise<void> {
     renderer.sync(game.buildFrame());
 
     const hud = game.hud();
-    // Haptics: fire on observed state transitions (platform layer).
-    if (!prevInCar && hud.inCar) haptics.enterCar();
+    // Haptics + audio: fire on observed state transitions (platform layer).
+    if (!prevInCar && hud.inCar) {
+      haptics.enterCar();
+      audio.enterCar();
+    }
+    if (prevInCar && !hud.inCar && hud.phase === 'play') audio.exitCar();
     prevInCar = hud.inCar;
     if (hud.stamp !== prevStamp) {
-      if (hud.stamp === 'BUSTED') haptics.busted();
-      else if (hud.stamp === 'WASTED') haptics.wasted();
-      else if (prevStamp) haptics.cancel();
+      if (hud.stamp === 'BUSTED') {
+        haptics.busted();
+        audio.busted();
+      } else if (hud.stamp === 'WASTED') {
+        haptics.wasted();
+        audio.wasted();
+      } else if (prevStamp) haptics.cancel();
       prevStamp = hud.stamp;
     }
+    if (hud.phase !== prevPhase) {
+      if (hud.phase === 'district-done') audio.districtComplete();
+      else if (hud.phase === 'gameover') audio.wasted();
+      prevPhase = hud.phase;
+    }
     if (hud.toast !== prevToast) {
-      if (hud.toast.includes(' complete!')) haptics.missionComplete();
+      if (hud.toast.includes(' complete!')) {
+        haptics.missionComplete();
+        audio.missionComplete();
+      }
       prevToast = hud.toast;
     }
-    if (hud.brief && !prevBrief) haptics.payphone();
+    if (hud.brief && !prevBrief) {
+      haptics.payphone();
+      audio.payphone();
+    }
     prevBrief = hud.brief;
     {
       const carDrop = prevCarHealth !== null && hud.carHealth !== null ? prevCarHealth - hud.carHealth : 0;
       const playerDrop = prevPlayerHealth - game.playerHealth;
       const drop = Math.max(carDrop, playerDrop);
-      if (drop >= 2) haptics.collision(Math.min(1, drop / 22));
+      if (drop >= 2) {
+        haptics.collision(Math.min(1, drop / 22));
+        audio.collision(Math.min(1, drop / 22));
+      }
       prevCarHealth = hud.carHealth;
       prevPlayerHealth = game.playerHealth;
     }
+    // Audio continuous layers (engine / siren / skid) for this frame.
+    let nearestCopM: number | null = null;
+    if (hud.stars >= 1) {
+      for (const cop of game.cops) {
+        const d = Math.hypot(cop.pos.x - game.playerPos.x, cop.pos.z - game.playerPos.z);
+        if (nearestCopM === null || d < nearestCopM) nearestCopM = d;
+      }
+    }
+    audio.update(
+      {
+        inCar: hud.inCar,
+        speedKmh: hud.speedKmh,
+        throttle: game.carInput.throttle,
+        carClass: game.drivenCar?.classId ?? 'standard',
+        slipDeg: game.drivenCar?.slipAngle ?? 0,
+        handbrake: !!game.carInput.handbrake,
+        stars: hud.stars,
+        nearestCopM,
+      },
+      dt,
+    );
     const key = JSON.stringify({ ...hud, brief: hud.brief ? '…' : '' });
     if (key !== lastHud) {
       lastHud = key;

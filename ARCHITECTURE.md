@@ -242,6 +242,23 @@ formulae from the desktop game's `tools/osm_import.py`
   complete [40,60,40], BUSTED [90,60,90,60,180], WASTED [200,80,200],
   cancelled when stamps clear. Vibration API only: Android Chrome
   yes, iOS Safari absent → no-op.
+- **Audio (platform layer, `src/platform/audio.ts`, v0.26):** a
+  WebAudio synth layer with zero assets, closing the v0.25 audit's
+  one GAP. The context is created lazily on the first user gesture
+  (autoplay policy) and everything routes through one master gain.
+  Continuous layers are driven per frame from the same state the
+  frame loop already computes: **engine** (sawtooth + lowpass,
+  pitch from the speed ratio against the car's class top speed,
+  idle 55 Hz), **siren** (two-tone 720/960 Hz, gain by distance to
+  the nearest cop, silent at 0 stars or beyond 120 m), **skid**
+  (band-passed noise on the same slip signal that lays skid marks).
+  One-shots mirror the haptics event table at the same call sites
+  (E tick, door thunks, collision thud on the same health-drop
+  signal and ≥120 ms throttle, payphone beeps, mission/district
+  arpeggios, BUSTED/WASTED stings). Sound toggle in the `?` overlay
+  persists as `mvt-audio` (default on); off stops all loops and
+  parks the master gain at 0. Live state is exposed for tests/rigs
+  as `window.__mvtAudio()`.
 - **Persistence:** `SaveStore` (key save-v2) archives { completedMissions,
   districtCleared, bestScore } through the injected `StorageAdapter`.
   Runs themselves are NOT restored (a fresh load = a fresh run, GTA
