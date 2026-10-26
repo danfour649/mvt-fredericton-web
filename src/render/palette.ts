@@ -1,40 +1,51 @@
 /**
- * Shared world palette (v0.23) — used identically by both adapters.
+ * Shared world palette — used identically by both adapters.
  *
- * v0.22's candy set (saturated coral, lilac, mint, a neon-purple slab)
- * is gone. GTA 1's city is brick, slate, concrete, tar and brownstone:
- * muted, warm-grey-biased, with variety carried by texture and shade
- * steps instead of hue fireworks. Building "wall" colour is what shows
- * as the parapet band around each roof piece; roofs themselves are
- * textured (textures.ts roof1–3) in tar/gravel tones.
+ * v0.28 art pass (Daniel: v0.23 "still looks nothing like GTA 1"):
+ * v0.23's muted grit was an overcorrection. GTA 1's city is BOLD flat
+ * colour with hard edges — saturated brick, slate and teal masses on
+ * deep recessive green; dark blue-grey roads with chunky yellow
+ * dashes; warm light stone pavement; and (new with the river) a bold
+ * flat blue for water. Variety still comes from texture and the v0.22
+ * shade steps, but the hues themselves are turned back UP.
  */
 
 /** Parapet/wall band colours per building (index-assigned like before). */
 export const WALL_COLORS = [
-  '#8a6f5c', // brownstone
-  '#7d7468', // weathered concrete
-  '#94573f', // brick
-  '#6f7a72', // slate green-grey
-  '#86755a', // sand stone
-  '#707a84', // slate blue-grey
-  '#7a5a50', // mauve brick
-  '#8d8577', // ashlar stone
+  '#9e5233', // bold brick
+  '#8b8578', // warm concrete
+  '#33655f', // deep teal
+  '#4d6172', // slate blue
+  '#b08d57', // sandstone
+  '#8e3b2f', // dark brick red
+  '#5c7050', // moss slate
+  '#7d5238', // brownstone
 ];
 
-/** Roof texture variant per building (0..2 → roof1..roof3). */
-export function roofVariant(buildingIndex: number, heightM: number): 0 | 1 | 2 {
+/**
+ * Roof texture variant per building: 0..2 → grain roofs (roof1..3),
+ * 3 → the window-grid roof (roofgrid, textures.ts) — the refs'
+ * signature gridded mass, for mid/large buildings (footprint area or
+ * height). Small buildings keep the quiet grain roofs.
+ */
+export function roofVariant(buildingIndex: number, heightM: number, areaM2 = 0): 0 | 1 | 2 | 3 {
+  if (areaM2 >= 260 || heightM >= 14) return 3;
   return ((buildingIndex * 5 + Math.floor(heightM)) % 3) as 0 | 1 | 2;
 }
 
 /** Ground base colour under the grass texture (and MapLibre bg). */
-export const GROUND_BASE = '#3e522c';
+export const GROUND_BASE = '#2e4a24';
 /** PMTiles context buildings (outside the game extract). */
-export const CONTEXT_BUILDING = '#8f8a7d';
+export const CONTEXT_BUILDING = '#7e7768';
 /** Road casing / edge (the dark outline under kerb + asphalt). */
-export const ROAD_CASING = '#33353b';
+export const ROAD_CASING = '#22242a';
 /** Kerb line between casing and asphalt. */
-export const ROAD_KERB = '#c9c4b4';
+export const ROAD_KERB = '#ddd5c0';
 /** Asphalt fallback / centre-line surround tone. */
-export const ROAD_ASPHALT = '#3e4049';
-/** GTA-style dashed centre line: worn yellow. */
-export const CENTRE_LINE = '#d8b93a';
+export const ROAD_ASPHALT = '#343945';
+/** GTA-style dashed centre line: chunky saturated yellow. */
+export const CENTRE_LINE = '#f0c41c';
+/** Water bank: pale outer line along the shoreline (both adapters). */
+export const WATER_BANK = '#d9e9f2';
+/** Water edge: the darker shoreline stroke right at the waterline. */
+export const WATER_EDGE = '#17486e';

@@ -171,8 +171,11 @@ formulae from the desktop game's `tools/osm_import.py`
   drop shadows (footprint offset 1.6 m SE), per-piece roof clutter
   (AC/vents/skylights, seeded by building index), zebra crosswalks at
   junction nodes from the routing graph, and a seeded roadside tree
-  scatter (rejected inside buildings/roads). `render/palette.ts` is
-  the shared grit palette (brick/slate/concrete/tar). The camera is
+  scatter (rejected inside buildings/roads — and, v0.28, water).
+  `render/palette.ts` is the shared palette (v0.28: re-saturated
+  toward the GTA 1 refs — bold brick/slate/teal, chunky yellow dashes,
+  deep green; plus the `roofgrid` window-grid roof texture for
+  mid/large buildings). The camera is
   GTA-1 tight — 50 m across on foot, ≤130 m at top speed — with
   MapLibre zoom math factored into `render/cameraMath.ts`
   (round-trip unit-tested). Sprites gained inked outlines, glass
@@ -280,10 +283,12 @@ that is the point of the seam.
 - The world loader loads all 1,225 buildings in the dataset (all are
   Polygons; non-Polygon geometries would be skipped) and 218 of 219 roads
   (one sub-4 m stub is dropped).
-- No Wolastoq river polygon in the playable dataset (GeoNB extract layers
-  used here don't carry it); the PMTiles wetlands layer stands in as
-  water/marsh in the context area. The river is a data addition, not an
-  architecture change.
+- ~~No Wolastoq river polygon in the playable dataset~~ — FIXED in
+  v0.28: the Saint John River (Wolastoq) is baked from GeoNB's NBHN
+  hydrography (`world.water`, ~1.85 km² in the extract) and drawn by
+  both adapters in layer order with bank lines. (The old "water" was
+  the PMTiles wetlands layer — the regulated marsh inventory, not the
+  river channel — which is why the riverfront rendered as lawn.)
 - Traffic routes through junctions (v0.21), but the graph only joins
   road ENDPOINTS — mid-block crossings where a road's polyline passes
   through another without a shared endpoint are not junctions. Cops

@@ -27,6 +27,7 @@ export type TextureKind =
   | 'roof1'
   | 'roof2'
   | 'roof3'
+  | 'roofgrid'
   | 'grass'
   | 'water';
 
@@ -75,17 +76,21 @@ function valueNoise(px: number, py: number, size: number, cells: number, seed: n
 type RGB = [number, number, number];
 
 const SPECS: Record<TextureKind, { size: number; tileM: number; base: RGB }> = {
-  // Dark blue-grey asphalt, GTA-dark (the refs' roads are near-slate).
-  asphalt: { size: 128, tileM: 4, base: [62, 65, 75] },
-  // Pale stone slabs: tile = 3 m = 2×2 slabs of 1.5 m (gta1-c).
-  pavement: { size: 128, tileM: 3, base: [172, 163, 141] },
-  // Roof variants: tar, dark gravel, warm gravel.
-  roof1: { size: 128, tileM: 6, base: [106, 96, 86] },
-  roof2: { size: 128, tileM: 6, base: [92, 88, 82] },
-  roof3: { size: 128, tileM: 6, base: [114, 100, 84] },
-  // Mottled dark grass — the lime is dead.
-  grass: { size: 128, tileM: 8, base: [74, 102, 55] },
-  water: { size: 128, tileM: 10, base: [43, 92, 118] },
+  // v0.28 art pass: GTA 1 is BOLD — deep blue-grey slate roads…
+  asphalt: { size: 128, tileM: 4, base: [52, 58, 72] },
+  // …warm light stone slabs (tile = 3 m = 2×2 slabs of 1.5 m, gta1-c).
+  pavement: { size: 128, tileM: 3, base: [188, 177, 152] },
+  // Roof grain variants: warm gravel, slate gravel, brown gravel.
+  roof1: { size: 128, tileM: 6, base: [112, 92, 76] },
+  roof2: { size: 128, tileM: 6, base: [86, 90, 98] },
+  roof3: { size: 128, tileM: 6, base: [120, 98, 80] },
+  // Window-grid roof (the refs' signature — gta1-c's gridded mass).
+  // Drawn structurally in generateTexture; base is the mortar tone.
+  roofgrid: { size: 128, tileM: 9, base: [146, 130, 110] },
+  // Deep green, recessive — the city sits ON it, not in it.
+  grass: { size: 128, tileM: 8, base: [50, 82, 36] },
+  // Bold flat GTA blue — lighter than asphalt, unmistakably water.
+  water: { size: 128, tileM: 10, base: [36, 106, 176] },
 };
 
 const SEEDS: Record<TextureKind, number> = {
@@ -94,6 +99,7 @@ const SEEDS: Record<TextureKind, number> = {
   roof1: 303,
   roof2: 404,
   roof3: 505,
+  roofgrid: 808,
   grass: 606,
   water: 707,
 };
@@ -119,6 +125,42 @@ export function generateTexture(kind: TextureKind, seed = SEEDS[kind]): TextureI
       const grain = (hash2(x, y, seed) - 0.5) * 2;
       let f = 1;
 
+      if (kind === 'roofgrid') {
+        // Window grid at GTA frequency: 4×4 cells per 9 m tile (2.25 m
+        // pitch); each cell is a dark glass pane in a stone frame, with
+        // a per-cell tint and the odd lit window. Written as absolute
+        // RGB — this kind is structure, not a shaded base.
+        const cell = size / 4;
+        const cx = Math.floor(x / cell);
+        const cy = Math.floor(y / cell);
+        const lx = x % cell;
+        const ly = y % cell;
+        const tint = hash2(cx, cy, seed + 11);
+        const lit = hash2(cx, cy, seed + 12) > 0.86;
+        const inPane = lx >= 5 && lx < cell - 5 && ly >= 4 && ly < cell - 7;
+        let r: number, g: number, b: number;
+        if (inPane) {
+          // Glass: deep blue-grey, lighter toward the pane's top edge.
+          const glare = 1 + (1 - ly / cell) * 0.25 + grain * 0.05;
+          if (lit) {
+            r = 208 * glare; g = 164 * glare; b = 92 * glare;
+          } else {
+            const t = 0.85 + tint * 0.35;
+            r = 44 * t * glare; g = 62 * t * glare; b = 82 * t * glare;
+          }
+        } else {
+          // Stone frame/mortar between panes.
+          const ff = (0.92 + tint * 0.14) * (1 + grain * 0.05);
+          r = base[0] * ff; g = base[1] * ff; b = base[2] * ff;
+          if (lx < 1.5 || ly < 1.5) { r *= 0.62; g *= 0.62; b *= 0.62; } // cell seam
+        }
+        data[i] = Math.max(0, Math.min(255, Math.round(r)));
+        data[i + 1] = Math.max(0, Math.min(255, Math.round(g)));
+        data[i + 2] = Math.max(0, Math.min(255, Math.round(b)));
+        data[i + 3] = 255;
+        continue;
+      }
+
       if (kind === 'asphalt') {
         f = 1 + grain * 0.07 + (valueNoise(x, y, size, 6, seed + 1) - 0.5) * 0.1;
         if (hash2(x, y, seed + 2) > 0.9965) f += 0.35; // sparse pale speckle
@@ -132,8 +174,8 @@ export function generateTexture(kind: TextureKind, seed = SEEDS[kind]): TextureI
         // Dark grout seams on slab borders (wrap-aligned: slab = size/2).
         const ex = Math.min(x % slab, slab - 1 - (x % slab));
         const ey = Math.min(y % slab, slab - 1 - (y % slab));
-        if (ex < 1.5 || ey < 1.5) f *= 0.55;
-        else if (ex < 3 || ey < 3) f *= 0.82; // bevel catch-light edge
+        if (ex < 1.5 || ey < 1.5) f *= 0.42;
+        else if (ex < 3 || ey < 3) f *= 0.78; // bevel catch-light edge
       } else if (kind === 'roof1' || kind === 'roof2' || kind === 'roof3') {
         f = 1 + grain * 0.09 + (valueNoise(x, y, size, 5, seed + 1) - 0.5) * 0.14;
         // Weather staining: broad darker blotches.
@@ -142,16 +184,20 @@ export function generateTexture(kind: TextureKind, seed = SEEDS[kind]): TextureI
       } else if (kind === 'grass') {
         f =
           1 +
-          grain * 0.08 +
+          grain * 0.13 +
           (valueNoise(x, y, size, 4, seed + 1) - 0.5) * 0.15 +
-          (valueNoise(x, y, size, 11, seed + 2) - 0.5) * 0.08;
+          (valueNoise(x, y, size, 11, seed + 2) - 0.5) * 0.11;
         // Worn patches as a SMOOTH multiplier — the first cut used a
         // hard threshold and tiled into leopard spots.
         const blotch = valueNoise(x, y, size, 5, seed + 6);
         f *= 0.95 + (blotch - 0.5) * 0.14;
       } else {
-        // water — flat-ISH by design, but still mottled, never a fill.
-        f = 1 + grain * 0.1 + (valueNoise(x, y, size, 5, seed + 1) - 0.5) * 0.34;
+        // water — BOLD flat GTA blue (v0.28): the mottling is a whisper
+        // (±8 %) so the river reads as one flat mass of colour; sparse
+        // glints keep it from being a literal flat fill.
+        f = 1 + grain * 0.04 + (valueNoise(x, y, size, 5, seed + 1) - 0.5) * 0.12;
+        if (hash2(x, y, seed + 2) > 0.997) f += 0.55; // sun glints
+        if (hash2(x, y, seed + 3) < 0.002) f -= 0.22; // deep patches
       }
       shadePx(data, i, base, f);
     }
@@ -159,9 +205,9 @@ export function generateTexture(kind: TextureKind, seed = SEEDS[kind]): TextureI
   return { kind, size, data, tileM: spec.tileM, nominalPpm: size / spec.tileM };
 }
 
-/** Generate the full set (7 small bitmaps, once at load). */
+/** Generate the full set (8 small bitmaps, once at load). */
 export function generateAllTextures(): Record<TextureKind, TextureImage> {
-  const kinds: TextureKind[] = ['asphalt', 'pavement', 'roof1', 'roof2', 'roof3', 'grass', 'water'];
+  const kinds: TextureKind[] = ['asphalt', 'pavement', 'roof1', 'roof2', 'roof3', 'roofgrid', 'grass', 'water'];
   const out = {} as Record<TextureKind, TextureImage>;
   for (const k of kinds) out[k] = generateTexture(k);
   return out;

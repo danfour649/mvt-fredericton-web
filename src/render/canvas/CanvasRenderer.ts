@@ -14,6 +14,10 @@
  * world size at any zoom — the one place Route C beats GL patterns),
  * building shadows/parapets/clutter, kerbs, crosswalks, trees, and
  * the shared grit palette (src/render/palette.ts).
+ *
+ * v0.28: the Saint John River (core world.water) drawn between the
+ * grass and the pavement, bold blue with bank lines; palette
+ * re-saturated and window-grid roofs, same as Route A.
  */
 import type { Vec2 } from '../../core/geo';
 import type { WorldModel } from '../../core/world';
@@ -21,9 +25,9 @@ import { buildRoadGraph } from '../../core/routing';
 import type { Renderer, RenderFrame } from '../../core/renderer';
 import { carSprite, personSprite, drawSprite, drawAnchorRing } from '../sprites';
 import { SkidTracks, expandedPolygon } from '../groundwork';
-import { segmentRoof, shadeHex, type RoofPiece } from '../segment';
+import { segmentRoof, shadeHex, polygonArea, type RoofPiece } from '../segment';
 import { generateAllTextures, textureToCanvas, type TextureImage, type TextureKind } from '../textures';
-import { WALL_COLORS, roofVariant, ROAD_CASING, ROAD_KERB, CENTRE_LINE } from '../palette';
+import { WALL_COLORS, roofVariant, ROAD_CASING, ROAD_KERB, CENTRE_LINE, WATER_BANK, WATER_EDGE } from '../palette';
 import { shadowRing, roofClutter, crosswalkStripes, scatterTrees, TREE_FILLS, type ClutterItem, type TreeSpot } from '../dressing';
 
 const MARKER_BG: Record<string, string> = {
@@ -33,7 +37,7 @@ const MARKER_BG: Record<string, string> = {
   exit: '#e0342b',
 };
 
-const ROOF_KINDS: TextureKind[] = ['roof1', 'roof2', 'roof3'];
+const ROOF_KINDS: TextureKind[] = ['roof1', 'roof2', 'roof3', 'roofgrid'];
 
 export class CanvasRenderer implements Renderer {
   readonly name = 'canvas';
@@ -130,6 +134,29 @@ export class CanvasRenderer implements Renderer {
       ctx.translate((Math.random() * 2 - 1) * m, (Math.random() * 2 - 1) * m);
     }
 
+    // Water (v0.28): the Saint John River — bold blue over the grass,
+    // under the pavement; pale bank halo + dark waterline on every
+    // ring (island shores included).
+    const waterPat = this.pattern('water', scale, frame.camera, w, h);
+    for (const wb of this.world.water) {
+      if (wb.maxX < frame.camera.x - viewM.x || wb.minX > frame.camera.x + viewM.x ||
+          wb.maxZ < frame.camera.z - viewM.z || wb.minZ > frame.camera.z + viewM.z) continue;
+      ctx.beginPath();
+      for (const ring of wb.rings) {
+        ring.forEach((p, j) => (j === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
+        ctx.closePath();
+      }
+      ctx.fillStyle = waterPat;
+      ctx.fill('evenodd');
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = WATER_BANK;
+      ctx.lineWidth = Math.max(1, 2.4 * scale);
+      ctx.stroke();
+      ctx.strokeStyle = WATER_EDGE;
+      ctx.lineWidth = Math.max(0.6, 1.0 * scale);
+      ctx.stroke();
+    }
+
     // Paved blocks: building aprons + road pavement ribbons in the
     // GTA slab texture (v0.21 geometry, v0.23 surface).
     const pave = this.pattern('pavement', scale, frame.camera, w, h);
@@ -168,9 +195,9 @@ export class CanvasRenderer implements Renderer {
           ctx.lineWidth = Math.max(1.1, r.widthM * 0.84 * scale);
         } else {
           ctx.strokeStyle = CENTRE_LINE;
-          ctx.globalAlpha = 0.75;
-          ctx.lineWidth = Math.max(0.6, 0.22 * scale);
-          ctx.setLineDash([2.2 * scale, 3 * scale]);
+          ctx.globalAlpha = 0.9;
+          ctx.lineWidth = Math.max(0.6, 0.3 * scale);
+          ctx.setLineDash([2.6 * scale, 2.4 * scale]);
         }
         ctx.stroke();
         ctx.setLineDash([]);
@@ -192,7 +219,7 @@ export class CanvasRenderer implements Renderer {
     for (const t of this.trees) {
       if (!near(t.pos.x, t.pos.z)) continue;
       trace(t.shadow);
-      ctx.fillStyle = 'rgba(14,14,18,0.25)';
+      ctx.fillStyle = 'rgba(14,14,18,0.3)';
       ctx.fill();
       trace(t.ring);
       ctx.fillStyle = TREE_FILLS[t.variant];
@@ -202,7 +229,7 @@ export class CanvasRenderer implements Renderer {
     }
 
     // Building drop shadows (over the ground/roads they fall on).
-    ctx.fillStyle = 'rgba(14,14,18,0.27)';
+    ctx.fillStyle = 'rgba(14,14,18,0.34)';
     for (const b of this.world.buildings) {
       if (!near(b.center.x, b.center.z)) continue;
       trace(shadowRing(b.polygon));
@@ -216,7 +243,7 @@ export class CanvasRenderer implements Renderer {
       if (!near(b.center.x, b.center.z)) return;
       const idx = (i * 7 + Math.floor(b.heightM)) % WALL_COLORS.length;
       const base = WALL_COLORS[idx];
-      const roofKind = ROOF_KINDS[roofVariant(i, b.heightM)];
+      const roofKind = ROOF_KINDS[roofVariant(i, b.heightM, Math.abs(polygonArea(b.polygon)))];
       const pieces = this.pieces[i];
       for (const piece of pieces) {
         trace(piece.ring);
@@ -242,7 +269,7 @@ export class CanvasRenderer implements Renderer {
             piece.shade > 0 ? `rgba(255,255,255,${piece.shade})` : `rgba(0,0,0,${-piece.shade})`;
           ctx.fill();
         }
-        ctx.strokeStyle = 'rgba(242,236,222,0.55)';
+        ctx.strokeStyle = 'rgba(242,236,222,0.7)';
         ctx.lineWidth = 1.1;
         ctx.stroke();
       }
@@ -255,8 +282,8 @@ export class CanvasRenderer implements Renderer {
         ctx.globalAlpha = 1;
       }
       trace(b.polygon);
-      ctx.strokeStyle = '#2c2420';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#1d1712';
+      ctx.lineWidth = 1.6;
       ctx.stroke();
     });
 

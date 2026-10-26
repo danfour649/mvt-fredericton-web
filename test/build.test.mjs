@@ -28,6 +28,18 @@ test('dist ships downtown.json with buildings and roads', () => {
   assert.ok('max_b_elev' in b.properties && 'min_g_elev' in b.properties);
 });
 
+test('dist ships the Saint John River as water features (v0.28)', () => {
+  const p = join(dist, 'data', 'downtown.json');
+  const doc = JSON.parse(readFileSync(p, 'utf8'));
+  assert.ok(doc.water, 'downtown.json has no water collection');
+  assert.ok(doc.water.features.length >= 1, `water features: ${doc.water.features.length}`);
+  for (const f of doc.water.features) {
+    assert.equal(f.properties.NAME1, 'Saint John River');
+    assert.ok(f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon');
+  }
+  assert.equal(doc.meta.counts.water, doc.water.features.length);
+});
+
 test('dist ships the full-city PMTiles archive', () => {
   const p = join(dist, 'fredericton.pmtiles');
   assert.ok(existsSync(p), 'missing dist/fredericton.pmtiles');

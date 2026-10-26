@@ -27,7 +27,7 @@ function channelStats(data: Uint8ClampedArray): { mean: number; min: number; max
   return { mean: sum / n, min, max };
 }
 
-const KINDS: TextureKind[] = ['asphalt', 'pavement', 'roof1', 'roof2', 'roof3', 'grass', 'water'];
+const KINDS: TextureKind[] = ['asphalt', 'pavement', 'roof1', 'roof2', 'roof3', 'roofgrid', 'grass', 'water'];
 
 describe('generateTexture', () => {
   it('is deterministic for every kind', () => {
@@ -81,6 +81,47 @@ describe('generateTexture', () => {
   it('roof variants are visibly distinct from each other', () => {
     const sums = (['roof1', 'roof2', 'roof3'] as const).map((k) => checksum(generateTexture(k).data));
     expect(new Set(sums).size).toBe(3);
+  });
+
+  it('water is BOLD GTA blue: blue channel dominates and stays bright (v0.28)', () => {
+    const t = generateTexture('water');
+    let r = 0, b = 0, n = 0;
+    for (let i = 0; i < t.data.length; i += 4) {
+      r += t.data[i];
+      b += t.data[i + 2];
+      n++;
+    }
+    expect(b / n).toBeGreaterThan(140);
+    expect(b / n).toBeGreaterThan(r / n + 90);
+    // Lighter than the asphalt (the river must pop against the roads).
+    expect(b / n).toBeGreaterThan(channelStats(generateTexture('asphalt').data).mean + 60);
+  });
+
+  it('roofgrid is a real window grid: dark glass panes in a stone frame (v0.28)', () => {
+    const t = generateTexture('roofgrid');
+    const px = (x: number, y: number) => {
+      const i = (y * t.size + x) * 4;
+      return { r: t.data[i], g: t.data[i + 1], b: t.data[i + 2] };
+    };
+    // Cell pitch = size/4 = 32 px. (16,14) sits inside a pane:
+    // glass is blue-dominant; (2,16) is the stone frame: warm + bright.
+    const pane = px(16, 14);
+    expect(pane.b).toBeGreaterThan(pane.r);
+    const frame = px(2, 16);
+    expect(frame.r).toBeGreaterThan(100);
+    expect(frame.r).toBeGreaterThan(frame.b);
+    // A decent share of the tile is glass (the grid actually reads).
+    let glass = 0;
+    let total = 0;
+    for (let y = 0; y < t.size; y += 2) {
+      for (let x = 0; x < t.size; x += 2) {
+        const p = px(x, y);
+        if (p.b > p.r + 8) glass++;
+        total++;
+      }
+    }
+    expect(glass / total).toBeGreaterThan(0.25);
+    expect(glass / total).toBeLessThan(0.8);
   });
 
   it('generateAllTextures returns the full set', () => {

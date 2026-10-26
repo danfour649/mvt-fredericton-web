@@ -12,11 +12,12 @@
  * - CROSSWALKS: zebra stripes across road ends at junction nodes,
  *   reusing the v0.21 routing graph (core/routing.ts) for positions.
  * - STREET TREES: seeded scatter along roadside sidewalks (never on
- *   roads, buildings or water — water isn't in the core model, only
- *   in the PMTiles context, noted honestly), canopy blobs + shadows.
+ *   roads, buildings or water — since v0.28 the Saint John River IS in
+ *   the core model, and riverbank candidates are rejected against it),
+ *   canopy blobs + shadows.
  */
 import type { Vec2 } from '../core/geo';
-import { pointInPolygon, type WorldModel } from '../core/world';
+import { pointInPolygon, pointInWater, type WorldModel } from '../core/world';
 import type { RoadGraph } from '../core/routing';
 import { principalBox, type RoofPiece } from './segment';
 
@@ -237,6 +238,7 @@ export function scatterTrees(world: WorldModel, target = 240): TreeSpot[] {
           z: pos.z + Math.sin(heading + Math.PI / 2) * off * sideSign + (rng() - 0.5) * 1.6,
         };
         if (insideAnyBuilding(world, cand, 1.1)) continue;
+        if (pointInWater(world, cand)) continue;
         let onRoad = false;
         for (const r2 of world.roads) {
           for (let i = 0; i < r2.path.length - 1 && !onRoad; i++) {

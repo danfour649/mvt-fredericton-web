@@ -21,6 +21,10 @@
  *   at junctions, street trees with shadows.
  * - Palette (render/palette.ts): brick/slate/concrete/tar — the
  *   candy set is gone.
+ * - v0.28: the Saint John River joins the game data (core world.water,
+ *   NBHN hydrography) — bold blue fill-pattern + pale bank + dark
+ *   waterline, under the pavement; palette re-saturated toward the
+ *   GTA 1 refs, window-grid roofs for mid/large buildings.
  *
  * Static sources: 'nbtiles' PMTiles (full-city context) + game
  * GeoJSON sources derived from the core world at init. This adapter
@@ -37,9 +41,9 @@ import { buildRoadGraph } from '../../core/routing';
 import type { Renderer, RenderFrame, RenderMarker } from '../../core/renderer';
 import { carSprite, personSprite, drawSprite, drawAnchorRing } from '../sprites';
 import { SkidTracks, ribbonPolygon, expandedPolygon } from '../groundwork';
-import { segmentRoof, shadeHex } from '../segment';
+import { segmentRoof, shadeHex, polygonArea } from '../segment';
 import { generateAllTextures, type TextureKind, type TextureImage } from '../textures';
-import { WALL_COLORS, roofVariant, GROUND_BASE, CONTEXT_BUILDING, ROAD_CASING, ROAD_KERB, CENTRE_LINE } from '../palette';
+import { WALL_COLORS, roofVariant, GROUND_BASE, CONTEXT_BUILDING, ROAD_CASING, ROAD_KERB, CENTRE_LINE, WATER_BANK, WATER_EDGE } from '../palette';
 import { shadowRing, roofClutter, crosswalkStripes, scatterTrees, TREE_FILLS } from '../dressing';
 import { zoomForViewWidth } from '../cameraMath';
 
@@ -52,6 +56,7 @@ const TEX_NAMES: Record<TextureKind, string> = {
   roof1: 'tex-roof1',
   roof2: 'tex-roof2',
   roof3: 'tex-roof3',
+  roofgrid: 'tex-roofgrid',
   grass: 'tex-grass',
   water: 'tex-water',
 };
@@ -139,6 +144,7 @@ export class MapLibreRenderer implements Renderer {
         sources: {
           nbtiles: { type: 'vector', url: 'pmtiles://' + TILES_URL },
           'game-ground': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+          'game-water': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-buildings': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-outlines': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-pavement': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
@@ -154,6 +160,24 @@ export class MapLibreRenderer implements Renderer {
           {
             id: 'ground-pattern', type: 'fill', source: 'game-ground',
             paint: { 'fill-pattern': TEX_NAMES.grass },
+          },
+          {
+            // v0.28: the Saint John River (game data, NBHN) — bold flat
+            // blue over the grass, under everything built. Bank = pale
+            // halo line + darker waterline stroke (widthStops on the
+            // features' widthM = 1).
+            id: 'water-fill', type: 'fill', source: 'game-water',
+            paint: { 'fill-pattern': TEX_NAMES.water },
+          },
+          {
+            id: 'water-bank', type: 'line', source: 'game-water',
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: { 'line-color': WATER_BANK, 'line-width': widthStops(2.6) as never },
+          },
+          {
+            id: 'water-edge', type: 'line', source: 'game-water',
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: { 'line-color': WATER_EDGE, 'line-width': widthStops(1.1) as never },
           },
           {
             id: 'ctx-wetlands', type: 'fill', source: 'nbtiles', 'source-layer': 'wetlands',
@@ -179,7 +203,7 @@ export class MapLibreRenderer implements Renderer {
           },
           {
             id: 'building-shadows', type: 'fill', source: 'game-shadows',
-            paint: { 'fill-color': '#0e0e12', 'fill-opacity': 0.27 },
+            paint: { 'fill-color': '#0e0e12', 'fill-opacity': 0.34 },
           },
           {
             id: 'roads-casing', type: 'line', source: 'game-roads',
@@ -201,9 +225,9 @@ export class MapLibreRenderer implements Renderer {
             layout: { 'line-cap': 'butt', 'line-join': 'round' },
             paint: {
               'line-color': CENTRE_LINE,
-              'line-opacity': 0.75,
-              'line-width': ['interpolate', ['linear'], ['zoom'], 19, 1, 22, 3.2],
-              'line-dasharray': [2, 3],
+              'line-opacity': 0.9,
+              'line-width': ['interpolate', ['linear'], ['zoom'], 19, 1.6, 22, 4.6],
+              'line-dasharray': [2.4, 2.2],
             },
           },
           {
@@ -213,7 +237,7 @@ export class MapLibreRenderer implements Renderer {
           {
             id: 'tree-shadows', type: 'fill', source: 'game-trees',
             filter: ['==', ['get', 'kind'], 'shadow'],
-            paint: { 'fill-color': '#0e0e12', 'fill-opacity': 0.25 },
+            paint: { 'fill-color': '#0e0e12', 'fill-opacity': 0.3 },
           },
           {
             id: 'tree-canopy', type: 'fill', source: 'game-trees',
@@ -241,6 +265,12 @@ export class MapLibreRenderer implements Renderer {
             paint: { 'fill-pattern': TEX_NAMES.roof3 },
           },
           {
+            // v0.28: window-grid roofs for mid/large buildings.
+            id: 'roofs-3', type: 'fill', source: 'game-roofs',
+            filter: ['==', ['get', 'var'], 3],
+            paint: { 'fill-pattern': TEX_NAMES.roofgrid },
+          },
+          {
             // v0.22 segment shade steps, applied over the roof texture.
             id: 'roofs-shade', type: 'fill', source: 'game-roofs',
             filter: ['!=', ['get', 'shade'], 0],
@@ -252,7 +282,7 @@ export class MapLibreRenderer implements Renderer {
           {
             // Parapet rim: the inset roof's light catching edge.
             id: 'roofs-rim', type: 'line', source: 'game-roofs',
-            paint: { 'line-color': 'rgba(242,236,222,0.55)', 'line-width': 1.1 },
+            paint: { 'line-color': 'rgba(242,236,222,0.7)', 'line-width': 1.1 },
           },
           {
             id: 'clutter', type: 'fill', source: 'game-clutter',
@@ -267,7 +297,7 @@ export class MapLibreRenderer implements Renderer {
           },
           {
             id: 'buildings-outline', type: 'line', source: 'game-outlines',
-            paint: { 'line-color': '#2c2420', 'line-width': 0.9 },
+            paint: { 'line-color': '#1d1712', 'line-width': 1.5 },
           },
           {
             // Labels thinned for the tight v0.23 zoom: later minzoom,
@@ -336,6 +366,16 @@ export class MapLibreRenderer implements Renderer {
       ),
     ];
 
+    // Water (v0.28): core rings → GeoJSON polygons (holes preserved).
+    const waterFeatures: Feature[] = world.water.map((w) => ({
+      type: 'Feature',
+      properties: { widthM: 1 },
+      geometry: {
+        type: 'Polygon',
+        coordinates: w.rings.map((ring) => [...ring.map(ll), ll(ring[0])]),
+      },
+    }));
+
     const buildings: Feature[] = [];
     const outlines: Feature[] = [];
     const roofs: Feature[] = [];
@@ -344,7 +384,7 @@ export class MapLibreRenderer implements Renderer {
     world.buildings.forEach((b, i) => {
       const colorIdx = (i * 7 + Math.floor(b.heightM)) % WALL_COLORS.length;
       const base = WALL_COLORS[colorIdx];
-      const variant = roofVariant(i, b.heightM);
+      const variant = roofVariant(i, b.heightM, Math.abs(polygonArea(b.polygon)));
       outlines.push(polyFeature(b.polygon, {}));
       shadows.push(polyFeature(shadowRing(b.polygon), {}));
       // v0.22: giant roofs segment into GTA-scale pieces (segment.ts);
@@ -403,6 +443,7 @@ export class MapLibreRenderer implements Renderer {
       });
     };
     set('game-ground', ground);
+    set('game-water', waterFeatures);
     set('game-pavement', pavement);
     set('game-shadows', shadows);
     set('game-buildings', buildings);

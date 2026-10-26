@@ -33,15 +33,35 @@ export interface Road {
   lengthM: number;
 }
 
+/**
+ * A water body (v0.28): the Saint John River, from GeoNB's NBHN
+ * hydrography (NBHN "Water Bodies"). Before v0.28 the dataset had NO
+ * open water at all — the PMTiles "wetlands" layer is the regulated
+ * marsh/bog inventory, not the river channel — so the riverfront
+ * rendered as lawn. Rings are [outer, ...holes] in core metres.
+ */
+export interface WaterBody {
+  rings: Vec2[][];
+  name: string;
+  /** Outer area minus holes, m². */
+  areaM2: number;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
 export interface WorldModel {
   buildings: Building[];
   roads: Road[];
+  water: WaterBody[];
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
 }
 
 interface DowntownDoc {
   buildings: { features: GeoFeature[] };
   roads: { features: GeoFeature[] };
+  water?: { features: GeoFeature[] };
 }
 
 interface GeoFeature {
@@ -107,6 +127,49 @@ export function loadWorld(doc: unknown): WorldModel {
     });
   }
 
+  const water: WaterBody[] = [];
+  const ringArea = (ring: Vec2[]): number => {
+    let a = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const p = ring[i];
+      const q = ring[(i + 1) % ring.length];
+      a += p.x * q.z - q.x * p.z;
+    }
+    return a / 2;
+  };
+  for (const f of d.water?.features ?? []) {
+    const polys: number[][][][] =
+      f.geometry.type === 'Polygon'
+        ? [f.geometry.coordinates as number[][][]]
+        : f.geometry.type === 'MultiPolygon'
+          ? (f.geometry.coordinates as number[][][][])
+          : [];
+    for (const poly of polys) {
+      const rings: Vec2[][] = [];
+      for (const ring of poly) {
+        if (!ring || ring.length < 4) continue;
+        const pts = ring.slice(0, -1).map(([lng, lat]) => project(lng, lat));
+        if (pts.length >= 3) rings.push(pts);
+      }
+      if (!rings.length) continue;
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const p of rings[0]) {
+        minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+        minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+      }
+      const areaM2 = Math.max(
+        0,
+        Math.abs(ringArea(rings[0])) - rings.slice(1).reduce((s, r) => s + Math.abs(ringArea(r)), 0),
+      );
+      water.push({
+        rings,
+        name: String(f.properties.NAME1 ?? ''),
+        areaM2,
+        minX, maxX, minZ, maxZ,
+      });
+    }
+  }
+
   let bounds = { minX: -Infinity, maxX: Infinity, minZ: -Infinity, maxZ: Infinity };
   if (buildings.length) {
     bounds = {
@@ -116,7 +179,18 @@ export function loadWorld(doc: unknown): WorldModel {
       maxZ: Math.max(...buildings.map((b) => b.maxZ)),
     };
   }
-  return { buildings, roads, bounds };
+  return { buildings, roads, water, bounds };
+}
+
+/** Is `p` on open water? (outer ring, minus holes/islands) */
+export function pointInWater(world: WorldModel, p: Vec2): boolean {
+  for (const w of world.water) {
+    if (p.x < w.minX || p.x > w.maxX || p.z < w.minZ || p.z > w.maxZ) continue;
+    if (!pointInPolygon(p, w.rings[0])) continue;
+    if (w.rings.slice(1).some((h) => pointInPolygon(p, h))) continue;
+    return true;
+  }
+  return false;
 }
 
 /** Point at distance `d` metres along a road (clamped to the ends). */

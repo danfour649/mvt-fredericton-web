@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { WorldModel, Road } from '../core/world';
-import { pointInPolygon } from '../core/world';
+import { pointInPolygon, pointInWater } from '../core/world';
 import { buildRoadGraph } from '../core/routing';
 import { segmentRoof } from './segment';
 import { shadowRing, roofClutter, crosswalkStripes, scatterTrees, SHADOW_OFFSET } from './dressing';
@@ -89,6 +89,7 @@ describe('crosswalks', () => {
   const world: WorldModel = {
     buildings: [],
     roads: [ew, ew2, ns],
+    water: [],
     bounds: { minX: -60, maxX: 60, minZ: 0, maxZ: 60 },
   };
 
@@ -105,7 +106,7 @@ describe('crosswalks', () => {
   });
 
   it('a single dead-end road gets no crosswalk', () => {
-    const lone: WorldModel = { buildings: [], roads: [ew], bounds: world.bounds };
+    const lone: WorldModel = { buildings: [], roads: [ew], water: [], bounds: world.bounds };
     expect(crosswalkStripes(buildRoadGraph(lone))).toEqual([]);
   });
 });
@@ -116,6 +117,7 @@ describe('street trees', () => {
   const world: WorldModel = {
     buildings: [blocker],
     roads: [street],
+    water: [],
     bounds: { minX: -120, maxX: 120, minZ: -20, maxZ: 20 },
   };
 
@@ -139,6 +141,31 @@ describe('street trees', () => {
       expect(t.ring.length).toBeGreaterThanOrEqual(8);
       expect(t.shadow[0].x - t.ring[0].x).toBeCloseTo(SHADOW_OFFSET.x);
       expect(t.shadow[0].z - t.ring[0].z).toBeCloseTo(SHADOW_OFFSET.z);
+    }
+  });
+
+  it('never plants a tree in the water (v0.28: the river is in the model)', () => {
+    // Same street, but the whole south sidewalk strip is river.
+    const riverWorld: WorldModel = {
+      buildings: [],
+      roads: [street],
+      water: [
+        {
+          rings: [[
+            { x: -130, z: 5 }, { x: 130, z: 5 }, { x: 130, z: 45 }, { x: -130, z: 45 },
+          ]],
+          name: 'Saint John River',
+          areaM2: 260 * 40,
+          minX: -130, maxX: 130, minZ: 5, maxZ: 45,
+        },
+      ],
+      bounds: { minX: -120, maxX: 120, minZ: -20, maxZ: 45 },
+    };
+    const trees = scatterTrees(riverWorld);
+    expect(trees.length).toBeGreaterThan(0); // the dry north side still plants
+    for (const t of trees) {
+      expect(pointInWater(riverWorld, t.pos)).toBe(false);
+      expect(t.pos.z).toBeLessThan(5);
     }
   });
 });

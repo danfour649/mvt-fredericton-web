@@ -37,6 +37,34 @@ npm run dev        # http://localhost:5173
   adapter — same game, same data. `?scenario=demo` boots into a scripted
   live-gameplay state (used for screenshots).
 
+## What's new in v0.28 — the river, and a GTA 1 art pass
+
+**#1: "Where's the fucking river?"** Fair cop — it was never in the
+data. Neither source carried open water: the PMTiles stack has exactly
+four layers (buildings, contours, roads, wetlands) and the downtown
+extract had buildings + roads. Worse, the thing painted as "water"
+was GeoNB's *regulated wetlands* inventory (marshes/bogs) — the Saint
+John River's channel is **hydrography**, a dataset nobody had baked.
+v0.28 pulls water bodies from GeoNB's NBHN hydrographic network
+(`GeoNB_DNR_NBHN` layer 13) in `tools/build_downtown.py` — clipped to
+a padded bbox and simplified, since the river polygons are
+province-scale — and loads them into the core world model
+(`world.water`). Both renderers draw the river in layer order (over
+grass, under pavement/roads/buildings) with a pale bank line and a
+dark waterline; ~**1.85 km²** of Saint John River is baked for the
+extract, spanning the southern edge along Waterloo Row /
+Pointe-Sainte-Anne and cutting diagonally past the east end of
+downtown. Trees no longer spawn in it.
+
+**#2: "Still looks nothing like GTA 1."** v0.23's muted grit was an
+overcorrection. The v0.28 palette goes back to the refs
+(`gta1-a/gta1-c`): **bold flat colour, hard edges** — dark blue-grey
+slate asphalt, chunky saturated-yellow centre dashes, warm light
+stone slabs with stronger seams, saturated brick/slate/teal
+parapets, deep recessive green, darker building shadows and heavier
+outlines — plus the refs' signature **window-grid roof texture** for
+mid/large buildings, and a bold flat GTA blue for the river.
+
 ## What's new in v0.27 — steering for actual thumbs
 
 v0.25's rig proved the steering chain correct for synthetic points
@@ -198,8 +226,9 @@ outlines are untouched; 125 of 1,225 buildings segment. See
   inset roofs faking height. Camera is north-up, follows with velocity
   lookahead, and **zooms out as your speed rises**.
 - Downtown dataset (`public/data/downtown.json`, ~0.5 MB): **1,225 GeoNB
-  buildings** with LiDAR heights and **219 roads** with names, lanes,
-  speed limits and traffic-flow direction. Full-city context from
+  buildings** with LiDAR heights, **219 roads** with names, lanes,
+  speed limits and traffic-flow direction, and the **Saint John River**
+  (NBHN water bodies, ~1.85 km² in the extract). Full-city context from
   `public/fredericton.pmtiles` (7.7 MB, the maps-of-nb bake).
 - HUD is game chrome, not a panel: slim top strip (score, multiplier,
   lives, stars, speed), a pager that only appears when it has something
@@ -237,8 +266,8 @@ Stdlib-only; queries GeoNB's public ArcGIS services in a 3×3 grid.
 
 ## Attribution
 
-- **Buildings, roads, LiDAR heights:** © GeoNB / Service New Brunswick,
-  distributed under the
+- **Buildings, roads, LiDAR heights, water bodies (NBHN):** © GeoNB /
+  Service New Brunswick, distributed under the
   [Open Government Licence – New Brunswick](https://www2.gnb.ca/content/gnb/en/departments/government_services.html).
 - **Mission & spawn coordinates:** from MVT Fredericton (desktop), whose map
   frame derives from © OpenStreetMap contributors, licensed under the

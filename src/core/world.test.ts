@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { loadWorld, collideBuildings, pointInPolygon } from './world';
+import { loadWorld, collideBuildings, pointInPolygon, pointInWater } from './world';
 import { project, unproject } from './geo';
+import downtownRaw from '../../public/data/downtown.json?raw';
 
 function squareFeature(cx: number, cz: number, half: number, heightM = 9) {
   // Build a GeoJSON polygon from core-metre corners via unproject.
@@ -53,6 +54,60 @@ describe('loadWorld', () => {
     expect(world.roads).toHaveLength(1);
     expect(world.roads[0].lengthM).toBeCloseTo(100, 0);
     expect(world.roads[0].name).toBe('QUEEN Street');
+  });
+});
+
+describe('water (v0.28)', () => {
+  it('loads water bodies with rings, name and area', () => {
+    const ring: Array<[number, number]> = [
+      [-60, 300], [60, 300], [60, 420], [-60, 420], [-60, 300],
+    ].map(([x, z]) => {
+      const ll = unproject(x, z);
+      return [ll.lng, ll.lat] as [number, number];
+    });
+    const world = loadWorld({
+      buildings: { features: [] },
+      roads: { features: [] },
+      water: {
+        features: [
+          { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: { NAME1: 'Saint John River' } },
+        ],
+      },
+    });
+    expect(world.water).toHaveLength(1);
+    expect(world.water[0].name).toBe('Saint John River');
+    expect(world.water[0].areaM2).toBeCloseTo(120 * 120, -2);
+    expect(pointInWater(world, { x: 0, z: 360 })).toBe(true);
+    expect(pointInWater(world, { x: 0, z: 0 })).toBe(false);
+  });
+
+  it('a doc without water still loads (water = [])', () => {
+    const world = loadWorld({ buildings: { features: [] }, roads: { features: [] } });
+    expect(world.water).toEqual([]);
+  });
+
+  describe('the real downtown dataset', () => {
+    const world = loadWorld(JSON.parse(downtownRaw));
+
+    it('carries the Saint John River at river scale', () => {
+      expect(world.water.length).toBeGreaterThanOrEqual(2);
+      const total = world.water.reduce((s, w) => s + w.areaM2, 0);
+      expect(total).toBeGreaterThan(1_500_000); // ~1.85 km² baked
+      expect(world.water.every((w) => w.name === 'Saint John River')).toBe(true);
+    });
+
+    it('the river spans the southern edge of the extract (eastern reach)', () => {
+      // z = 906 m is the bbox south edge (lat 45.955). Across the
+      // riverfront reach the channel touches that edge continuously.
+      for (let x = 850; x <= 1300; x += 50) {
+        expect(pointInWater(world, { x, z: 906 }), `x=${x}`).toBe(true);
+      }
+      // Mid-channel and the NW reach are water; downtown is not.
+      expect(pointInWater(world, { x: 759, z: 517 })).toBe(true);
+      expect(pointInWater(world, { x: -480, z: -817 })).toBe(true);
+      expect(pointInWater(world, { x: 0, z: 0 })).toBe(false); // City Hall
+      expect(pointInWater(world, { x: 0, z: 28 })).toBe(false); // spawn
+    });
   });
 });
 
