@@ -44,9 +44,9 @@ street**: cars were scattered over the whole extract (the nearest car
 to spawn was 156 m away) and every proof screenshot used the staged
 `?scenario=demo`, which masked it. v0.24 fixes the first frame:
 
-- **Alive spawn:** ≥4 parked cars kerbside within 60 m of spawn and a
+- **Alive spawn:** ≥5 parked cars kerbside within 60 m of spawn and a
   traffic stream already rolling on the spawn street (measured on the
-  real dataset: 0 → 4 parked ≤60 m, 0 → 6 traffic ≤150 m; nearest car
+  real dataset: 0 → 5 parked ≤60 m, 0 → 6 traffic ≤150 m; nearest car
   156 m → 4.7 m).
 - **Population bubble:** wherever you go, ~10 traffic cars are kept
   within 220 m and a few untouched parked cars within 150 m. Cars are

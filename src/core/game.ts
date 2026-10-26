@@ -322,15 +322,17 @@ export class Game {
       .map((road) => ({ road, d: roadMinDist(road, SPAWN_POS) }))
       .sort((a, b) => a.d - b.d);
 
-    // 1. Kerbside at spawn: ≥4 parked cars within 60 m, each placed at
+    // 1. Kerbside at spawn: ≥5 parked cars within 60 m, each placed at
     // its road's closest approach to spawn (staggered along the road
-    // when one street has to carry more than one).
+    // when one street has to carry more than one). Five, tightly
+    // staggered, so the tight 30 m first frame itself shows a full
+    // kerb — three in frame read as luck, five placed is a street.
     let nearParked = 0;
     for (const { road, d } of byDist) {
-      if (d > 60 || nearParked >= 4) break;
+      if (d > 60 || nearParked >= 5) break;
       const at = closestAlong(road, SPAWN_POS);
-      for (const off of [0, 9, -9, 18, -18, 27, -27]) {
-        if (nearParked >= 4) break;
+      for (const off of [0, 8, -8, 16, -16, 24, -24]) {
+        if (nearParked >= 5) break;
         if (tryParked(road, at + off, 60)) nearParked++;
       }
     }
@@ -345,7 +347,7 @@ export class Game {
       const at = closestAlong(road, SPAWN_POS);
       if (nearTraffic === 0) {
         const dir = road.dirFlow.includes('Opposite') ? -1 : 1;
-        for (const back of [30, 70, 110, 150]) {
+        for (const back of [22, 55, 95, 140]) {
           addTraffic(road, at - dir * back);
           nearTraffic++;
         }
