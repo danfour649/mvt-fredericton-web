@@ -199,6 +199,102 @@ body { font-family: system-ui, sans-serif; }
 #ctl-right button.pressed {
   background: rgba(255, 210, 63, 0.7); color: #20180a; transform: translateY(2px);
 }
+/* v0.30: FIRE + weapon-cycle join the right cluster. */
+#ctl-right .stack-row { display: flex; gap: 10px; pointer-events: none; }
+#ctl-right .stack-row > button { pointer-events: auto; }
+#ctl-right button.fire-btn { background: rgba(190, 40, 30, 0.55); }
+#ctl-right button.wpn-btn { width: 48px; height: 48px; font-size: 11px; align-self: center; }
+/* Gear line: weapon/ammo/armour/card, under the top bar. */
+#hud-gear {
+  position: fixed; top: 34px; right: 10px; z-index: 20;
+  font: 800 13px system-ui, sans-serif; color: #ffd23f;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.85); letter-spacing: 0.02em;
+}
+#hud-gear[hidden] { display: none; }
+
+/* Loading screen (v0.30) — the mockup, responsive. Painted by static
+   HTML before the bundle; dismissed by main.ts (or the inline
+   20 s failsafe in index.html). */
+#loading {
+  position: fixed; inset: 0; z-index: 60; background: #101408;
+  opacity: 1; transition: opacity 0.4s ease;
+}
+#loading.done { opacity: 0; pointer-events: none; }
+#loading .load-inner {
+  position: relative; width: min(430px, 100%); height: 100%;
+  margin: 0 auto; overflow: hidden;
+  font-family: "Liberation Sans", "DejaVu Sans", system-ui, sans-serif;
+}
+#loading .load-scene { position: absolute; inset: 0; width: 100%; height: 100%; }
+#loading .load-scrim {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(8,10,8,0.62) 0%, rgba(8,10,8,0) 30%, rgba(8,10,8,0) 52%, rgba(8,10,8,0.78) 82%, rgba(8,10,8,0.78) 100%);
+}
+#loading .load-titleblock { position: absolute; top: 5%; left: 0; width: 100%; text-align: center; }
+#loading .load-presents {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.42em; text-indent: 0.42em;
+  color: #fff; opacity: 0.92; text-shadow: 2px 2px 0 rgba(0,0,0,0.6); white-space: nowrap;
+}
+#loading .load-presents b { color: #ffd23f; }
+#loading .load-title { margin-top: 10px; line-height: 0.92; }
+#loading .load-title .l1 {
+  display: block; font-size: clamp(72px, 27vw, 118px); font-weight: 900; letter-spacing: -2px;
+  color: #fff; -webkit-text-stroke: 3px #14100a; transform: scaleX(0.88);
+  text-shadow: 7px 7px 0 rgba(0,0,0,0.55);
+}
+#loading .load-title .l2 {
+  display: block; font-size: clamp(29px, 10vw, 42px); font-weight: 900; letter-spacing: 0.5px;
+  color: #ffd23f; -webkit-text-stroke: 2px #14100a; transform: scaleX(0.85);
+  text-shadow: 5px 5px 0 rgba(0,0,0,0.55);
+}
+/* The kicker: the mockup clipped its last letter at .22em spacing —
+   v0.30 ships it at .13em / 10.5px so NEW BRUNSWICK fits whole. */
+#loading .load-tagline {
+  margin-top: 12px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.13em; text-indent: 0.13em;
+  color: #fff; text-shadow: 2px 2px 0 rgba(0,0,0,0.65); white-space: nowrap;
+}
+#loading .load-tagline .dot { color: #ffd23f; }
+#loading .load-stamp {
+  position: absolute; top: 29%; right: 5%; transform: rotate(-11deg);
+  background: #e2483d; border: 4px solid #14100a;
+  box-shadow: inset 0 0 0 3px #fff, 6px 6px 0 rgba(0,0,0,0.45);
+  padding: 5px 13px 7px; text-align: center;
+}
+#loading .load-stamp .vword {
+  display: block; font-size: 9px; font-weight: 900; letter-spacing: 0.38em; text-indent: 0.38em; color: #fff;
+}
+#loading .load-stamp .vnum {
+  display: block; font-size: 47px; font-weight: 900; line-height: 1; color: #fff;
+  -webkit-text-stroke: 2px #14100a;
+}
+#loading .load-bottom { position: absolute; left: 18px; right: 18px; bottom: 20px; }
+#loading .loadrow { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+#loading .loadlabel { font-size: 17px; font-weight: 900; letter-spacing: 0.14em; color: #fff; text-shadow: 2px 2px 0 rgba(0,0,0,0.6); }
+#loading .loadlabel .dots { color: #ffd23f; }
+#loading .loadpct { font-size: 17px; font-weight: 900; color: #ffd23f; text-shadow: 2px 2px 0 rgba(0,0,0,0.6); }
+#loading .load-note { font-size: 10px; font-weight: 700; letter-spacing: 0.18em; color: rgba(255,255,255,0.8); margin-bottom: 6px; }
+#loading .load-bar {
+  height: 27px; border: 3px solid #14100a; background: rgba(10,12,10,0.85);
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.25), 5px 5px 0 rgba(0,0,0,0.4);
+}
+#loading .load-fill {
+  height: 100%; width: 0%;
+  background: repeating-linear-gradient(90deg, #ffd23f 0 16px, #c79a12 16px 18px);
+  transition: width 0.25s ease;
+}
+#loading .load-tip {
+  margin-top: 14px; background: rgba(8,12,8,0.93); border: 1.5px solid #2c3a2c; border-radius: 8px;
+  padding: 9px 12px 10px; font-family: ui-monospace, Menlo, monospace; min-height: 64px;
+}
+#loading .load-tip .head { font-size: 10px; letter-spacing: 0.22em; color: #7fb069; margin-bottom: 3px; }
+#loading .load-tip .body { font-size: 14.5px; font-weight: 700; line-height: 1.35; color: #fff; }
+#loading .load-tip .body b { color: #ffd23f; }
+#loading .load-footer {
+  margin-top: 12px; display: flex; justify-content: space-between;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.18em; color: rgba(255,255,255,0.85);
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.7);
+}
+#loading .load-footer .r { color: #ffd23f; }
 /* Buttons scheme (legacy binary layout). */
 #ctl-buttons {
   position: absolute; left: 0; right: 0; bottom: 26px;

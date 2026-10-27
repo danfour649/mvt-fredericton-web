@@ -16,7 +16,7 @@ import type { StorageAdapter } from './core/save';
 import { MapLibreRenderer } from './render/maplibre/MapLibreRenderer';
 import { CanvasRenderer } from './render/canvas/CanvasRenderer';
 import { Haptics } from './platform/haptics';
-import { GameAudio, type AudioStateSnapshot } from './platform/audio';
+import { GameAudio, stationForClass, STATIONS, type AudioStateSnapshot } from './platform/audio';
 import { shapeSteer, stickDeflection } from './platform/stickMath';
 
 const localStorageAdapter: StorageAdapter = {
@@ -44,15 +44,65 @@ function el(id: string): HTMLElement {
 
 const fmt = (n: number) => `$${n.toLocaleString('en-US')}`;
 
+/**
+ * v0.30 loading screen driver: the overlay is static HTML (paints
+ * before this bundle); boot reports REAL progress into it — fetch
+ * bytes against Content-Length, then the build steps — and the
+ * frame loop dismisses it after the first rendered frame (with a
+ * minimum display so the lockup actually reads). The inline script
+ * in index.html carries a 20 s failsafe if boot never gets here.
+ */
+function setLoading(pct: number, note?: string): void {
+  const bar = document.getElementById('load-bar-fill');
+  if (bar) bar.style.width = `${Math.round(Math.max(0, Math.min(1, pct)) * 100)}%`;
+  const pctEl = document.getElementById('load-pct');
+  if (pctEl) pctEl.textContent = `${Math.round(Math.max(0, Math.min(1, pct)) * 100)}%`;
+  if (note) {
+    const n = document.getElementById('load-note');
+    if (n) n.textContent = note;
+  }
+}
+
 async function boot(): Promise<void> {
+  const bootStart = performance.now();
   const container = el('map');
   const params = new URLSearchParams(window.location.search);
   const rendererParam = params.get('renderer');
 
+  setLoading(0.06, 'CALLING THE CITY…');
   const res = await fetch(`${import.meta.env.BASE_URL}data/downtown.json`);
   if (!res.ok) throw new Error(`downtown.json: HTTP ${res.status}`);
-  const world = loadWorld(await res.json());
+  let worldJson: unknown;
+  const declaredLen = Number(res.headers.get('Content-Length') ?? 0);
+  if (res.body && declaredLen > 0) {
+    // Stream the download so the bar tracks real bytes.
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let got = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        got += value.length;
+        setLoading(0.06 + 0.44 * Math.min(1, got / declaredLen), 'DOWNLOADING DOWNTOWN…');
+      }
+    }
+    const all = new Uint8Array(got);
+    let off = 0;
+    for (const c of chunks) {
+      all.set(c, off);
+      off += c.length;
+    }
+    worldJson = JSON.parse(new TextDecoder().decode(all)) as unknown;
+  } else {
+    worldJson = await res.json();
+    setLoading(0.5, 'DOWNLOADING DOWNTOWN…');
+  }
+  setLoading(0.62, 'PAVING THE STREETS…');
+  const world = loadWorld(worldJson as Parameters<typeof loadWorld>[0]);
 
+  setLoading(0.74, 'WAKING THE CITIZENS…');
   const game = new Game(world, localStorageAdapter);
   if (params.get('scenario') === 'demo') game.applyDemoScenario();
   // Screenshot/testing hook: harmless, exposes the running game.
@@ -61,6 +111,7 @@ async function boot(): Promise<void> {
   const renderer: Renderer =
     rendererParam === 'canvas' ? new CanvasRenderer(container) : new MapLibreRenderer(container);
   el('renderer-name').textContent = renderer.name === 'canvas' ? 'Canvas 2D (Route C)' : 'MapLibre (Route A)';
+  setLoading(0.9, 'ROLLING OUT THE MAP…');
   await renderer.init(world);
 
   // --- input ---------------------------------------------------------------
@@ -103,6 +154,8 @@ async function boot(): Promise<void> {
     if (e.code === 'KeyE' && !e.repeat) interact();
     if (e.code === 'KeyR' && !e.repeat) game.pressRestart();
     if (e.code === 'KeyF' && !e.repeat) game.confirmFreeroam();
+    // v0.30: Q cycles weapons (on foot; the core ignores it in a car).
+    if (e.code === 'KeyQ' && !e.repeat) game.cycleWeapon();
     keys.add(e.code);
   });
   window.addEventListener('keyup', (e) => keys.delete(e.code));
@@ -242,6 +295,8 @@ async function boot(): Promise<void> {
   // Hold-buttons (pedals / DRIFT / E) with a visible pressed state.
   const pedal = { gas: false, brk: false };
   let driftTouch = false;
+  // v0.30: touch FIRE hold (on-foot shooting).
+  let fireTouch = false;
   function holdButton(elm: HTMLElement, on: () => void, off: () => void): void {
     // v0.25: the button is OWNED by the pointer that pressed it. The
     // old wiring ended the hold on ANY pointer's up/cancel, so a
@@ -268,6 +323,8 @@ async function boot(): Promise<void> {
   }
   holdButton(el('btn-e'), () => interact(), () => undefined);
   holdButton(el('btn-drift'), () => { driftTouch = true; }, () => { driftTouch = false; });
+  holdButton(el('btn-fire'), () => { fireTouch = true; }, () => { fireTouch = false; });
+  holdButton(el('btn-weapon'), () => game.cycleWeapon(), () => undefined);
   holdButton(el('btn-gas'), () => { pedal.gas = true; }, () => { pedal.gas = false; });
   holdButton(el('btn-brk'), () => { pedal.brk = true; }, () => { pedal.brk = false; });
 
@@ -285,6 +342,7 @@ async function boot(): Promise<void> {
       ownerId = e.pointerId;
       try { btn.setPointerCapture(e.pointerId); } catch { /* older engines */ }
       if (action === 'interact') interact();
+      else if (action === 'weapon') game.cycleWeapon();
       else if (code) keys.add(code);
     });
     const release = (e: PointerEvent) => {
@@ -347,7 +405,8 @@ async function boot(): Promise<void> {
   // X/Y handbrake, RT/LT analog pedals, left stick steers.
   const padSeen = new Set<string>();
   let padAPrev = false;
-  interface PadState { steer: number; throttle: number; brake: number; handbrake: boolean; moveX: number; moveZ: number }
+  let padYPrev = false;
+  interface PadState { steer: number; throttle: number; brake: number; handbrake: boolean; fire: boolean; moveX: number; moveZ: number }
   function pollPad(): PadState | null {
     const pads = navigator.getGamepads?.() ?? [];
     for (const p of pads) {
@@ -360,16 +419,23 @@ async function boot(): Promise<void> {
       const aPressed = !!p.buttons[0]?.pressed;
       if (aPressed && !padAPrev) interact();
       padAPrev = aPressed;
+      // v0.30: Y cycles weapons (it was a second handbrake before —
+      // X still is); RT/RB fire on foot (RT stays the pedal in a car).
+      const yPressed = !!p.buttons[3]?.pressed;
+      if (yPressed && !padYPrev) game.cycleWeapon();
+      padYPrev = yPressed;
       return {
         steer: dz(p.axes[0] ?? 0),
         throttle: p.buttons[7]?.value ?? 0,
         brake: Math.max(p.buttons[6]?.value ?? 0, p.buttons[1]?.pressed ? 1 : 0),
-        handbrake: !!(p.buttons[2]?.pressed || p.buttons[3]?.pressed),
+        handbrake: !!p.buttons[2]?.pressed,
+        fire: (p.buttons[7]?.value ?? 0) > 0.3 || !!p.buttons[5]?.pressed,
         moveX: dz(p.axes[0] ?? 0),
         moveZ: dz(p.axes[1] ?? 0),
       };
     }
     padAPrev = false;
+    padYPrev = false;
     return null;
   }
 
@@ -418,6 +484,7 @@ async function boot(): Promise<void> {
       // move; the mid-range a thumb actually reaches is amplified.
       game.carInput = { throttle, steer: shapeSteer(steer), handbrake };
       game.moveInput = { x: 0, z: 0 };
+      game.fireHeld = false; // no drive-by shooting — GTA 1 rules
     } else {
       let mx = maxAbs(down('KeyD', 'ArrowRight') - down('KeyA', 'ArrowLeft'), pad?.moveX ?? 0);
       let mz = maxAbs(down('KeyS', 'ArrowDown') - down('KeyW', 'ArrowUp'), pad?.moveZ ?? 0);
@@ -437,6 +504,9 @@ async function boot(): Promise<void> {
       }
       game.moveInput = { x: mx, z: mz };
       game.carInput = { throttle: 0, steer: 0 };
+      // v0.30: FIRE on foot — Space/F keys, the touch FIRE button,
+      // or the gamepad trigger. (In a car Space stays handbrake.)
+      game.fireHeld = keys.has('Space') || keys.has('KeyF') || fireTouch || !!pad?.fire;
     }
   }
 
@@ -462,6 +532,7 @@ async function boot(): Promise<void> {
   const hudObjective = el('hud-objective');
   const hudTimer = el('hud-timer');
   const hudToast = el('hud-toast');
+  const hudGear = el('hud-gear');
   const stamp = el('stamp');
   const overlay = el('overlay');
   const overlayTitle = el('overlay-title');
@@ -477,6 +548,13 @@ async function boot(): Promise<void> {
   let prevBrief = '';
   let prevCarHealth: number | null = null;
   let prevPlayerHealth = 100;
+  // v0.30 audio event counters + radio station tracker.
+  let prevShots = 0;
+  let prevExplosions = 0;
+  let prevSplashes = 0;
+  let prevPickupsTaken = 0;
+  let prevFrenzyStarts = 0;
+  let prevStation = -1;
 
   // Pager brief typing effect.
   let typeTimer = 0;
@@ -493,6 +571,7 @@ async function boot(): Promise<void> {
   }
 
   // --- loop ---------------------------------------------------------------
+  let bootedFlag = false;
   let last = performance.now();
   // Debug/diagnostics handle: accumulated GAME time (post-clamp dt).
   // Lets test harnesses measure behaviour per game-second on hosts
@@ -508,6 +587,22 @@ async function boot(): Promise<void> {
     gatherInputs();
     game.update(dt);
     renderer.sync(game.buildFrame());
+
+    // v0.30: the first rendered frame dismisses the loading screen
+    // (after a minimum display so the lockup reads as a splash).
+    if (!bootedFlag) {
+      bootedFlag = true;
+      (window as unknown as { __mvtBooted?: boolean }).__mvtBooted = true;
+      const wait = Math.max(0, 1200 - (performance.now() - bootStart));
+      window.setTimeout(() => {
+        setLoading(1, 'GO!');
+        const l = document.getElementById('loading');
+        if (l) {
+          l.classList.add('done');
+          window.setTimeout(() => l.remove(), 500);
+        }
+      }, wait);
+    }
 
     const hud = game.hud();
     // Haptics + audio: fire on observed state transitions (platform layer).
@@ -555,13 +650,32 @@ async function boot(): Promise<void> {
       prevCarHealth = hud.carHealth;
       prevPlayerHealth = game.playerHealth;
     }
-    // Audio continuous layers (engine / siren / skid) for this frame.
+    // v0.30 one-shot audio from HUD counters (the core counts; the
+    // platform layer voices).
+    if (hud.shotsFired > prevShots) audio.shot(hud.weaponId);
+    prevShots = hud.shotsFired;
+    if (hud.explosions > prevExplosions) audio.explosion();
+    prevExplosions = hud.explosions;
+    if (hud.splashes > prevSplashes) audio.splash();
+    prevSplashes = hud.splashes;
+    if (hud.pickupsTaken > prevPickupsTaken) audio.pickup();
+    prevPickupsTaken = hud.pickupsTaken;
+    if (hud.frenzyStarts > prevFrenzyStarts) audio.frenzyStart();
+    prevFrenzyStarts = hud.frenzyStarts;
+    // Audio continuous layers (engine / siren / skid / radio).
     let nearestCopM: number | null = null;
     if (hud.stars >= 1) {
       for (const cop of game.cops) {
         const d = Math.hypot(cop.pos.x - game.playerPos.x, cop.pos.z - game.playerPos.z);
         if (nearestCopM === null || d < nearestCopM) nearestCopM = d;
       }
+    }
+    // Radio: station follows the car class; entering a car (or a
+    // different class) announces it on the toast line.
+    const station = hud.inCar ? stationForClass(hud.carClass) : -1;
+    if (station !== prevStation) {
+      if (station >= 0) hudToast.textContent = `📻 ${STATIONS[station].name}`;
+      prevStation = station;
     }
     audio.update(
       {
@@ -573,6 +687,7 @@ async function boot(): Promise<void> {
         handbrake: !!game.carInput.handbrake,
         stars: hud.stars,
         nearestCopM,
+        radioStation: station,
       },
       dt,
     );
@@ -605,6 +720,19 @@ async function boot(): Promise<void> {
         hudTimer.hidden = true;
       }
       hudToast.textContent = hud.toast;
+      // Gear line (v0.30): weapon + ammo on foot, armour/card always.
+      {
+        const bits = [
+          hud.inCar
+            ? ''
+            : `${hud.weaponId === 'fists' ? '👊' : '🔫'} ${hud.weaponName}${hud.ammo !== null ? ` · ${hud.ammo}` : ''}`,
+          hud.armour > 0 ? `🛡 ${hud.armour}` : '',
+          hud.jailCard ? '🃏 JAIL CARD' : '',
+          hud.frenzy ? `💀 ${hud.frenzy.have}/${hud.frenzy.need}` : '',
+        ].filter(Boolean);
+        hudGear.textContent = bits.join('  ');
+        hudGear.hidden = bits.length === 0;
+      }
       // Stamp.
       if (hud.stamp) {
         stamp.hidden = false;
@@ -641,6 +769,9 @@ async function boot(): Promise<void> {
 }
 
 boot().catch((err: unknown) => {
+  // Never die behind the loading screen.
+  const l = document.getElementById('loading');
+  if (l) l.remove();
   el('hud-toast').textContent = `Failed to load: ${err instanceof Error ? err.message : String(err)}`;
   console.error(err);
 });

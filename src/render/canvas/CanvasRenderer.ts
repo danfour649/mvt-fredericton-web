@@ -24,6 +24,7 @@ import type { WorldModel } from '../../core/world';
 import { buildRoadGraph } from '../../core/routing';
 import type { Renderer, RenderFrame } from '../../core/renderer';
 import { carSprite, personSprite, drawSprite, drawAnchorRing, walkFrame, hairFor, PLAYER_HAIR } from '../sprites';
+import { drawScorches, drawEffects, drawPickup } from '../effects';
 import { SkidTracks, expandedPolygon } from '../groundwork';
 import { segmentRoof, shadeHex, polygonArea, type RoofPiece } from '../segment';
 import { generateAllTextures, textureToCanvas, type TextureImage, type TextureKind } from '../textures';
@@ -35,6 +36,8 @@ const MARKER_BG: Record<string, string> = {
   objective: '#f5b301',
   respray: '#2266cc',
   exit: '#e0342b',
+  chopshop: '#8a5a1d',
+  vehicle: '#7a3ea1',
 };
 
 const ROOF_KINDS: TextureKind[] = ['roof1', 'roof2', 'roof3', 'roofgrid'];
@@ -290,6 +293,9 @@ export class CanvasRenderer implements Renderer {
     const t = frame.timeSec;
     const lightPhase = (Math.floor(t * 2.6) % 2) as 0 | 1;
 
+    // v0.30: explosion scorch marks, under everything dynamic.
+    drawScorches(ctx, frame.scorches, (p) => ({ x: sx(p.x), y: sy(p.z) }), scale);
+
     // Skid marks under the cars.
     this.skids.update(frame.entities, t);
     this.skids.draw(ctx, (p) => ({ x: sx(p.x), y: sy(p.z) }), 0.3 * scale, t);
@@ -326,9 +332,13 @@ export class CanvasRenderer implements Renderer {
           px, py, scale, e.heading, 10,
         );
       }
+      else if (e.kind === 'pickup') drawPickup(ctx, e, px, py, scale, t);
       else if (e.kind === 'car-cop') drawSprite(ctx, carSprite(e.color, { police: true, lightPhase }), px, py, scale, e.heading);
-      else drawSprite(ctx, carSprite(e.color, { wrecked: e.wrecked, reverseLights: !!e.reversing }), px, py, scale, e.heading);
+      else drawSprite(ctx, carSprite(e.color, { wrecked: e.wrecked, reverseLights: !!e.reversing, body: e.bodyType }), px, py, scale, e.heading);
     }
+
+    // v0.30: transient effects over the entities.
+    drawEffects(ctx, frame.effects, (p) => ({ x: sx(p.x), y: sy(p.z) }), scale, t);
 
     // Markers: screen-pixel badges.
     for (const m of frame.markers) {

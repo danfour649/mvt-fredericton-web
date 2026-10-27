@@ -40,6 +40,7 @@ import type { WorldModel } from '../../core/world';
 import { buildRoadGraph } from '../../core/routing';
 import type { Renderer, RenderFrame, RenderMarker } from '../../core/renderer';
 import { carSprite, personSprite, drawSprite, drawAnchorRing, walkFrame, hairFor, PLAYER_HAIR } from '../sprites';
+import { drawScorches, drawEffects, drawPickup } from '../effects';
 import { SkidTracks, ribbonPolygon, expandedPolygon } from '../groundwork';
 import { segmentRoof, shadeHex, polygonArea } from '../segment';
 import { generateAllTextures, type TextureKind, type TextureImage } from '../textures';
@@ -123,6 +124,8 @@ const MARKER_STYLES: Record<RenderMarker['kind'], { bg: string; fg: string }> = 
   objective: { bg: '#f5b301', fg: '#20180a' },
   respray: { bg: '#2266cc', fg: '#ffffff' },
   exit: { bg: '#e0342b', fg: '#ffffff' },
+  chopshop: { bg: '#8a5a1d', fg: '#ffffff' },
+  vehicle: { bg: '#7a3ea1', fg: '#ffffff' },
 };
 
 export class MapLibreRenderer implements Renderer {
@@ -530,6 +533,9 @@ export class MapLibreRenderer implements Renderer {
       ctx.setLineDash([]);
     }
 
+    // v0.30: explosion scorch marks, under everything dynamic.
+    drawScorches(ctx, frame.scorches, (p) => this.projectPx(p), this.ppmAt(frame.camera));
+
     // Skid marks (under the cars that made them).
     this.skids.update(frame.entities, t);
     this.skids.draw(ctx, (p) => this.projectPx(p), 0.3 * this.ppmAt(frame.camera), t);
@@ -564,12 +570,17 @@ export class MapLibreRenderer implements Renderer {
           }),
           p.x, p.y, ppm, e.heading, 10,
         );
+      } else if (e.kind === 'pickup') {
+        drawPickup(ctx, e, p.x, p.y, ppm, t);
       } else if (e.kind === 'car-cop') {
         drawSprite(ctx, carSprite(e.color, { police: true, lightPhase }), p.x, p.y, ppm, e.heading);
       } else {
-        drawSprite(ctx, carSprite(e.color, { wrecked: e.wrecked, reverseLights: !!e.reversing }), p.x, p.y, ppm, e.heading);
+        drawSprite(ctx, carSprite(e.color, { wrecked: e.wrecked, reverseLights: !!e.reversing, body: e.bodyType }), p.x, p.y, ppm, e.heading);
       }
     }
+
+    // v0.30: transient effects over the entities.
+    drawEffects(ctx, frame.effects, (p) => this.projectPx(p), this.ppmAt(frame.camera), t);
 
     // Markers: SCREEN-pixel badges with pulse — never metre rings.
     for (const m of frame.markers) {

@@ -53,13 +53,19 @@ function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: n
 
 const PPM = 44; // sprite resolution, px per metre
 
-export function carSprite(color: string, opts: { police?: boolean; wrecked?: boolean; lightPhase?: 0 | 1; reverseLights?: boolean } = {}): Sprite {
-  const key = `car|${color}|${opts.police ? 'p' + (opts.lightPhase ?? 0) : ''}|${opts.wrecked ? 'w' : ''}|${opts.reverseLights ? 'R' : ''}`;
+export type CarBody = 'car' | 'taxi' | 'van' | 'pickup';
+
+export function carSprite(color: string, opts: { police?: boolean; wrecked?: boolean; lightPhase?: 0 | 1; reverseLights?: boolean; body?: CarBody } = {}): Sprite {
+  const bodyKind: CarBody = opts.body ?? 'car';
+  const key = `car|${color}|${opts.police ? 'p' + (opts.lightPhase ?? 0) : ''}|${opts.wrecked ? 'w' : ''}|${opts.reverseLights ? 'R' : ''}|${bodyKind}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
-  const W = Math.round(CAR_LEN * PPM);
-  const H = Math.round(CAR_WID * PPM);
+  // v0.30 body variety: vans and pickups run a touch longer/wider.
+  const lenM = bodyKind === 'van' ? 5.2 : bodyKind === 'pickup' ? 5.0 : CAR_LEN;
+  const widM = bodyKind === 'van' ? 2.15 : bodyKind === 'pickup' ? 2.0 : CAR_WID;
+  const W = Math.round(lenM * PPM);
+  const H = Math.round(widM * PPM);
   const [c, ctx] = canvas(W, H);
   const body = opts.wrecked ? '#3a3d40' : color;
 
@@ -88,6 +94,35 @@ export function carSprite(color: string, opts: { police?: boolean; wrecked?: boo
   ctx.fillStyle = 'rgba(0,0,0,0.10)';
   rr(ctx, W * 0.03, 5, W * 0.2, H - 10, 7);
   ctx.fill();
+  if (bodyKind === 'van') {
+    // Panel-van cargo box over the rear two-thirds: flat sides,
+    // panel seams, no rear glass.
+    ctx.fillStyle = shade(body, 0.94);
+    rr(ctx, W * 0.02, 4, W * 0.52, H - 8, 6);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(10,10,14,0.4)';
+    ctx.lineWidth = 1.6;
+    for (const fx of [0.18, 0.34, 0.5]) {
+      ctx.beginPath();
+      ctx.moveTo(W * fx, 6);
+      ctx.lineTo(W * fx, H - 6);
+      ctx.stroke();
+    }
+  }
+  if (bodyKind === 'pickup') {
+    // Open bed behind the cab: dark floor, rail lines.
+    ctx.fillStyle = opts.wrecked ? '#2c2e30' : '#26282d';
+    rr(ctx, W * 0.03, H * 0.09, W * 0.32, H * 0.82, 4);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+    ctx.lineWidth = 1.4;
+    for (const fy of [0.3, 0.5, 0.7]) {
+      ctx.beginPath();
+      ctx.moveTo(W * 0.05, H * fy);
+      ctx.lineTo(W * 0.33, H * fy);
+      ctx.stroke();
+    }
+  }
   if (opts.police) {
     // Navy side bands.
     ctx.fillStyle = '#1d2f57';
@@ -135,6 +170,24 @@ export function carSprite(color: string, opts: { police?: boolean; wrecked?: boo
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = 'rgba(10,10,14,0.35)';
   ctx.stroke();
+  if (bodyKind === 'taxi' && !opts.wrecked) {
+    // The roof sign — the whole point of a taxi sprite.
+    ctx.fillStyle = '#ffd23f';
+    rr(ctx, W * 0.415, H * 0.3, W * 0.1, H * 0.4, 3);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(10,10,14,0.6)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.fillStyle = '#191a1e';
+    ctx.font = `bold ${Math.round(H * 0.17)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.save();
+    ctx.translate(W * 0.465, H * 0.5);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('TAXI', 0, 0);
+    ctx.restore();
+  }
   if (opts.police) {
     // Lightbar on the roof front: red/blue halves, phase swaps them.
     const phase = opts.lightPhase ?? 0;
@@ -190,7 +243,7 @@ export function carSprite(color: string, opts: { police?: boolean; wrecked?: boo
     ctx.stroke();
   }
 
-  const sprite = { img: c, wM: CAR_LEN, hM: CAR_WID };
+  const sprite = { img: c, wM: lenM, hM: widM };
   cache.set(key, sprite);
   return sprite;
 }

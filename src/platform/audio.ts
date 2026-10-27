@@ -74,6 +74,48 @@ export function skidGainFor(slipDeg: number, speedKmh: number, handbrake: boolea
 }
 
 // ---------------------------------------------------------------------------
+// Radio (v0.30) — procedural stations, zero audio assets
+// ---------------------------------------------------------------------------
+
+export interface RadioStation {
+  name: string;
+  bpm: number;
+  /** 16 eighth-note steps of semitone offsets from A1 (55 Hz); -1 = rest. */
+  bass: number[];
+  /** Arp semitone offsets, played on alternate steps. */
+  arp: number[];
+  wave: OscillatorType;
+}
+
+export const STATIONS: RadioStation[] = [
+  {
+    name: 'Queen City Radio 98.7',
+    bpm: 104,
+    bass: [0, -1, 0, -1, 3, -1, 0, -1, 5, -1, 3, -1, 0, -1, -2, -1],
+    arp: [12, 15, 19, 15, 12, 15, 19, 22],
+    wave: 'triangle',
+  },
+  {
+    name: 'Velocity FM 103.3',
+    bpm: 132,
+    bass: [0, 0, -1, 0, 0, -1, 0, 3, 0, 0, -1, 0, 5, 3, 2, -1],
+    arp: [24, 19, 15, 19, 24, 19, 15, 12],
+    wave: 'sawtooth',
+  },
+];
+
+/** Station index by vehicle class: fast cars get the fast station. */
+export function stationForClass(classId: string | null | undefined): number {
+  if (!classId) return -1;
+  return classId === 'fast' ? 1 : 0;
+}
+
+/** Semitone offset → frequency from a root. */
+export function noteHz(rootHz: number, semitones: number): number {
+  return rootHz * Math.pow(2, semitones / 12);
+}
+
+// ---------------------------------------------------------------------------
 // Engine
 // ---------------------------------------------------------------------------
 
@@ -87,6 +129,8 @@ export interface AudioUpdateState {
   stars: number;
   /** Distance to the nearest cop in metres, or null when there are none. */
   nearestCopM: number | null;
+  /** v0.30: radio station index (see STATIONS), or -1 for off. */
+  radioStation?: number;
 }
 
 export interface AudioStateSnapshot {
@@ -101,6 +145,10 @@ export interface AudioStateSnapshot {
   sirenGain: number;
   sirenToneHz: number;
   skidGain: number;
+  /** v0.30: station index currently sequenced (-1 = radio off). */
+  radioStation: number;
+  /** v0.30: current sequencer step 0..15. */
+  radioStep: number;
 }
 
 type CtxFactory = () => AudioContext | null;
@@ -154,6 +202,11 @@ export class GameAudio {
   private curSirenTone = 0;
   private sirenPhase = 0;
   private curSkidGain = 0;
+
+  // v0.30 radio sequencer state.
+  private radioStep = 0;
+  private radioAcc = 0;
+  private curStation = -1;
 
   private lastCollisionAt = 0;
 
@@ -245,6 +298,8 @@ export class GameAudio {
       sirenGain: Math.round(this.curSirenGain * 1000) / 1000,
       sirenToneHz: this.curSirenTone,
       skidGain: Math.round(this.curSkidGain * 1000) / 1000,
+      radioStation: this.curStation,
+      radioStep: this.radioStep,
     };
   }
 
@@ -322,6 +377,40 @@ export class GameAudio {
       try {
         this.skid.gain.gain.setTargetAtTime(0, t, 0.03);
       } catch { /* no-op */ }
+    }
+
+    // Radio (v0.30): a 16-step eighth-note sequencer, scheduled as
+    // one-shot notes (so silence()/toggle-off needs no bookkeeping —
+    // the master gain parks and the sequencer stops advancing).
+    const wantStation = s.radioStation ?? -1;
+    if (s.inCar && wantStation >= 0 && wantStation < STATIONS.length) {
+      if (wantStation !== this.curStation) {
+        this.curStation = wantStation;
+        this.radioStep = 0;
+        this.radioAcc = 0;
+      }
+      const st = STATIONS[this.curStation];
+      const stepDur = 60 / st.bpm / 2;
+      this.radioAcc += dt;
+      while (this.radioAcc >= stepDur) {
+        this.radioAcc -= stepDur;
+        const step = this.radioStep;
+        this.radioStep = (this.radioStep + 1) % 16;
+        const bassNote = st.bass[step];
+        if (bassNote >= 0) {
+          this.tone({ type: st.wave, f0: noteHz(55, bassNote), dur: stepDur * 0.92, gain: 0.13 });
+        }
+        if (step % 2 === 0) {
+          const arpNote = st.arp[(step / 2) % st.arp.length];
+          this.tone({ type: 'triangle', f0: noteHz(55, arpNote), dur: stepDur * 0.8, gain: 0.045 });
+        } else {
+          // Hat tick on the off-steps.
+          this.noiseHit({ dur: 0.03, gain: 0.035, freq: 7000 });
+        }
+      }
+    } else {
+      this.curStation = -1;
+      this.radioAcc = 0;
     }
   }
 
@@ -521,5 +610,55 @@ export class GameAudio {
   wasted(): void {
     this.tone({ type: 'sine', f0: 220, f1: 38, dur: 0.95, gain: 0.17 });
     this.tone({ type: 'triangle', f0: 110, f1: 30, dur: 0.95, gain: 0.1 });
+  }
+
+  // --- v0.30 combat / world one-shots ---------------------------------------
+
+  /** A shot, voiced per weapon. The MG fires ~11×/s — kept short. */
+  shot(weaponId: string): void {
+    switch (weaponId) {
+      case 'mg':
+        this.noiseHit({ dur: 0.05, gain: 0.2, freq: 2300 });
+        this.tone({ type: 'square', f0: 170, f1: 70, dur: 0.045, gain: 0.06 });
+        break;
+      case 'rocket':
+        this.noiseHit({ dur: 0.5, gain: 0.3, freq: 900 });
+        this.tone({ type: 'sawtooth', f0: 95, f1: 42, dur: 0.5, gain: 0.14 });
+        break;
+      case 'flame':
+        this.noiseHit({ dur: 0.11, gain: 0.13, freq: 850 });
+        break;
+      case 'fists':
+        this.noiseHit({ dur: 0.05, gain: 0.1, freq: 380 });
+        break;
+      default: // pistol
+        this.noiseHit({ dur: 0.08, gain: 0.3, freq: 2600 });
+        this.tone({ type: 'square', f0: 190, f1: 60, dur: 0.07, gain: 0.09 });
+    }
+  }
+
+  /** The big one: sub thump + crack + a rumble tail. */
+  explosion(): void {
+    this.noiseHit({ dur: 0.7, gain: 0.5, freq: 240 });
+    this.tone({ type: 'sine', f0: 95, f1: 26, dur: 0.85, gain: 0.42 });
+    this.noiseHit({ dur: 0.5, gain: 0.22, freq: 110, delay: 0.09 });
+  }
+
+  /** Water entry: a bright splash wash. */
+  splash(): void {
+    this.noiseHit({ dur: 0.38, gain: 0.26, freq: 1500 });
+    this.tone({ type: 'sine', f0: 320, f1: 85, dur: 0.32, gain: 0.06 });
+  }
+
+  /** Pickup collected: a two-note lift. */
+  pickup(): void {
+    this.tone({ type: 'square', f0: 880, dur: 0.06, gain: 0.07 });
+    this.tone({ type: 'square', f0: 1318, dur: 0.09, gain: 0.07, delay: 0.06 });
+  }
+
+  /** Kill Frenzy start: a fast rising alarm of square notes. */
+  frenzyStart(): void {
+    const notes = [392, 523.25, 659.25, 783.99];
+    notes.forEach((f, i) => this.tone({ type: 'square', f0: f, dur: 0.09, gain: 0.08, delay: i * 0.07 }));
   }
 }

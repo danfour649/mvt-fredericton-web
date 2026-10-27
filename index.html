@@ -9,6 +9,125 @@
   <body>
     <div id="map"></div>
 
+    <!-- Loading screen (v0.30): the game's real boot overlay, built
+         from the approved mockup (DAY theme). Static HTML + inline
+         script so it paints before the bundle loads; src/main.ts
+         drives the bar from real boot progress and dismisses it. -->
+    <div id="loading" role="status" aria-label="Loading">
+      <div class="load-inner">
+        <svg class="load-scene" viewBox="0 0 390 844" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <defs>
+            <pattern id="lgrid" width="46" height="46" patternUnits="userSpaceOnUse">
+              <rect width="46" height="46" fill="#313d55"/>
+              <rect x="3" y="3" width="18" height="18" fill="#232c38"/><rect x="25" y="3" width="18" height="18" fill="#28323f"/>
+              <rect x="3" y="25" width="18" height="18" fill="#28323f"/><rect x="25" y="25" width="18" height="18" fill="#232c38"/>
+            </pattern>
+            <pattern id="lgridlit" width="46" height="46" patternUnits="userSpaceOnUse">
+              <rect width="46" height="46" fill="#313d55"/>
+              <rect x="3" y="3" width="18" height="18" fill="#232c38"/><rect x="25" y="3" width="18" height="18" fill="#ffd23f" opacity=".85"/>
+              <rect x="3" y="25" width="18" height="18" fill="#28323f"/><rect x="25" y="25" width="18" height="18" fill="#232c38"/>
+            </pattern>
+          </defs>
+          <rect width="390" height="844" fill="#2e4a24"/>
+          <circle cx="40" cy="90" r="26" fill="#2a4420"/><circle cx="360" cy="330" r="34" fill="#2a4420"/><circle cx="30" cy="560" r="22" fill="#33512a"/>
+          <g fill="#bcb198">
+            <rect x="0" y="0" width="128" height="168"/><rect x="238" y="0" width="152" height="168"/>
+            <rect x="0" y="222" width="128" height="196"/><rect x="238" y="222" width="152" height="196"/>
+            <rect x="0" y="472" width="238" height="128"/><rect x="330" y="472" width="60" height="128"/>
+          </g>
+          <g stroke="rgba(60,50,35,.35)" stroke-width="2">
+            <path d="M0 56H128M0 112H128M64 0V168M238 56H390M238 112H390M314 0V168"/>
+            <path d="M0 276H128M0 330H128M0 384H128M64 222V418M238 276H390M238 330H390M238 384H390M314 222V418"/>
+            <path d="M0 528H238M0 584H238M60 472V600M120 472V600M180 472V600"/>
+          </g>
+          <g>
+            <rect x="22" y="24" width="86" height="58" fill="rgba(0,0,0,.35)" transform="translate(7,9)"/><rect x="22" y="24" width="86" height="58" fill="#9e5233"/><rect x="29" y="31" width="72" height="44" fill="url(#lgrid)"/>
+            <rect x="262" y="20" width="104" height="66" fill="rgba(0,0,0,.35)" transform="translate(7,9)"/><rect x="262" y="20" width="104" height="66" fill="#33655f"/><rect x="269" y="27" width="90" height="52" fill="url(#lgridlit)"/>
+            <rect x="18" y="244" width="92" height="70" fill="rgba(0,0,0,.35)" transform="translate(7,9)"/><rect x="18" y="244" width="92" height="70" fill="#8e3b2f"/><rect x="25" y="251" width="78" height="56" fill="url(#lgrid)"/>
+            <rect x="258" y="240" width="108" height="76" fill="rgba(0,0,0,.35)" transform="translate(7,9)"/><rect x="258" y="240" width="108" height="76" fill="#7d5238"/><rect x="265" y="247" width="94" height="62" fill="url(#lgridlit)"/>
+            <rect x="20" y="492" width="128" height="92" fill="rgba(0,0,0,.35)" transform="translate(8,10)"/><rect x="20" y="492" width="128" height="92" fill="#9e5233"/><rect x="28" y="500" width="112" height="76" fill="url(#lgridlit)"/>
+            <rect x="338" y="486" width="44" height="64" fill="rgba(0,0,0,.35)" transform="translate(6,8)"/><rect x="338" y="486" width="44" height="64" fill="#b08d57"/><rect x="344" y="492" width="32" height="52" fill="#43403a"/>
+          </g>
+          <g fill="none" stroke-linecap="butt">
+            <path d="M0 195H390" stroke="#22242a" stroke-width="66"/><path d="M0 195H390" stroke="#ddd5c0" stroke-width="58"/><path d="M0 195H390" stroke="#343945" stroke-width="54"/>
+            <path d="M0 445H390" stroke="#22242a" stroke-width="66"/><path d="M0 445H390" stroke="#ddd5c0" stroke-width="58"/><path d="M0 445H390" stroke="#343945" stroke-width="54"/>
+            <path d="M181 0V700" stroke="#22242a" stroke-width="74"/><path d="M181 0V700" stroke="#ddd5c0" stroke-width="66"/><path d="M181 0V700" stroke="#343945" stroke-width="62"/>
+            <path d="M398 250L268 472" stroke="#22242a" stroke-width="58"/><path d="M398 250L268 472" stroke="#ddd5c0" stroke-width="51"/><path d="M398 250L268 472" stroke="#343945" stroke-width="47"/>
+            <path d="M0 195H390" stroke="#f0c41c" stroke-width="4.5" stroke-dasharray="19 15"/>
+            <path d="M0 445H238" stroke="#f0c41c" stroke-width="4.5" stroke-dasharray="19 15"/>
+            <path d="M181 0V600" stroke="#f0c41c" stroke-width="4.5" stroke-dasharray="19 15"/>
+            <path d="M398 250L268 472" stroke="#f0c41c" stroke-width="4" stroke-dasharray="17 14"/>
+          </g>
+          <rect x="0" y="600" width="390" height="244" fill="#246ab0"/>
+          <g fill="#2f77c2" opacity=".55"><ellipse cx="70" cy="668" rx="66" ry="15"/><ellipse cx="300" cy="736" rx="80" ry="17"/><ellipse cx="150" cy="782" rx="58" ry="12"/></g>
+          <g fill="#1d5a99" opacity=".5"><ellipse cx="230" cy="656" rx="52" ry="11"/><ellipse cx="40" cy="748" rx="46" ry="10"/></g>
+          <path d="M181 600V844" stroke="#17486e" stroke-width="70" fill="none"/>
+          <path d="M181 600V844" stroke="#343945" stroke-width="60" fill="none"/>
+          <path d="M181 600V844" stroke="#f0c41c" stroke-width="4.5" stroke-dasharray="19 15" fill="none"/>
+          <path d="M149 600V844M213 600V844" stroke="#ddd5c0" stroke-width="3.5" fill="none"/>
+          <path d="M0 600H390" stroke="#d9e9f2" stroke-width="6" fill="none"/>
+          <path d="M0 607H390" stroke="#17486e" stroke-width="3" fill="none"/>
+          <g fill="#24481e" stroke="#16290f" stroke-width="2"><circle cx="352" cy="352" r="10"/><circle cx="30" cy="428" r="8"/><circle cx="272" cy="540" r="9"/><circle cx="238" cy="428" r="8"/></g>
+          <g>
+            <rect x="243" y="182" width="30" height="14" rx="3.5" fill="rgba(0,0,0,.35)" transform="translate(3,4)"/><rect x="243" y="182" width="30" height="14" rx="3.5" fill="#f0c41c"/><rect x="254" y="184.5" width="8" height="9" fill="#22303c"/>
+            <rect x="96" y="430" width="30" height="14" rx="3.5" fill="rgba(0,0,0,.35)" transform="translate(3,4)"/><rect x="96" y="430" width="30" height="14" rx="3.5" fill="#d35450"/><rect x="107" y="432.5" width="8" height="9" fill="#22303c"/>
+            <rect x="168" y="286" width="14" height="30" rx="3.5" fill="rgba(0,0,0,.35)" transform="translate(3,4)"/><rect x="168" y="286" width="14" height="30" rx="3.5" fill="#5b8dd9"/><rect x="170.5" y="297" width="9" height="8" fill="#22303c"/>
+          </g>
+          <g transform="translate(150,455)">
+            <circle r="13" fill="none" stroke="#ffd23f" stroke-width="2.5"/>
+            <ellipse cx="0" cy="2.5" rx="4.6" ry="5.6" fill="#e8c547"/><circle cx="0" cy="-3.4" r="3.1" fill="#3a2a1a"/>
+          </g>
+        </svg>
+        <div class="load-scrim"></div>
+        <div class="load-titleblock">
+          <div class="load-presents"><b>FUKD ENTERTAINMENT</b> PRESENTS</div>
+          <div class="load-title"><span class="l1">MVT</span><span class="l2">FREDERICTON</span></div>
+          <div class="load-tagline">TOP-DOWN <span class="dot">·</span> DOWNTOWN <span class="dot">·</span> NEW BRUNSWICK</div>
+        </div>
+        <div class="load-stamp"><span class="vword">VERSION</span><span class="vnum">V1</span></div>
+        <div class="load-bottom">
+          <div class="loadrow">
+            <div class="loadlabel">LOADING<span class="dots">…</span></div>
+            <div class="loadpct" id="load-pct">0%</div>
+          </div>
+          <div class="load-note" id="load-note">CALLING THE CITY…</div>
+          <div class="load-bar"><div class="load-fill" id="load-bar-fill"></div></div>
+          <div class="load-tip">
+            <div class="head">▚ TIP</div>
+            <div class="body" id="load-tip">Hold <b>BRK</b> at a stop to <b>REVERSE</b> — the speedo shows <b>R</b> while you back up.</div>
+          </div>
+          <div class="load-footer"><span>MVTFREDERICTON.CA</span><span class="r">$250,000 CLEARS THE DISTRICT</span></div>
+        </div>
+      </div>
+    </div>
+    <script>
+      // Loading-screen life support, independent of the game bundle:
+      // rotate real-mechanic tips, and NEVER trap the player — if
+      // boot hasn't dismissed this overlay in 20 s, dismiss it here.
+      (function () {
+        var tips = [
+          'Hold <b>BRK</b> at a stop to <b>REVERSE</b> — the speedo shows <b>R</b> while you back up.',
+          '<b>Queen St Respray</b> clears your wanted level — <b>$500 a star</b>.',
+          'The Saint John River is <b>deep water</b> — on foot or in a car, you drown. The Westmorland bridge is a road: it holds.',
+          'A car at zero health <b>catches fire, then explodes</b>. Bail out — or park it next to something expensive.',
+          'Crates hide <b>pistols, machine guns, armour</b> — and rarer things. A <b>jail card</b> makes your next bust free.',
+          'Wanted heat barely cools while a cop can <b>see you</b>. Break line of sight, then wait it out.',
+          'Steal a car, run a payphone mission, sell wrecks at the <b>CHOP SHOP</b> — crime pays, walking doesn\'t.'
+        ];
+        var ti = 0;
+        var tipEl = document.getElementById('load-tip');
+        var iv = setInterval(function () {
+          if (!document.getElementById('loading')) { clearInterval(iv); return; }
+          ti = (ti + 1) % tips.length;
+          if (tipEl) tipEl.innerHTML = tips[ti];
+        }, 3000);
+        setTimeout(function () {
+          var l = document.getElementById('loading');
+          if (l) { l.classList.add('done'); setTimeout(function () { l.remove(); }, 500); }
+        }, 20000);
+      })();
+    </script>
+
     <!-- Goal progress: hairline bar pinned to the very top. -->
     <div id="goalbar" title="District goal progress"><div id="goalfill"></div></div>
 
@@ -24,6 +143,9 @@
         <span id="hud-stars" aria-label="wanted stars">☆☆☆☆☆</span>
       </div>
     </div>
+
+    <!-- Gear line (v0.30): current weapon/ammo, armour, jail card. -->
+    <div id="hud-gear" hidden></div>
 
     <!-- Input readout (v0.27 diagnostics; toggled in the ? overlay). -->
     <div id="input-readout" hidden></div>
@@ -87,9 +209,13 @@
       <div id="ctl-right" class="scheme-el" data-schemes="stick drag">
         <div class="ctl-col">
           <button id="btn-drift" type="button" class="round" aria-label="handbrake">DRIFT</button>
+          <button id="btn-fire" type="button" class="round fire-btn" aria-label="fire weapon">FIRE</button>
         </div>
         <div class="pedal-stack">
-          <button id="btn-e" type="button" class="e-btn round" aria-label="interact">E</button>
+          <div class="stack-row">
+            <button id="btn-weapon" type="button" class="round wpn-btn" aria-label="switch weapon">WPN</button>
+            <button id="btn-e" type="button" class="e-btn round" aria-label="interact">E</button>
+          </div>
           <div class="pedals">
             <button id="btn-brk" type="button" class="pedal brk" aria-label="brake/reverse">BRK</button>
             <button id="btn-gas" type="button" class="pedal gas" aria-label="accelerate">GAS</button>
@@ -104,6 +230,8 @@
         </div>
         <div class="cluster">
           <button type="button" data-action="interact" class="e-btn" aria-label="interact">E</button>
+          <button type="button" data-action="weapon" aria-label="switch weapon">WPN</button>
+          <button type="button" data-code="KeyF" aria-label="fire weapon">FIRE</button>
           <button type="button" data-code="Space" aria-label="handbrake">DRIFT</button>
           <button type="button" data-code="KeyS" aria-label="brake/reverse">BRK</button>
           <button type="button" data-code="KeyW" aria-label="accelerate">GAS</button>
@@ -112,10 +240,11 @@
     </div>
 
     <div id="credit">
-      MVT Fredericton Web v0.29 · <span id="renderer-name">…</span> · buildings, roads &amp; water © GeoNB (OGL-NB) · mission coords © OpenStreetMap contributors (ODbL)
+      MVT Fredericton Web v0.30 · <span id="renderer-name">…</span> · buildings, roads &amp; water © GeoNB (OGL-NB) · mission coords © OpenStreetMap contributors (ODbL)
     </div>
-    <div id="help" title="Controls">WASD drive/walk · S reverse · E interact · Space handbrake · <span id="help-toggle">?</span>
+    <div id="help" title="Controls">WASD drive/walk · S reverse · E interact · Space handbrake · on foot: Space/F FIRE, Q weapon · <span id="help-toggle">?</span>
       <span id="help-full" hidden> — steal cars, answer payphones ☎, watch the stars, respray on Queen St kills the heat. R restarts a finished run.
+        WEAPONS (v0.30): on foot, hold Space/F (touch FIRE, gamepad RT) to shoot where you face — crates around downtown hold pistols, machine guns and worse; Q / WPN cycles what you own. The river DROWNS you — bridges are roads and hold. A car at zero health burns, then explodes: bail with E. Wanted heat now cools slowly and not at all while a cop can see you; at 4 stars expect roadblocks and return fire. Sell stolen cars at the CHOP SHOP $ marker; skull crates start Kill Frenzies.
         <span class="ctl-settings">
           Touch controls:
           <button type="button" data-set-scheme="stick">Stick</button>
@@ -124,7 +253,7 @@
           <label><input type="checkbox" id="haptics-toggle" checked /> Haptics</label>
           <label><input type="checkbox" id="audio-toggle" checked /> Sound</label>
           <label><input type="checkbox" id="readout-toggle" /> Input readout</label>
-          <span class="ctl-note">REVERSE: hold BRK at a stop — it brakes first, then backs up (keyboard S, stick pulled down, gamepad LT). The speedo shows R and the car lights its white reverse lamps while you're backing up. Stick: thumb anywhere left = the steering wheel; push up/down for gas/brake. Drag-steer: hold and drag, the car steers toward your thumb and drives itself — BRK still reverses. Haptics use the Vibration API — Android/Chrome only; iOS Safari has none. Gamepad: left stick steers, RT/LT are the pedals, A = E, X/Y = handbrake.</span>
+          <span class="ctl-note">REVERSE: hold BRK at a stop — it brakes first, then backs up (keyboard S, stick pulled down, gamepad LT). The speedo shows R and the car lights its white reverse lamps while you're backing up. Stick: thumb anywhere left = the steering wheel; push up/down for gas/brake. Drag-steer: hold and drag, the car steers toward your thumb and drives itself — BRK still reverses. Haptics use the Vibration API — Android/Chrome only; iOS Safari has none. Gamepad: left stick steers, RT/LT are the pedals in a car and RT is FIRE on foot, A = E, X = handbrake, Y = switch weapon.</span>
         </span>
       </span>
     </div>
