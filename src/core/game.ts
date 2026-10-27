@@ -138,6 +138,14 @@ export const FRENZY_CONSOLATION = 100;
 /** v0.29: shown once, on the first car entry ever (persisted). */
 export const DRIVE_HINT = 'Drive: steer ◀ ▶ · GAS / BRK pedals · hold BRK at a stop to REVERSE';
 
+/**
+ * FOLLOW iteration 2: the boot cinematic — camera starts at "space"
+ * altitude (the whole extract in frame) and descends onto the spawn,
+ * fast at altitude and progressively slower near the street. The
+ * duration lives here so the tests and the platform layer agree.
+ */
+export const INTRO_DURATION_S = 4.2;
+
 /** District goal: reach this score, then get to the exit. */
 export const GOAL_SCORE = 250000;
 /**
@@ -263,6 +271,13 @@ export class Game {
   /** v0.29: persisted — the first-drive hint shows exactly once. */
   private seenDriveHint = false;
   private driveHintPending = false;
+  /**
+   * The first-drive hint TEXT. The core default teaches the pedals;
+   * the platform layer swaps in a gesture vocabulary when the
+   * FOLLOW scheme is live (no pedals exist there). Set at boot and
+   * on scheme changes; the once-ever persistence is unaffected.
+   */
+  driveHintText: string = DRIVE_HINT;
   /** v0.29: metres walked (drives the walk-cycle phase, distance-based). */
   private playerWalkM = 0;
 
@@ -348,6 +363,17 @@ export class Game {
   // on-foot width tightened to 30 m in v0.24).
   private camPos: Vec2 = { ...SPAWN_POS };
   private camViewM = 30;
+
+  // Boot cinematic (FOLLOW iteration 2): beginIntro() arms it when
+  // the loading overlay dismisses; updateCamera() then interpolates
+  // centre + view width from the whole-map framing down to the
+  // normal gameplay framing, and update() locks driving input while
+  // it runs. Any input skips it (the platform calls skipIntro()).
+  private introActive = false;
+  private introT = 0;
+  private introFrom: { pos: Vec2; view: number } = { pos: { ...SPAWN_POS }, view: 30 };
+  /** The demo scenario wants its settled framing — no cinematic. */
+  private introSuppressed = false;
 
   // v0.24 population bubble (see ARCHITECTURE.md): traffic and parked
   // cars are recycled around the player so the street is never empty.
@@ -999,8 +1025,12 @@ export class Game {
     // it's free (it queues behind the car-theft toast on entry).
     if (this.driveHintPending && this.toast === '') {
       this.driveHintPending = false;
-      this.showToast(DRIVE_HINT);
+      this.showToast(this.driveHintText);
     }
+    // The cinematic belongs to the living spawn: if the run leaves
+    // 'play' mid-descent (a bus finds the stationary player), the
+    // normal camera rules take over immediately.
+    if (this.introActive && this.phase !== 'play') this.introActive = false;
     this.briefTtl = Math.max(0, this.briefTtl - dt);
     if (this.briefTtl === 0) this.brief = '';
     this.crashCooldown = Math.max(0, this.crashCooldown - dt);
@@ -1057,6 +1087,21 @@ export class Game {
       : Infinity;
     if (nearestCop > COP_EYES_M) this.wanted.update(dt);
 
+    // Boot cinematic: driving input is locked while it runs (the
+    // world stays alive — traffic rolls, peds stroll — but the
+    // player's own inputs read as zero until the camera lands or
+    // the player skips). Stash + zero + restore around the systems
+    // that consume inputs, so nothing latches.
+    const introLock = this.introActive;
+    const savedCarInput = this.carInput;
+    const savedMoveInput = this.moveInput;
+    const savedFireHeld = this.fireHeld;
+    if (introLock) {
+      this.carInput = { throttle: 0, steer: 0 };
+      this.moveInput = { x: 0, z: 0 };
+      this.fireHeld = false;
+    }
+
     if (this.drivenCar) this.updateDriving(dt);
     else this.updateOnFoot(dt);
 
@@ -1073,6 +1118,12 @@ export class Game {
     this.updateRespray();
     this.updateExit();
     this.updateCamera(dt);
+
+    if (introLock) {
+      this.carInput = savedCarInput;
+      this.moveInput = savedMoveInput;
+      this.fireHeld = savedFireHeld;
+    }
 
     // Health trickles back when nothing has hurt you lately.
     if (this.healthRegenDelay === 0 && this.playerHealth > 0 && this.playerHealth < 100) {
@@ -2083,18 +2134,14 @@ export class Game {
     this.showToast('A saffron procession is crossing downtown…');
   }
 
-  private updateCamera(dt: number): void {
+  /** The framing the normal camera is steering toward this frame. */
+  private cameraTarget(): { pos: Vec2; view: number } {
     // Lookahead BY THE VELOCITY VECTOR (v0.21): the camera leans into
     // the direction of travel — including the lateral component when
     // the car slides — so a drift reads before it bites.
-    const targetPos = {
+    const pos = {
       x: this.playerPos.x + this.playerVel.x * 0.45,
       z: this.playerPos.z + this.playerVel.z * 0.45,
-    };
-    const kp = 1 - Math.exp(-6.5 * dt);
-    this.camPos = {
-      x: this.camPos.x + (targetPos.x - this.camPos.x) * kp,
-      z: this.camPos.z + (targetPos.z - this.camPos.z) * kp,
     };
     const speedRatio = this.drivenCar
       ? Math.min(1, Math.abs(this.drivenCar.speed) / 31)
@@ -2106,17 +2153,109 @@ export class Game {
     // read as a dot on an empty street) and pull out to at most
     // 130 m at top speed (the extra reach is driving lookahead —
     // at 31 m/s a 50 m frame is under a second of road).
-    const targetView = this.drivenCar ? 54 + speedRatio * 76 : 30;
+    const view = this.drivenCar ? 54 + speedRatio * 76 : 30;
+    return { pos, view };
+  }
+
+  /** True while the boot cinematic owns the camera. */
+  get introRunning(): boolean {
+    return this.introActive;
+  }
+
+  /**
+   * Arm the boot cinematic (called by the platform when the loading
+   * overlay dismisses). The descent starts over the whole extract —
+   * buildings ∪ river bounds, centred, wide enough that BOTH axes
+   * fit the viewport — and lands on the live gameplay framing.
+   * `viewportAspect` is viewport width / height (portrait phone
+   * ≈ 0.46, landscape desktop ≈ 1.9). No-op for the demo scenario
+   * (screenshots want the settled framing) and once a run has
+   * started moving (restarts never replay it).
+   */
+  beginIntro(viewportAspect: number): void {
+    if (this.introSuppressed || this.introActive) return;
+    let { minX, maxX, minZ, maxZ } = this.world.bounds;
+    for (const w of this.world.water) {
+      minX = Math.min(minX, w.minX);
+      maxX = Math.max(maxX, w.maxX);
+      minZ = Math.min(minZ, w.minZ);
+      maxZ = Math.max(maxZ, w.maxZ);
+    }
+    // A world with no buildings has unbounded bounds (the toy test
+    // worlds) — there is no "whole map" to descend from, so don't.
+    if (![minX, maxX, minZ, maxZ].every(Number.isFinite)) return;
+    const wM = Math.max(1, maxX - minX);
+    const hM = Math.max(1, maxZ - minZ);
+    const aspect = Math.max(0.2, Math.min(4, viewportAspect));
+    // Visible height = viewWidth / aspect, so the width must cover
+    // the extract's height × aspect as well as its own width.
+    const startView = Math.max(wM, hM * aspect) * 1.06;
+    this.introFrom = {
+      pos: { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 },
+      view: startView,
+    };
+    this.introT = 0;
+    this.introActive = true;
+    this.camPos = { ...this.introFrom.pos };
+    this.camViewM = startView;
+  }
+
+  /** Any input ends the cinematic NOW: the camera snaps to exactly
+   *  the framing the normal camera targets, so play continues from
+   *  the landing state with no jump. */
+  skipIntro(): void {
+    if (!this.introActive) return;
+    this.introActive = false;
+    const t = this.cameraTarget();
+    this.camPos = { ...t.pos };
+    this.camViewM = t.view;
+  }
+
+  private updateCamera(dt: number): void {
+    const target = this.cameraTarget();
+    if (this.introActive) {
+      // Ease-out cubic on BOTH the centre and the LOG of the view
+      // width: the descent covers ground (and orders of magnitude
+      // of zoom) fast at altitude, then creeps the last stretch
+      // into the car placement — exponential-smooth, no bounce.
+      this.introT += dt;
+      const p = Math.min(1, this.introT / INTRO_DURATION_S);
+      const e = 1 - Math.pow(1 - p, 3);
+      this.camPos = {
+        x: this.introFrom.pos.x + (target.pos.x - this.introFrom.pos.x) * e,
+        z: this.introFrom.pos.z + (target.pos.z - this.introFrom.pos.z) * e,
+      };
+      this.camViewM = Math.exp(
+        Math.log(this.introFrom.view) + (Math.log(target.view) - Math.log(this.introFrom.view)) * e,
+      );
+      if (p >= 1) {
+        // Land EXACTLY on the gameplay framing; the smoothing below
+        // takes over next frame from its own target — no jump cut.
+        this.introActive = false;
+        this.camPos = { ...target.pos };
+        this.camViewM = target.view;
+      }
+      return;
+    }
+    const kp = 1 - Math.exp(-6.5 * dt);
+    this.camPos = {
+      x: this.camPos.x + (target.pos.x - this.camPos.x) * kp,
+      z: this.camPos.z + (target.pos.z - this.camPos.z) * kp,
+    };
     // v0.21: GTA's zoom tracks speed aggressively — rate 3.6/s reaches
     // the target view in ~0.3 s (was 2.2/s, a visible ~0.5 s+ lag).
     const kv = 1 - Math.exp(-3.6 * dt);
-    this.camViewM += (targetView - this.camViewM) * kv;
+    this.camViewM += (target.view - this.camViewM) * kv;
   }
 
   // --- demo / test hooks -----------------------------------------------------
 
   /** Deterministic live-gameplay state for screenshots (?scenario=demo). */
   applyDemoScenario(): void {
+    // Screenshots frame the settled scene — the boot cinematic
+    // must never run over the demo state.
+    this.introSuppressed = true;
+    this.introActive = false;
     this.wallet.set(42500);
     this.wallet.multiplier = 3;
     const errand = this.missions.available().find((m) => m.id === 'queen_street_errand');

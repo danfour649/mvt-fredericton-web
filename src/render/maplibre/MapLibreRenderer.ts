@@ -472,7 +472,11 @@ export class MapLibreRenderer implements Renderer {
   private ppmAt(p: Vec2): number {
     const a = this.projectPx(p);
     const b = this.projectPx({ x: p.x + 4, z: p.z });
-    return Math.max(0.2, Math.hypot(b.x - a.x, b.y - a.y) / 4);
+    // Floor is 0.05, not 0.2: at the boot cinematic's space altitude
+    // the true scale is ~0.15–0.25 px/m, and a 0.2 floor would draw
+    // sprites up to a third too big through the descent. Gameplay
+    // scales (3–13 px/m) never come near either floor.
+    return Math.max(0.05, Math.hypot(b.x - a.x, b.y - a.y) / 4);
   }
 
   sync(frame: RenderFrame): void {
@@ -481,9 +485,13 @@ export class MapLibreRenderer implements Renderer {
       return;
     }
     // Camera: core view WIDTH (metres) → MapLibre zoom at this
-    // viewport size (render/cameraMath.ts, unit-tested).
+    // viewport size (render/cameraMath.ts, unit-tested). The floor
+    // is 11, not the old 17: gameplay framing never goes below
+    // ~17.3 anyway, and the boot cinematic starts at "space"
+    // altitude (the whole extract, ~2–4 km across, zoom ≈ 12–13)
+    // — the game's own GeoJSON layers draw the city at any zoom.
     const widthPx = this.map.getCanvas().clientWidth || 1280;
-    const zoom = Math.max(17, Math.min(22.4, zoomForViewWidth(frame.viewWidthM, widthPx, LAT0)));
+    const zoom = Math.max(11, Math.min(22.4, zoomForViewWidth(frame.viewWidthM, widthPx, LAT0)));
     const center = ll(frame.camera);
     const cur = this.map.getCenter();
     if (Math.abs(cur.lng - center[0]) > 1e-7 || Math.abs(cur.lat - center[1]) > 1e-7 || Math.abs(this.map.getZoom() - zoom) > 0.01) {

@@ -18,7 +18,13 @@ import {
   followWalkInput,
   screenToWorld,
   worldToScreen,
+  isDoubleTap,
+  nearestScreenHit,
+  carTapIntent,
   FOLLOW_ARRIVE_RADIUS_M,
+  FOLLOW_DOUBLE_TAP_MS,
+  FOLLOW_DOUBLE_TAP_PX,
+  type TapStamp,
 } from './followDrive';
 
 const DT = 1 / 60;
@@ -180,6 +186,69 @@ describe('followWalkInput', () => {
     const there = followWalkInput({ x: 0, z: 0 }, { x: 0.5, z: 0 });
     expect(there.arrived).toBe(true);
     expect(there.move).toEqual({ x: 0, z: 0 });
+  });
+});
+
+describe('isDoubleTap — the in-car action key', () => {
+  const first: TapStamp = { tMs: 1000, x: 200, y: 400 };
+
+  it('a quick second tap nearby is a double-tap', () => {
+    expect(isDoubleTap(first, 1000 + FOLLOW_DOUBLE_TAP_MS - 20, 214, 388)).toBe(true);
+  });
+
+  it('the first tap ever is never a double-tap', () => {
+    expect(isDoubleTap(null, 1000, 200, 400)).toBe(false);
+  });
+
+  it('a slow second tap is just a tap', () => {
+    expect(isDoubleTap(first, 1000 + FOLLOW_DOUBLE_TAP_MS + 40, 200, 400)).toBe(false);
+  });
+
+  it('a quick tap somewhere else is just a tap (retarget, not an action)', () => {
+    expect(isDoubleTap(first, 1100, 200 + FOLLOW_DOUBLE_TAP_PX + 30, 400)).toBe(false);
+  });
+});
+
+describe('nearestScreenHit — tap precedence (entities over ground)', () => {
+  const ped = { kind: 'ped' as const, x: 100, y: 100, r: 38 };
+  const car = { kind: 'car' as const, x: 150, y: 100, r: 60 };
+
+  it('returns null when the tap lands on bare ground', () => {
+    expect(nearestScreenHit([ped, car], 300, 300)).toBeNull();
+    expect(nearestScreenHit([], 100, 100)).toBeNull();
+  });
+
+  it('hits the entity under the tap', () => {
+    expect(nearestScreenHit([ped, car], 104, 96)?.kind).toBe('ped');
+    expect(nearestScreenHit([ped, car], 168, 100)?.kind).toBe('car');
+  });
+
+  it('scores by fraction of radius: a centred ped beats an edged car', () => {
+    // 20 px from the ped's centre (0.53 of its radius) vs 30 px
+    // from the car's centre (0.5 of its radius) — the car wins on
+    // fraction; move the tap 4 px closer to the ped and it wins.
+    expect(nearestScreenHit([ped, car], 120, 100)?.kind).toBe('car');
+    expect(nearestScreenHit([ped, car], 116, 100)?.kind).toBe('ped');
+  });
+
+  it('a tap just outside every radius is ground, not a near miss', () => {
+    expect(nearestScreenHit([ped], 100 + 39, 100)).toBeNull();
+  });
+});
+
+describe('carTapIntent — steal it or shoot it', () => {
+  it('next to the car, entry always wins (even armed)', () => {
+    expect(carTapIntent(true, 3.9)).toBe('enter-now');
+    expect(carTapIntent(false, 1)).toBe('enter-now');
+  });
+
+  it('with fists out, a car tap at any range means get in', () => {
+    expect(carTapIntent(false, 30)).toBe('walk-enter');
+  });
+
+  it('with a gun out, a far car tap is a shot', () => {
+    expect(carTapIntent(true, 12)).toBe('fire');
+    expect(carTapIntent(true, 4.1)).toBe('fire');
   });
 });
 

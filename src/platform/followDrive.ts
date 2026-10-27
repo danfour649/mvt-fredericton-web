@@ -184,3 +184,86 @@ export function worldToScreen(
     y: viewportH / 2 + (p.z - camera.z) / mPerPx,
   };
 }
+
+// --- iteration 2: the gesture vocabulary ----------------------------------
+// FOLLOW has NO on-screen controls, so taps carry every action.
+// These are the pure decision seams main.ts wires to real pointer
+// events; keeping them here makes the disambiguation rules unit
+// testable instead of folklore in a 1000-line wiring file.
+
+/** Two taps closer than this in time AND space read as one double-tap. */
+export const FOLLOW_DOUBLE_TAP_MS = 320;
+export const FOLLOW_DOUBLE_TAP_PX = 56;
+/** How long the double-tap handbrake pulse is held (ms). */
+export const FOLLOW_DRIFT_PULSE_MS = 500;
+/** |speed| below this (m/s) a double-tap means "get out", not "drift". */
+export const FOLLOW_EXIT_MAX_SPEED_MPS = 0.6;
+/** Walking this close to a tap-target car auto-enters it (m). The
+ *  core's own enter radius is 4 m; trigger a touch inside it so the
+ *  entry lands while the player is still visibly walking up. */
+export const FOLLOW_CAR_ENTER_M = 3.4;
+
+export interface TapStamp {
+  tMs: number;
+  x: number;
+  y: number;
+}
+
+/** Is this tap the second half of a double-tap? */
+export function isDoubleTap(
+  prev: TapStamp | null,
+  tMs: number,
+  x: number,
+  y: number,
+): boolean {
+  if (!prev) return false;
+  if (tMs - prev.tMs > FOLLOW_DOUBLE_TAP_MS) return false;
+  return Math.hypot(x - prev.x, y - prev.y) <= FOLLOW_DOUBLE_TAP_PX;
+}
+
+/** A screen-space tap candidate: centre + generous radius, px. */
+export interface ScreenHit {
+  x: number;
+  y: number;
+  r: number;
+}
+
+/**
+ * Pick what a tap MEANT from the entities under/near it. Each
+ * candidate is scored by distance as a fraction of its own radius
+ * (a tap 20 px from a ped's centre beats one 20 px from a car's
+ * edge, because the ped's radius is smaller) and only scores ≤ 1
+ * count as hits at all. Null = the tap hit bare ground — in FOLLOW
+ * that's a walk/drive target, which is exactly the precedence the
+ * scheme teaches: entities first, ground second.
+ */
+export function nearestScreenHit<T extends ScreenHit>(
+  hits: readonly T[],
+  px: number,
+  py: number,
+): T | null {
+  let best: T | null = null;
+  let bestScore = Infinity;
+  for (const h of hits) {
+    const score = Math.hypot(px - h.x, py - h.y) / Math.max(1, h.r);
+    if (score <= 1 && score < bestScore) {
+      bestScore = score;
+      best = h;
+    }
+  }
+  return best;
+}
+
+export type CarTapIntent = 'enter-now' | 'walk-enter' | 'fire';
+
+/**
+ * A tap on a car is ambiguous — steal it or shoot it? The player's
+ * hands answer: next to the car, entry always wins (that's what
+ * standing at a car MEANS); with fists out, entry wins at any range
+ * (fists can't hurt a car anyway); with a gun out and the car beyond
+ * arm's reach, the tap is a shot.
+ */
+export function carTapIntent(armed: boolean, distToCarM: number): CarTapIntent {
+  if (distToCarM <= 4) return 'enter-now'; // the core's enter radius
+  return armed ? 'fire' : 'walk-enter';
+}
