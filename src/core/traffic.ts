@@ -28,9 +28,11 @@ export interface TrafficCar {
   stopped: boolean;
 }
 
-/** Cruise speed on a road: its posted limit, capped at 11 m/s city pace. */
+/** Cruise speed on a road: its posted limit, capped at 14 m/s
+ *  (iteration 3 mayhem dial: the cap was 11 m/s — traffic now runs
+ *  at the full 50 km/h limit on the roads that post one). */
 export function cruiseFor(road: Road): number {
-  return Math.min(11, ((road.speedKmh || 40) * 1000) / 3600);
+  return Math.min(14, ((road.speedKmh || 40) * 1000) / 3600);
 }
 
 export function spawnTraffic(road: Road, distAlong: number): TrafficCar {

@@ -95,8 +95,19 @@ export interface CarClass {
 }
 
 export const CAR_CLASSES: Record<CarClassId, CarClass> = {
+  // Follow-PR iteration 3 (Daniel, after phone-testing v0.32):
+  // "car need to go faster, and it needs to be even more gta1."
+  // The Kerr tyre model is untouched — only the class pace params
+  // moved. The pace comes mostly from the higher topSpeed caps:
+  // the linear engine taper reaches much further, so the car keeps
+  // pulling hard at city speeds instead of running out of breath
+  // at ~100 km/h. Standard measures ~136 km/h / ~4.4 s 0–100
+  // (was 113 / 5.57); fast and police are rescaled to keep their
+  // order (fast still fastest; police quicker than standard to
+  // 100 and faster at the top end). Measured figures:
+  // physics.test.ts metric block + tools/drive-metrics.md addendum.
   standard: {
-    mass: 1150, engineForce: 13600, topSpeed: 33.5, brakeForce: 13300,
+    mass: 1150, engineForce: 12200, topSpeed: 42.5, brakeForce: 13300,
     // v0.29: reverse gets real authority — it is the only way out of
     // a nose-in. Was 5200 N / 8.5 m/s: 3.2 s to reach −25 km/h and a
     // 28 km/h cap read as "reverse is broken" on a real device.
@@ -105,13 +116,13 @@ export const CAR_CLASSES: Record<CarClassId, CarClass> = {
     steerLock: 0.60, steerRate: 9,
   },
   fast: {
-    mass: 1050, engineForce: 14200, topSpeed: 44, brakeForce: 13900,
+    mass: 1050, engineForce: 13500, topSpeed: 50, brakeForce: 13900,
     reverseForce: 7600, reverseMax: 10.5, gripFront: 13, gripRear: 8.5,
     capFront: 28, capRear: 32,
     steerLock: 0.58, steerRate: 9.5,
   },
   police: {
-    mass: 1250, engineForce: 14800, topSpeed: 40.5, brakeForce: 15600,
+    mass: 1250, engineForce: 13500, topSpeed: 47.5, brakeForce: 15600,
     reverseForce: 7800, reverseMax: 10, gripFront: 14.5, gripRear: 11,
     capFront: 30, capRear: 34,
     steerLock: 0.62, steerRate: 10,

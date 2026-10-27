@@ -11,12 +11,18 @@
  *
  * Driving model: pure pursuit (steer at a lookahead point on the
  * line to the target, lookahead grows with speed) + an arrive
- * profile (desired speed falls linearly with distance, and the
- * throttle P-loop brakes actively against it, so the car slows IN
- * to the point instead of sailing through it). Within
- * ARRIVE_RADIUS_M the answer is 'arrived' with zero input — main.ts
- * clears the target on that signal, exactly like Finger Driver's
- * finger lifting at the destination.
+ * profile. Iteration 3 (Daniel: "car need to go faster") throws out
+ * the old 41 km/h cruise cap: the cruise target is now the car's
+ * OWN top speed, held until the braking curve genuinely bites.
+ * The curve is the constant-deceleration braking profile
+ * v = √(2·a·d) at a = BRAKE_PROFILE_A — below the car's real
+ * full-brake capability (~11.6 m/s² for the standard class), so
+ * the throttle P-loop always has the authority to track it —
+ * blended with a shallow linear governor over the last metres so
+ * the stop lands ON the point. Within ARRIVE_RADIUS_M the answer
+ * is 'arrived' with zero input — main.ts clears the target on
+ * that signal, exactly like Finger Driver's finger lifting at
+ * the destination.
  *
  * Reverse: a target in the rear cone (within REAR_CONE_RAD of dead
  * astern) and no farther than REVERSE_MAX_DIST_M is backed into —
@@ -40,12 +46,18 @@ export const FOLLOW_REVERSE_MAX_DIST_M = 25;
 /** |bearing error| beyond this counts as "astern" (rad, ≈135°). */
 export const FOLLOW_REAR_CONE_RAD = 2.35;
 
-const CRUISE_MPS = 11.5; // ≈41 km/h — a city pace, not top speed
+/** Fallback cruise cap when the caller doesn't pass the car's own
+ *  top speed — mirrors CAR_CLASSES.standard.topSpeed (the class the
+ *  player starts in). main.ts always passes the real per-class cap. */
+export const FOLLOW_DEFAULT_TOP_MPS = 42.5;
+const BRAKE_PROFILE_A = 9.0; // m/s² — see the header braking curve
+const TERMINAL_SLOPE = 0.9; // last-metres governor: vDes ≤ slope·d + base
+const TERMINAL_BASE = 0.8;
 const REVERSE_CRUISE_MPS = 5.0;
 const STEER_GAIN = 2.0; // full lock at ~0.5 rad of pursuit error
-const THROTTLE_GAIN = 0.6; // P-loop on desired-minus-actual speed
+const THROTTLE_GAIN = 0.7; // P-loop on desired-minus-actual speed
 const TURN_CAP_ERR_RAD = 2.2; // target this far off the nose…
-const TURN_CAP_MPS = 3.5; // …caps desired speed to a tight-turn pace
+const TURN_CAP_MPS = 5.0; // …caps desired speed to a tight-turn pace
 
 export interface FollowCarPose {
   pos: Vec2;
@@ -53,6 +65,9 @@ export interface FollowCarPose {
   heading: number;
   /** Signed m/s along heading (negative = rolling backwards). */
   speed: number;
+  /** The driven car's class top speed (m/s) — the cruise target.
+   *  Omitted → FOLLOW_DEFAULT_TOP_MPS. */
+  topSpeedMps?: number;
 }
 
 export type FollowMode = 'forward' | 'reverse' | 'arrived';
@@ -114,11 +129,20 @@ export function followCarInput(car: FollowCarPose, target: Vec2): FollowCarOutpu
 
   // Forward pure pursuit: aim at a point `look` metres along the
   // line to the target (the target itself when closer than that).
-  const look = clamp(2.5 + Math.abs(car.speed) * 0.6, 3, 16);
+  // Iteration 3 tightened the lookahead (was 2.5 + 0.6·v, cap 16)
+  // for a snappier line now that cruise is the car's real top speed.
+  const look = clamp(2 + Math.abs(car.speed) * 0.45, 2.5, 13);
   const px = dist <= look ? target.x : car.pos.x + (dx / dist) * look;
   const pz = dist <= look ? target.z : car.pos.z + (dz / dist) * look;
   const errP = wrapAngle(Math.atan2(pz - car.pos.z, px - car.pos.x) - car.heading);
-  let vDes = Math.min(CRUISE_MPS, 0.9 + dist * 0.42);
+  // Full speed until the braking curve bites (see header), with the
+  // terminal governor taking the last metres gently.
+  const vCruise = car.topSpeedMps ?? FOLLOW_DEFAULT_TOP_MPS;
+  let vDes = Math.min(
+    vCruise,
+    Math.sqrt(2 * BRAKE_PROFILE_A * Math.max(0, dist - 0.5)),
+    TERMINAL_SLOPE * dist + TERMINAL_BASE,
+  );
   if (Math.abs(errP) > TURN_CAP_ERR_RAD) vDes = Math.min(vDes, TURN_CAP_MPS);
   return {
     throttle: clamp((vDes - car.speed) * THROTTLE_GAIN, -1, 1),

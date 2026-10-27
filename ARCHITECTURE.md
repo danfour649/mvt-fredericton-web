@@ -155,8 +155,10 @@ formulae from the desktop game's `tools/osm_import.py`
   roll-out all run this same `stepCar`; only traffic *spawning* is
   kinematic (a stolen traffic car becomes a rigid body on entry).
   Measured feel targets live in `src/core/physics.test.ts` /
-  tools/drive-metrics.md — standard car 113 km/h, 0–100 in 5.6 s,
-  handbrake 180° in ~1.3 s shedding ~67% speed, coast 100→0 in ~8.6 s.
+  tools/drive-metrics.md — standard car 137 km/h, 0–100 in 4.5 s
+  (Follow-PR iteration 3 pace; the v0.21 figures were 113 km/h /
+  5.6 s), handbrake 180° in ~1.3 s shedding ~67% speed, coast
+  100→0 in ~8.6 s.
   The v0.20 model it replaced measured 0–100 in 16.6 s and a coast
   that never stopped.
 - **Visual rebuild (v0.23, render adapters):** the world stopped being

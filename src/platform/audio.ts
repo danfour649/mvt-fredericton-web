@@ -22,8 +22,10 @@
 // Pure mappings (unit-tested seams)
 // ---------------------------------------------------------------------------
 
-/** Class top speeds (km/h) from the v0.21 drive metrics. */
-const TOP_SPEED_KMH: Record<string, number> = { standard: 113, fast: 143, police: 134 };
+/** Class top speeds (km/h) from the drive metrics — iteration 3
+ *  pace (Follow PR): standard 137, fast 157, police 151 (the v0.21
+ *  figures were 113 / 143 / 134). */
+const TOP_SPEED_KMH: Record<string, number> = { standard: 137, fast: 157, police: 151 };
 /** Frequency character per class: at the same fraction of its rev
  *  range the fast car's pitch sits higher (and its redline tops out
  *  higher); pitch itself is normalized to each class's top speed. */
@@ -46,7 +48,7 @@ export function engineFreqHz(speedKmh: number, throttle: number, classId: string
 
 /** Engine loudness: audible idle, modest under load. Master-relative. */
 export function engineGainFor(speedKmh: number, throttle: number): number {
-  const load = Math.max(Math.min(1, Math.abs(speedKmh) / 113), Math.abs(throttle) * 0.7);
+  const load = Math.max(Math.min(1, Math.abs(speedKmh) / TOP_SPEED_KMH.standard), Math.abs(throttle) * 0.7);
   return 0.045 + 0.055 * Math.max(0, Math.min(1, load));
 }
 

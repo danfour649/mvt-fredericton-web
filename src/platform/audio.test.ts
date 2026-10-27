@@ -139,22 +139,24 @@ describe('audio: pure mappings', () => {
   it('engine pitch maps speed → frequency monotonically, idle 55 Hz', () => {
     expect(engineFreqHz(0, 0, 'standard')).toBe(55);
     let prev = -Infinity;
-    for (const v of [0, 20, 40, 60, 80, 100, 113]) {
+    // Speed ladder ends at the class top — iteration 3 pace:
+    // standard 137 (was 113), fast 157 (was 143), police 151.
+    for (const v of [0, 20, 40, 60, 80, 100, 137]) {
       const f = engineFreqHz(v, 0.5, 'standard');
       expect(f).toBeGreaterThan(prev);
       prev = f;
     }
     // Beyond the class top speed the ratio clamps — pitch saturates.
-    expect(engineFreqHz(140, 0.5, 'standard')).toBeCloseTo(engineFreqHz(113, 0.5, 'standard'), 5);
+    expect(engineFreqHz(170, 0.5, 'standard')).toBeCloseTo(engineFreqHz(137, 0.5, 'standard'), 5);
     // Top of the standard class: 55 + 150 + no load lift left.
-    expect(engineFreqHz(113, 0, 'standard')).toBeCloseTo(205, 5);
+    expect(engineFreqHz(137, 0, 'standard')).toBeCloseTo(205, 5);
     // Throttle load lifts pitch at low speed, not at top speed.
     expect(engineFreqHz(0, 1, 'standard')).toBeGreaterThan(engineFreqHz(0, 0, 'standard'));
-    expect(engineFreqHz(113, 1, 'standard')).toBeCloseTo(engineFreqHz(113, 0, 'standard'), 5);
+    expect(engineFreqHz(137, 1, 'standard')).toBeCloseTo(engineFreqHz(137, 0, 'standard'), 5);
     // Class character: at the same fraction of its rev range the fast
     // car sits higher, and its redline pitch tops the standard car's.
-    expect(engineFreqHz(0.8 * 143, 0, 'fast')).toBeGreaterThan(engineFreqHz(0.8 * 113, 0, 'standard'));
-    expect(engineFreqHz(143, 0, 'fast')).toBeGreaterThan(engineFreqHz(113, 0, 'standard'));
+    expect(engineFreqHz(0.8 * 157, 0, 'fast')).toBeGreaterThan(engineFreqHz(0.8 * 137, 0, 'standard'));
+    expect(engineFreqHz(157, 0, 'fast')).toBeGreaterThan(engineFreqHz(137, 0, 'standard'));
     expect(engineGainFor(0, 0)).toBeGreaterThan(0);
   });
 
@@ -241,9 +243,9 @@ describe('audio: GameAudio against a fake AudioContext', () => {
     const osc = fake.oscs[0];
     expect(osc.type).toBe('sawtooth');
     expect(osc.started).toBe(true);
-    a.update({ ...baseUpdate, inCar: true, speedKmh: 56.5, throttle: 0 }, 0.016);
+    a.update({ ...baseUpdate, inCar: true, speedKmh: 68.5, throttle: 0 }, 0.016);
     expect(a.state().engineFreqHz).toBeCloseTo(130, 0);
-    a.update({ ...baseUpdate, inCar: true, speedKmh: 113, throttle: 0 }, 0.016);
+    a.update({ ...baseUpdate, inCar: true, speedKmh: 137, throttle: 0 }, 0.016);
     expect(a.state().engineFreqHz).toBeCloseTo(205, 0);
     // Still the same single engine oscillator throughout.
     expect(fake.oscs.length).toBe(1);

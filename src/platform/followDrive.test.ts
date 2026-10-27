@@ -2,15 +2,19 @@
  * Follow-drive tests: the pursuit contract plus closed-loop settle
  * proofs against the REAL car physics (stepCar on an empty world,
  * fixed 60 Hz). The sim mirrors production wiring in main.ts: the
- * controller's steer passes through shapeSteer, and the target is
- * CLEARED the first frame the controller reports 'arrived' — after
- * that the car coasts on zero input, so "settle" is where it
- * physically comes to rest, not where the controller stopped
- * caring. Settle bar: rest ≤3 m from the tapped point.
+ * controller's steer passes through shapeSteer, the pose carries
+ * the class top speed (the iteration-3 cruise target), and the
+ * target is CLEARED the first frame the controller reports
+ * 'arrived' — after that the car coasts on zero input, so "settle"
+ * is where it physically comes to rest, not where the controller
+ * stopped caring. Settle bar: rest ≤2.5 m from the tapped point
+ * (iteration 3, tightened from 3 m — the braking-curve arrive
+ * profile parks forward taps within ~0.1 m in these sims; the
+ * reverse cases, whose law didn't change, sit at ~1.4 m).
  */
 import { describe, expect, it } from 'vitest';
 import { loadWorld, type WorldModel } from '../core/world';
-import { makeCar, stepCar, type CarState } from '../core/physics';
+import { CAR_CLASSES, makeCar, stepCar, type CarState } from '../core/physics';
 import type { Vec2 } from '../core/geo';
 import { shapeSteer } from './stickMath';
 import {
@@ -33,7 +37,7 @@ const emptyWorld: WorldModel = loadWorld({ buildings: { features: [] }, roads: {
 interface SimResult {
   restDist: number;
   restPos: Vec2;
-  settleAtSec: number | null; // first t inside 3 m that stays inside
+  settleAtSec: number | null; // first t inside 2.5 m that stays inside
   minSpeed: number;
   maxSpeed: number;
   sawReverse: boolean;
@@ -57,7 +61,13 @@ function simFollow(start: Vec2, heading: number, speed: number, target: Vec2, se
     let throttle = 0;
     let steer = 0;
     if (tgt) {
-      const out = followCarInput({ pos: car.pos, heading: car.heading, speed: car.speed }, tgt);
+      const out = followCarInput(
+        {
+          pos: car.pos, heading: car.heading, speed: car.speed,
+          topSpeedMps: CAR_CLASSES[car.classId ?? 'standard'].topSpeed,
+        },
+        tgt,
+      );
       if (out.mode === 'arrived') {
         tgt = null; // production: arrival clears the target
       } else {
@@ -71,7 +81,7 @@ function simFollow(start: Vec2, heading: number, speed: number, target: Vec2, se
     maxSpeed = Math.max(maxSpeed, car.speed);
     maxX = Math.max(maxX, car.pos.x);
     const d = Math.hypot(target.x - car.pos.x, target.z - car.pos.z);
-    if (d <= 3) {
+    if (d <= 2.5) {
       if (insideSince === null) insideSince = t;
       settleAtSec = settleAtSec ?? insideSince;
     } else {
@@ -130,44 +140,84 @@ describe('followCarInput — contract', () => {
 describe('followCarInput — closed-loop settle (real physics)', () => {
   it('settles on a point 40 m ahead', () => {
     const r = simFollow({ x: 0, z: 0 }, 0, 0, { x: 40, z: 0 }, 20);
-    expect(r.restDist).toBeLessThanOrEqual(3);
+    expect(r.restDist).toBeLessThanOrEqual(2.5);
     expect(r.sawReverse).toBe(false);
   });
 
   it('settles on a point 30 m to the side', () => {
     const r = simFollow({ x: 0, z: 0 }, 0, 0, { x: 0, z: 30 }, 25);
-    expect(r.restDist).toBeLessThanOrEqual(3);
+    expect(r.restDist).toBeLessThanOrEqual(2.5);
   });
 
   it('reverses into a point 12 m behind and settles', () => {
     const r = simFollow({ x: 0, z: 0 }, 0, 0, { x: -12, z: 0 }, 20);
     expect(r.sawReverse).toBe(true);
     expect(r.minSpeed).toBeLessThan(-1.5); // it truly rolled backwards
-    expect(r.restDist).toBeLessThanOrEqual(3);
+    expect(r.restDist).toBeLessThanOrEqual(2.5);
   });
 
   it('reverses into a diagonal point behind (21 m, in the rear cone)', () => {
     const r = simFollow({ x: 0, z: 0 }, 0, 0, { x: -15, z: 15 }, 25);
     expect(r.sawReverse).toBe(true);
-    expect(r.restDist).toBeLessThanOrEqual(3);
+    expect(r.restDist).toBeLessThanOrEqual(2.5);
   });
 
   it('loops forward to a point 60 m behind — never reverses — and settles', () => {
     const r = simFollow({ x: 0, z: 0 }, 0, 0, { x: -60, z: 0 }, 45);
     expect(r.minSpeed).toBeGreaterThan(-1); // reverse never engaged
-    expect(r.restDist).toBeLessThanOrEqual(3);
+    expect(r.restDist).toBeLessThanOrEqual(2.5);
   });
 
   it('catches a point 25 m ahead while already rolling at 15 m/s, no big overshoot', () => {
     const r = simFollow({ x: 0, z: 0 }, 0, 15, { x: 25, z: 0 }, 20);
-    expect(r.restDist).toBeLessThanOrEqual(3);
+    expect(r.restDist).toBeLessThanOrEqual(2.5);
     expect(r.overshootX).toBeLessThan(6);
+  });
+
+  it('100 m dash: full-performance cruise, ~40% quicker than the old capped controller', () => {
+    // Before/after, same rig, old physics + old controller measured
+    // 2026-10-27: arrive 11.22 s, peak 41 km/h (the 11.5 m/s cruise
+    // cap), rest 1.32 m. Iteration 3 (cruise = the class top speed,
+    // braking-curve arrive): arrive 6.55 s, peak 93 km/h, rest
+    // 0.09 m. Bounds carry headroom over the measured values.
+    let car: CarState = makeCar({ x: 0, z: 0 }, 0, 'standard');
+    const target = { x: 100, z: 0 };
+    let tgt: Vec2 | null = { ...target };
+    let arriveT: number | null = null;
+    let peak = 0;
+    for (let i = 0; i < Math.round(20 / DT); i++) {
+      const t = (i + 1) * DT;
+      let throttle = 0;
+      let steer = 0;
+      if (tgt) {
+        const out = followCarInput(
+          {
+            pos: car.pos, heading: car.heading, speed: car.speed,
+            topSpeedMps: CAR_CLASSES.standard.topSpeed,
+          },
+          tgt,
+        );
+        if (out.mode === 'arrived') {
+          tgt = null;
+          arriveT = arriveT ?? t;
+        } else {
+          throttle = out.throttle;
+          steer = shapeSteer(out.steer);
+        }
+      }
+      car = stepCar(emptyWorld, car, { throttle, steer }, DT).car;
+      peak = Math.max(peak, Math.abs(car.speed));
+    }
+    expect(arriveT).not.toBeNull();
+    expect(arriveT!).toBeLessThanOrEqual(7.5);
+    expect(peak * 3.6).toBeGreaterThanOrEqual(85); // it really opens up
+    expect(Math.hypot(target.x - car.pos.x, target.z - car.pos.z)).toBeLessThanOrEqual(2.5);
   });
 
   it('no limit cycle: after arrival the resting car stays put on zero input', () => {
     const r = simFollow({ x: 0, z: 0 }, 0, 0, { x: 20, z: 6 }, 30);
     expect(r.settleAtSec).not.toBeNull();
-    expect(r.restDist).toBeLessThanOrEqual(3);
+    expect(r.restDist).toBeLessThanOrEqual(2.5);
   });
 });
 

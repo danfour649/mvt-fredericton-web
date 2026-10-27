@@ -162,13 +162,16 @@ export const START_LIVES = 5;
  * metres from the player, counts are the floors we recycle toward.
  */
 export const BUBBLE_R = 220;
-export const TRAFFIC_TARGET = 10;
+/** Iteration 3 mayhem dial (Follow PR): 10 → 14 traffic in the bubble. */
+export const TRAFFIC_TARGET = 14;
 export const PARKED_NEAR_R = 150;
 export const PARKED_TARGET = 4;
 /** v0.25: pedestrians bubble too — peds beyond PED_BUBBLE_R are
- *  re-anchored near the player until PED_TARGET are within range. */
+ *  re-anchored near the player until PED_TARGET are within range.
+ *  Iteration 3 mayhem dial: the floor rises 12 → 16 (of the 20-ped
+ *  pool) — the sidewalks should feel populated, not sprinkled. */
 export const PED_BUBBLE_R = 260;
-export const PED_TARGET = 12;
+export const PED_TARGET = 16;
 const PED_SCORE = 100;
 const THEFT_SCORE = 500;
 /** v0.30 crime economy (audit #9): GTA 1 paid for violence directly —
@@ -578,8 +581,13 @@ export class Game {
       const road = wide[i];
       tryParked(road, road.lengthM * (0.25 + 0.5 * rng()));
     }
-    const longest = [...this.world.roads].sort((a, b) => b.lengthM - a.lengthM).slice(0, 14);
-    for (let i = 0; i < longest.length && t < 12; i += 2) {
+    const longest = [...this.world.roads].sort((a, b) => b.lengthM - a.lengthM).slice(0, 22);
+    // Iteration 3: the wide-fill pool cap rises 12 → 18 (and the
+    // longest-roads window widens so the loop can actually reach
+    // it) so the raised bubble target (14) always has far cars to
+    // recycle FROM. The pool stays a fixed spawn-time count — the
+    // bubble recycles within it, nothing grows at runtime.
+    for (let i = 0; i < longest.length && t < 18; i += 2) {
       addTraffic(longest[i], longest[i].lengthM * (0.2 + 0.6 * rng()));
     }
   }
@@ -1551,7 +1559,9 @@ export class Game {
     const desired = stars > 0 ? Math.min(stars, 4) : 0;
     // Spawn up to the desired pressure, at a road point ~120-170 m out.
     if (pursuitCount < desired && this.copSpawnCooldown <= 0) {
-      this.copSpawnCooldown = 1.5;
+      // Iteration 3 mayhem dial: reinforcements arrive faster —
+      // spawn cadence 1.5 s → 0.9 s.
+      this.copSpawnCooldown = 0.9;
       const angle = this.time * 1.7 + this.cops.length * 2.1;
       const probe = {
         x: this.playerPos.x + Math.cos(angle) * 150,
@@ -1562,11 +1572,13 @@ export class Game {
         this.cops.push(spawnCop(near.pos, near.heading));
       }
     }
-    // v0.30 roadblocks (audit #5): at 4+ stars a pair of cop cars
-    // parks ACROSS a road ahead of the player's heading. They hold
-    // position (and shoot, below) until the heat drops or the
-    // player leaves them far behind.
-    if (stars >= 4 && !this.cops.some((c) => c.roadblock) && this.roadblockCd <= 0) {
+    // v0.30 roadblocks (audit #5): a pair of cop cars parks ACROSS
+    // a road ahead of the player's heading. They hold position
+    // (and shoot, below) until the heat drops or the player
+    // leaves them far behind. Iteration 3 mayhem dial: the
+    // threshold drops 4★ → 3★ — roadblocks are a mid-heat event
+    // now, not an endgame one.
+    if (stars >= 3 && !this.cops.some((c) => c.roadblock) && this.roadblockCd <= 0) {
       const speed = Math.hypot(this.playerVel.x, this.playerVel.z);
       const dirVec = speed > 2
         ? { x: this.playerVel.x / speed, z: this.playerVel.z / speed }
@@ -1596,7 +1608,7 @@ export class Game {
       const d = dist(cop.pos, this.playerPos);
       // Roadblocks abandon their post when the heat drops or the
       // player is long gone.
-      if (cop.roadblock && (stars < 4 || d > 170)) continue;
+      if (cop.roadblock && (stars < 3 || d > 170)) continue;
       // A burning cop car sits and burns (updateBurning owns it).
       if (cop.burning) {
         survivors.push(cop);

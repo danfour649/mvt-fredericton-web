@@ -11,6 +11,7 @@
 import './style.css';
 import { loadWorld } from './core/world';
 import { Game, DRIVE_HINT, type CarEntity } from './core/game';
+import { CAR_CLASSES } from './core/physics';
 import type { Renderer, RenderFrame } from './core/renderer';
 import { dist, type Vec2 } from './core/geo';
 import type { Ped } from './core/peds';
@@ -942,7 +943,10 @@ async function boot(): Promise<void> {
         if (targetPos) {
           const car = game.drivenCar;
           const out = followCarInput(
-            { pos: car.pos, heading: car.heading, speed: car.speed },
+            {
+              pos: car.pos, heading: car.heading, speed: car.speed,
+              topSpeedMps: CAR_CLASSES[car.classId ?? 'standard'].topSpeed,
+            },
             targetPos,
           );
           if (out.mode === 'arrived') {
@@ -1323,7 +1327,10 @@ async function boot(): Promise<void> {
         else if (!tp) followBit = ' · FOLLOW no target';
         else if (car) {
           const o = followCarInput(
-            { pos: car.pos, heading: car.heading, speed: car.speed },
+            {
+              pos: car.pos, heading: car.heading, speed: car.speed,
+              topSpeedMps: CAR_CLASSES[car.classId ?? 'standard'].topSpeed,
+            },
             tp,
           );
           followBit = ` · FOLLOW ${o.mode} ${o.distM.toFixed(1)}m`;

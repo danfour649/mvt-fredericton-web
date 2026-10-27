@@ -145,12 +145,13 @@ describe('district goal', () => {
     expect(g2.goalState).toBe('done');
   });
 
-  it('cop spawns scale with stars and cap at 4 pursuit (+2 roadblock at 4★+)', () => {
+  it('cop spawns scale with stars and cap at 4 pursuit (+2 roadblock at 3★+)', () => {
     const g = newGame();
     g.wanted.heat = 5;
     for (let i = 0; i < 40; i++) g.update(0.1);
     expect(g.cops.length).toBeGreaterThan(0);
-    // v0.30: the PURSUIT cap is still 4; a roadblock pair may add 2.
+    // v0.30: the PURSUIT cap is still 4; a roadblock pair may add 2
+    // (iteration 3: roadblocks start at 3★, pursuit cap unchanged).
     expect(g.cops.filter((c) => !c.roadblock).length).toBeLessThanOrEqual(4);
     expect(g.cops.length).toBeLessThanOrEqual(6);
   });
