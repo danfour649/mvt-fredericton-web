@@ -21,7 +21,7 @@
  * On-foot movement stays a simple kinematic circle (moveCircle).
  */
 import type { Vec2 } from './geo';
-import { collideBuildings, type WorldModel } from './world';
+import { collideBuildings, collideBuildingsN, type WorldModel } from './world';
 
 export function moveCircle(
   world: WorldModel,
@@ -97,19 +97,22 @@ export interface CarClass {
 export const CAR_CLASSES: Record<CarClassId, CarClass> = {
   standard: {
     mass: 1150, engineForce: 13600, topSpeed: 33.5, brakeForce: 13300,
-    reverseForce: 5200, reverseMax: 8.5, gripFront: 12.5, gripRear: 5.8,
+    // v0.29: reverse gets real authority — it is the only way out of
+    // a nose-in. Was 5200 N / 8.5 m/s: 3.2 s to reach −25 km/h and a
+    // 28 km/h cap read as "reverse is broken" on a real device.
+    reverseForce: 7200, reverseMax: 9.5, gripFront: 12.5, gripRear: 5.8,
     capFront: 26, capRear: 30,
     steerLock: 0.60, steerRate: 9,
   },
   fast: {
     mass: 1050, engineForce: 14200, topSpeed: 44, brakeForce: 13900,
-    reverseForce: 5600, reverseMax: 9.5, gripFront: 13, gripRear: 8.5,
+    reverseForce: 7600, reverseMax: 10.5, gripFront: 13, gripRear: 8.5,
     capFront: 28, capRear: 32,
     steerLock: 0.58, steerRate: 9.5,
   },
   police: {
     mass: 1250, engineForce: 14800, topSpeed: 40.5, brakeForce: 15600,
-    reverseForce: 6000, reverseMax: 9, gripFront: 14.5, gripRear: 11,
+    reverseForce: 7800, reverseMax: 10, gripFront: 14.5, gripRear: 11,
     capFront: 30, capRear: 34,
     steerLock: 0.62, steerRate: 10,
   },
@@ -282,14 +285,55 @@ export function stepCar(
     heading = wrapAngle(heading + angVel * h);
 
     // --- move + collide (per substep so fast slides can't tunnel).
-    const preSpeed = Math.hypot(vel.x, vel.z);
-    const moved = moveCircle(world, pos, vel.x * h, vel.z * h, COLLISION_RADIUS);
-    pos = moved.pos;
-    if (moved.hitBuilding) {
+    // v0.29 SLIDE response: the old code multiplied the WHOLE velocity
+    // by 0.3 per substep on any contact — at 180 Hz substeps one frame
+    // of grazing a wall cost 97% of your speed (measured: a 30 km/h
+    // glance stopped dead in <1 s), and sustained contact while
+    // reversing out of a nose-in kept re-killing the escape velocity,
+    // which is exactly how Daniel got wedged. Now only the INTO-WALL
+    // component dies; the tangential component survives (minus a
+    // scrape friction), so cars deflect along walls GTA-style and a
+    // reversing arc that clips the wall keeps its backward motion.
+    // impactSpeed is the into-wall component — a scrape is no longer
+    // scored (or damaged) like a head-on.
+    const attempted = { x: pos.x + vel.x * h, z: pos.z + vel.z * h };
+    const hit = collideBuildingsN(world.buildings, attempted, COLLISION_RADIUS);
+    if (hit) {
       hitBuilding = true;
-      impactSpeed = Math.max(impactSpeed, preSpeed);
-      vel = { x: vel.x * 0.3, z: vel.z * 0.3 };
-      angVel *= 0.45;
+      pos = hit.pos;
+      const vn = vel.x * hit.normal.x + vel.z * hit.normal.z;
+      if (vn < 0) {
+        impactSpeed = Math.max(impactSpeed, -vn);
+        const preSpeed = Math.hypot(vel.x, vel.z);
+        // Tangential remainder, with scrape friction. The friction
+        // MUST be time-scaled: contact re-triggers every substep
+        // while the engine pushes into the wall, so a flat per-hit
+        // factor compounds at 180 Hz and glues the car (0.94^180 ≈ 0).
+        // exp(−0.6·h) ≈ 45% speed shed over a full second of grinding
+        // contact, ~6% for a 0.1 s graze.
+        const scrape = Math.exp(-0.6 * h);
+        const tx = (vel.x - hit.normal.x * vn) * scrape;
+        const tz = (vel.z - hit.normal.z * vn) * scrape;
+        vel = { x: tx, z: tz };
+        // Deflection: a real nose pivots on the wall — the car yaws
+        // toward wall-parallel, which a circle collider can't produce
+        // on its own (and without it the tyres' lateral grip kills
+        // the surviving tangential velocity within a few frames: the
+        // projection alone still stopped a 30 km/h glance dead).
+        // Swing scales with the glancing fraction, so a head-on
+        // (tangential ≈ 0) gets no swing and a pure graze gets the
+        // full swing toward the direction of travel along the wall.
+        const vt = Math.hypot(tx, tz);
+        if (preSpeed > 2 && vt > 0.5) {
+          const glance = Math.min(1, vt / preSpeed);
+          const tangentAng = Math.atan2(tz, tx);
+          const dh = wrapAngle(tangentAng - heading);
+          heading = wrapAngle(heading + dh * 0.55 * glance);
+        }
+      }
+      angVel *= 0.6;
+    } else {
+      pos = attempted;
     }
   }
 

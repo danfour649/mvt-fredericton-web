@@ -39,7 +39,7 @@ import { unproject, type Vec2 } from '../../core/geo';
 import type { WorldModel } from '../../core/world';
 import { buildRoadGraph } from '../../core/routing';
 import type { Renderer, RenderFrame, RenderMarker } from '../../core/renderer';
-import { carSprite, personSprite, drawSprite, drawAnchorRing } from '../sprites';
+import { carSprite, personSprite, drawSprite, drawAnchorRing, walkFrame, hairFor, PLAYER_HAIR } from '../sprites';
 import { SkidTracks, ribbonPolygon, expandedPolygon } from '../groundwork';
 import { segmentRoof, shadeHex, polygonArea } from '../segment';
 import { generateAllTextures, type TextureKind, type TextureImage } from '../textures';
@@ -545,13 +545,29 @@ export class MapLibreRenderer implements Renderer {
       const ppm = this.ppmAt(e.pos);
       if (e.kind === 'player') {
         if (e.anchor) drawAnchorRing(ctx, p.x, p.y, ppm, t);
-        drawSprite(ctx, personSprite(e.color, { player: true }), p.x, p.y, ppm, e.heading, 13);
+        drawSprite(
+          ctx,
+          personSprite(e.color, {
+            player: true,
+            frame: walkFrame(e.walkPhase ?? 0, (e.speedMps ?? 0) > 0.25),
+            hair: PLAYER_HAIR,
+          }),
+          p.x, p.y, ppm, e.heading, 13,
+        );
       } else if (e.kind === 'ped') {
-        drawSprite(ctx, personSprite(e.color, { down: e.down }), p.x, p.y, ppm, e.heading, 10);
+        drawSprite(
+          ctx,
+          personSprite(e.color, {
+            down: e.down,
+            frame: walkFrame(e.walkPhase ?? 0, (e.speedMps ?? 0) > 0.25),
+            hair: hairFor(e.id),
+          }),
+          p.x, p.y, ppm, e.heading, 10,
+        );
       } else if (e.kind === 'car-cop') {
         drawSprite(ctx, carSprite(e.color, { police: true, lightPhase }), p.x, p.y, ppm, e.heading);
       } else {
-        drawSprite(ctx, carSprite(e.color, { wrecked: e.wrecked }), p.x, p.y, ppm, e.heading);
+        drawSprite(ctx, carSprite(e.color, { wrecked: e.wrecked, reverseLights: !!e.reversing }), p.x, p.y, ppm, e.heading);
       }
     }
 

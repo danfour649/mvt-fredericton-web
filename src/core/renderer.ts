@@ -40,6 +40,15 @@ export interface RenderEntity {
    * (player only, until the first car entry).
    */
   anchor?: boolean;
+  /**
+   * v0.29: walk-cycle phase 0..1, advanced by DISTANCE walked (the
+   * core accumulates metres; a full cycle is two steps). Adapters
+   * pick the person-sprite frame from this + speedMps — standing
+   * entities (speedMps ≈ 0) rest in the neutral stance.
+   */
+  walkPhase?: number;
+  /** v0.29: rolling backwards — adapters light the reverse lamps. */
+  reversing?: boolean;
 }
 
 export interface RenderMarker {

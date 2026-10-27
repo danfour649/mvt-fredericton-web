@@ -74,7 +74,12 @@ export interface HudState {
   inCar: boolean;
   speedKmh: number;
   carHealth: number | null;
+  /** v0.29: the driven car is rolling backwards — HUD shows the R. */
+  reversing: boolean;
 }
+
+/** v0.29: shown once, on the first car entry ever (persisted). */
+export const DRIVE_HINT = 'Drive: steer ◀ ▶ · GAS / BRK pedals · hold BRK at a stop to REVERSE';
 
 /** District goal: reach this score, then get to the exit. */
 export const GOAL_SCORE = 250000;
@@ -102,6 +107,9 @@ export const PED_TARGET = 12;
 const PED_SCORE = 100;
 const THEFT_SCORE = 500;
 const WALK_SPEED = 5.4;
+/** v0.29: metres per full 4-frame walk cycle (two steps). */
+const PLAYER_STRIDE_M = 1.5;
+const PED_STRIDE_M = 1.3;
 const CAR_COLORS = ['#d9483b', '#2f7fd0', '#7a8288', '#e0a81c', '#7d4fc4', '#1fae8e', '#e07a2e', '#e8e9eb', '#3b5998', '#8e44ad'];
 
 function mulberry32(seed: number): () => number {
@@ -180,6 +188,11 @@ export class Game {
   private archive: { completed: string[]; districtCleared: boolean; bestScore: number };
   /** v0.24: persisted — the spawn anchor ring shows until this flips. */
   private enteredCar = false;
+  /** v0.29: persisted — the first-drive hint shows exactly once. */
+  private seenDriveHint = false;
+  private driveHintPending = false;
+  /** v0.29: metres walked (drives the walk-cycle phase, distance-based). */
+  private playerWalkM = 0;
 
   phase: GamePhase = 'play';
   goalState: GoalState = 'progress';
@@ -250,6 +263,7 @@ export class Game {
       bestScore: save.bestScore,
     };
     this.enteredCar = save.hasEnteredCar;
+    this.seenDriveHint = save.hasSeenDriveHint;
     if (save.districtCleared) this.goalState = 'done';
     this.missions = new MissionRunner(); // a fresh run: payphones ring again
     this.resprayPos = snapToRoad(world, 95, 55);
@@ -616,6 +630,14 @@ export class Game {
       this.enteredCar = true;
       this.persist();
     }
+    if (!this.seenDriveHint) {
+      // v0.29: teach the controls — including reverse — the first
+      // time the player ever gets in a car. Queued behind the theft
+      // toast (update() shows it once the toast slot is free).
+      this.seenDriveHint = true;
+      this.driveHintPending = true;
+      this.persist();
+    }
     if (car.traffic) {
       // car.heading is already the travel heading (traffic.placeTraffic
       // bakes the direction flip in); traffic speed is a positive scalar.
@@ -712,6 +734,7 @@ export class Game {
       districtCleared: this.archive.districtCleared,
       bestScore: this.archive.bestScore,
       hasEnteredCar: this.enteredCar,
+      hasSeenDriveHint: this.seenDriveHint,
     });
   }
 
@@ -778,6 +801,12 @@ export class Game {
     this.time += dt;
     this.toastTtl = Math.max(0, this.toastTtl - dt);
     if (this.toastTtl === 0) this.toast = '';
+    // v0.29: the first-drive hint takes the toast slot as soon as
+    // it's free (it queues behind the car-theft toast on entry).
+    if (this.driveHintPending && this.toast === '') {
+      this.driveHintPending = false;
+      this.showToast(DRIVE_HINT);
+    }
     this.briefTtl = Math.max(0, this.briefTtl - dt);
     if (this.briefTtl === 0) this.brief = '';
     this.crashCooldown = Math.max(0, this.crashCooldown - dt);
@@ -992,6 +1021,9 @@ export class Game {
       );
       this.playerPos = moved.pos;
     }
+    // v0.29: walk-cycle phase is driven by DISTANCE actually walked
+    // (post-collision), so the feet step in sync with the ground.
+    this.playerWalkM += Math.hypot(this.playerPos.x - before.x, this.playerPos.z - before.z);
     this.playerVel = dt > 0
       ? { x: (this.playerPos.x - before.x) / dt, z: (this.playerPos.z - before.z) / dt }
       : { x: 0, z: 0 };
@@ -1258,6 +1290,7 @@ export class Game {
       inCar: !!this.drivenCar,
       speedKmh: this.drivenCar ? Math.round(Math.abs(this.drivenCar.speed) * 3.6) : 0,
       carHealth: this.drivenCar ? Math.round(this.drivenCar.health) : null,
+      reversing: !!this.drivenCar && this.drivenCar.speed < -0.5,
     };
   }
 
@@ -1274,6 +1307,8 @@ export class Game {
         slip: car.slipAngle,
         speedMps: Math.hypot(car.vel.x, car.vel.z),
         handbrake: car === this.drivenCar ? !!this.carInput.handbrake : false,
+        // v0.29: reverse lights while the driven car rolls backwards.
+        reversing: car === this.drivenCar && car.speed < -0.3,
       });
     }
     for (const cop of this.cops) {
@@ -1295,6 +1330,8 @@ export class Game {
         heading: ped.heading,
         color: ped.color,
         down: ped.state === 'down',
+        speedMps: ped.state === 'down' ? 0 : ped.state === 'flee' ? 4.4 : ped.speed,
+        walkPhase: (ped.walkM / PED_STRIDE_M) % 1,
       });
     }
     if (!this.drivenCar && this.phase !== 'gameover') {
@@ -1306,6 +1343,8 @@ export class Game {
         color: '#ffd23f',
         // v0.24: anchor ring until the first car entry, then never.
         anchor: !this.enteredCar,
+        speedMps: Math.hypot(this.playerVel.x, this.playerVel.z),
+        walkPhase: (this.playerWalkM / PLAYER_STRIDE_M) % 1,
       });
     }
     const markers: RenderMarker[] = [];

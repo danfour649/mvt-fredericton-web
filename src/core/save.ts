@@ -35,10 +35,17 @@ export interface SaveData {
    * spawn anchor ring (drawn only until the first car entry).
    */
   hasEnteredCar: boolean;
+  /**
+   * v0.29: the one-time first-drive hint (steer / pedals / "hold BRK
+   * at a stop to REVERSE") has been shown. Daniel's v0.28 session
+   * proved reverse existed but was never taught anywhere — the hint
+   * fires exactly once, on the first car entry.
+   */
+  hasSeenDriveHint: boolean;
 }
 
 const SAVE_KEY = 'mvt-fredericton-web/save-v2';
-const DEFAULTS: SaveData = { completedMissions: [], districtCleared: false, bestScore: 0, hasEnteredCar: false };
+const DEFAULTS: SaveData = { completedMissions: [], districtCleared: false, bestScore: 0, hasEnteredCar: false, hasSeenDriveHint: false };
 
 export class SaveStore {
   private storage: StorageAdapter;
@@ -58,6 +65,7 @@ export class SaveStore {
         districtCleared: parsed.districtCleared === true,
         bestScore: typeof parsed.bestScore === 'number' ? parsed.bestScore : 0,
         hasEnteredCar: parsed.hasEnteredCar === true,
+        hasSeenDriveHint: parsed.hasSeenDriveHint === true,
       };
     } catch {
       return { ...DEFAULTS };

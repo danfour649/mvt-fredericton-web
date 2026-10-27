@@ -259,13 +259,36 @@ function closestPointOnSegment(p: Vec2, a: Vec2, b: Vec2): Vec2 {
   return { x: a.x + abx * t, z: a.z + abz * t };
 }
 
+export interface CollisionHit {
+  /** Pushed-out position (circle resting against the wall). */
+  pos: Vec2;
+  /** Outward wall normal at the contact (unit, points away from the building). */
+  normal: Vec2;
+}
+
 /**
  * Circle-vs-building collision: if the circle at `pos` with radius `r`
  * overlaps a building polygon, return the pushed-out position; else null.
  * Cheap bbox reject first, then exact edge distance / containment.
  */
 export function collideBuildings(buildings: Building[], pos: Vec2, r: number): Vec2 | null {
+  const hit = collideBuildingsN(buildings, pos, r);
+  return hit ? hit.pos : null;
+}
+
+/**
+ * Same collision as collideBuildings, but also reports the outward
+ * normal of the DEEPEST contact. v0.29: the car physics needs the
+ * normal to SLIDE along walls (project out the into-wall velocity)
+ * instead of annihilating all velocity on contact — the old response
+ * multiplied the whole velocity by 0.3 per substep, so a glancing
+ * touch glued the car to the wall and a nose-in car whose reverse
+ * arc clipped the wall lost its escape velocity every substep.
+ */
+export function collideBuildingsN(buildings: Building[], pos: Vec2, r: number): CollisionHit | null {
   let result: Vec2 | null = null;
+  let resultNormal: Vec2 = { x: 1, z: 0 };
+  let resultDepth = -1;
   for (const b of buildings) {
     if (pos.x < b.minX - r || pos.x > b.maxX + r || pos.z < b.minZ - r || pos.z > b.maxZ + r) {
       continue;
@@ -286,18 +309,33 @@ export function collideBuildings(buildings: Building[], pos: Vec2, r: number): V
     if (!inside && bestDist >= r) continue;
     if (bestDist < 1e-6) {
       result = { x: best.x + r, z: best.z };
+      if (r > resultDepth) {
+        resultDepth = r;
+        resultNormal = { x: 1, z: 0 };
+      }
     } else if (inside) {
       // Step from the centre toward the nearest edge point and a full
-      // radius past it, ending just outside the wall.
+      // radius past it, ending just outside the wall. The outward
+      // normal is that same centre→edge direction.
       const ux = (best.x - cur.x) / bestDist;
       const uz = (best.z - cur.z) / bestDist;
       result = { x: best.x + ux * r, z: best.z + uz * r };
+      const depth = bestDist + r;
+      if (depth > resultDepth) {
+        resultDepth = depth;
+        resultNormal = { x: ux, z: uz };
+      }
     } else {
       // Outside but overlapping: push directly away from the wall.
       const ux = (cur.x - best.x) / bestDist;
       const uz = (cur.z - best.z) / bestDist;
       result = { x: cur.x + ux * (r - bestDist), z: cur.z + uz * (r - bestDist) };
+      const depth = r - bestDist;
+      if (depth > resultDepth) {
+        resultDepth = depth;
+        resultNormal = { x: ux, z: uz };
+      }
     }
   }
-  return result;
+  return result ? { pos: result, normal: resultNormal } : null;
 }

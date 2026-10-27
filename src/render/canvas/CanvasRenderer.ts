@@ -23,7 +23,7 @@ import type { Vec2 } from '../../core/geo';
 import type { WorldModel } from '../../core/world';
 import { buildRoadGraph } from '../../core/routing';
 import type { Renderer, RenderFrame } from '../../core/renderer';
-import { carSprite, personSprite, drawSprite, drawAnchorRing } from '../sprites';
+import { carSprite, personSprite, drawSprite, drawAnchorRing, walkFrame, hairFor, PLAYER_HAIR } from '../sprites';
 import { SkidTracks, expandedPolygon } from '../groundwork';
 import { segmentRoof, shadeHex, polygonArea, type RoofPiece } from '../segment';
 import { generateAllTextures, textureToCanvas, type TextureImage, type TextureKind } from '../textures';
@@ -305,11 +305,29 @@ export class CanvasRenderer implements Renderer {
       const py = sy(e.pos.z);
       if (e.kind === 'player') {
         if (e.anchor) drawAnchorRing(ctx, px, py, scale, t);
-        drawSprite(ctx, personSprite(e.color, { player: true }), px, py, scale, e.heading, 13);
+        drawSprite(
+          ctx,
+          personSprite(e.color, {
+            player: true,
+            frame: walkFrame(e.walkPhase ?? 0, (e.speedMps ?? 0) > 0.25),
+            hair: PLAYER_HAIR,
+          }),
+          px, py, scale, e.heading, 13,
+        );
       }
-      else if (e.kind === 'ped') drawSprite(ctx, personSprite(e.color, { down: e.down }), px, py, scale, e.heading, 10);
+      else if (e.kind === 'ped') {
+        drawSprite(
+          ctx,
+          personSprite(e.color, {
+            down: e.down,
+            frame: walkFrame(e.walkPhase ?? 0, (e.speedMps ?? 0) > 0.25),
+            hair: hairFor(e.id),
+          }),
+          px, py, scale, e.heading, 10,
+        );
+      }
       else if (e.kind === 'car-cop') drawSprite(ctx, carSprite(e.color, { police: true, lightPhase }), px, py, scale, e.heading);
-      else drawSprite(ctx, carSprite(e.color, { wrecked: e.wrecked }), px, py, scale, e.heading);
+      else drawSprite(ctx, carSprite(e.color, { wrecked: e.wrecked, reverseLights: !!e.reversing }), px, py, scale, e.heading);
     }
 
     // Markers: screen-pixel badges.

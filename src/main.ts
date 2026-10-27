@@ -144,13 +144,22 @@ async function boot(): Promise<void> {
   // Analog stick (dynamic origin, left half of the screen).
   const stickZone = el('stick-zone');
   const stickBase = el('stick-base');
-  const stickKnob = el('stick-knob');
+  const stickWheel = el('stick-wheel');
   const stick = { id: -1, ox: 0, oy: 0, dx: 0, dy: 0, active: false };
   function stickVisual(): void {
-    stickKnob.style.transform = `translate(${stick.dx * 34}px, ${stick.dy * 34}px)`;
+    // v0.29: the stick IS a steering wheel — it rotates with the
+    // (shaped) steer value, ±135° at full lock, and springs back to
+    // centre with it. Same v0.27 math underneath; this is the skin.
+    const deg = shapeSteer(stick.dx) * 135;
+    stickWheel.style.transform = `rotate(${deg.toFixed(1)}deg)`;
   }
   stickZone.addEventListener('pointerdown', (e) => {
     if (stick.id !== -1) return;
+    // v0.29: a touch that starts on a control button is the button's,
+    // never the stick's (the buttons live in a sibling subtree, so
+    // this is belt-and-braces — but the wheel must never spawn under
+    // a button press).
+    if ((e.target as HTMLElement | null)?.closest('button')) return;
     stick.id = e.pointerId;
     stick.ox = e.clientX;
     stick.oy = e.clientY;
@@ -266,17 +275,26 @@ async function boot(): Promise<void> {
   document.querySelectorAll<HTMLButtonElement>('#ctl-buttons button').forEach((btn) => {
     const code = btn.dataset.code;
     const action = btn.dataset.action;
+    // v0.29: pointer capture, owned like the pedals — a finger that
+    // slides off the button mid-hold used to silently cut the input
+    // (pointerleave), which for BRK reads as "reverse doesn't work".
+    let ownerId = -1;
     btn.addEventListener('pointerdown', (e) => {
+      if (ownerId !== -1) return;
       e.preventDefault();
+      ownerId = e.pointerId;
+      try { btn.setPointerCapture(e.pointerId); } catch { /* older engines */ }
       if (action === 'interact') interact();
       else if (code) keys.add(code);
     });
-    const release = () => {
+    const release = (e: PointerEvent) => {
+      if (e.pointerId !== ownerId) return;
+      ownerId = -1;
       if (code) keys.delete(code);
     };
     btn.addEventListener('pointerup', release);
     btn.addEventListener('pointercancel', release);
-    btn.addEventListener('pointerleave', release);
+    btn.addEventListener('lostpointercapture', release as EventListener);
   });
 
   // Scheme selector + haptics toggle (in the ? overlay, persisted).
@@ -387,7 +405,12 @@ async function boot(): Promise<void> {
           throttle = pedal.brk ? -1 : 0.85;
           handbrake = handbrake || driftTouch;
         } else {
-          throttle = 0;
+          // v0.29 fix: this branch used to hard-zero the throttle,
+          // silently discarding the BRK pedal — with the drag thumb
+          // resting near centre (the natural stopped state) the drag
+          // scheme could not reverse AT ALL. BRK always means brake,
+          // then reverse at a stop, in every scheme.
+          throttle = pedal.brk ? -1 : 0;
         }
       }
       // v0.27: steer response curve (|s|^0.7) — endpoints 0/±1 are
@@ -561,7 +584,7 @@ async function boot(): Promise<void> {
       hudStars.textContent = '★'.repeat(hud.stars) + '☆'.repeat(5 - hud.stars);
       hudLives.textContent = '♥'.repeat(Math.max(0, hud.lives));
       hudSpeed.textContent = hud.inCar
-        ? `${hud.speedKmh} km/h${hud.carHealth !== null && hud.carHealth < 45 ? ` · car ${hud.carHealth}%` : ''}`
+        ? `${hud.reversing ? 'R · ' : ''}${hud.speedKmh} km/h${hud.carHealth !== null && hud.carHealth < 45 ? ` · car ${hud.carHealth}%` : ''}`
         : '';
       goalFill.style.width = `${Math.round(hud.goalPct * 100)}%`;
       // Pager: only when it has something to say.

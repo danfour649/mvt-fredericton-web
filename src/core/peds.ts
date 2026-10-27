@@ -23,6 +23,9 @@ export interface Ped {
   fleeDir: Vec2;
   fleeT: number;
   downT: number;
+  /** v0.29: cumulative metres walked — the walk-cycle phase source
+   *  (distance-driven, so feet step in sync with the ground). */
+  walkM: number;
 }
 
 const PED_COLORS = ['#d35450', '#5b8dd9', '#58b368', '#e8c547', '#9d7bd8', '#e07a5f', '#4fb8ac', '#c0c6ce'];
@@ -66,6 +69,7 @@ export function spawnPeds(
       fleeDir: { x: 0, z: 0 },
       fleeT: 0,
       downT: 0,
+      walkM: 0,
     };
     placeOnPath(ped);
     peds.push(ped);
@@ -132,6 +136,7 @@ export function updatePed(ped: Ped, dt: number, threat?: PedThreat): 'downed' | 
 
   if (ped.state === 'flee') {
     ped.fleeT -= dt;
+    ped.walkM += 4.4 * dt;
     ped.pos = {
       x: ped.pos.x + ped.fleeDir.x * 4.4 * dt,
       z: ped.pos.z + ped.fleeDir.z * 4.4 * dt,
@@ -146,6 +151,7 @@ export function updatePed(ped: Ped, dt: number, threat?: PedThreat): 'downed' | 
   }
 
   // Walk the path, ping-ponging like traffic.
+  ped.walkM += ped.speed * dt;
   ped.distAlong += ped.dir * ped.speed * dt;
   if (ped.distAlong >= ped.road.lengthM - 2) {
     ped.distAlong = ped.road.lengthM - 2;

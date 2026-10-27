@@ -57,23 +57,43 @@
     <!-- Touch controls (shown on coarse pointers only). Three schemes,
          switchable in the ? overlay; default "stick". -->
     <div id="touch">
-      <!-- Stick scheme: dynamic-origin analog stick, left half. -->
+      <!-- Stick scheme: dynamic-origin analog stick, left side. v0.29:
+           the stick renders as a STEERING WHEEL that rotates with the
+           steer value; the zone stops well short of the right cluster
+           so the wheel can never spawn under the buttons. -->
       <div id="stick-zone" class="scheme-el" data-schemes="stick">
-        <div id="stick-base"><div id="stick-knob"></div></div>
+        <div id="stick-base">
+          <div id="stick-wheel">
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <circle cx="50" cy="50" r="47" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="2"/>
+              <circle cx="50" cy="50" r="42" fill="rgba(12,13,16,0.35)" stroke="#1c1e24" stroke-width="11"/>
+              <line x1="50" y1="50" x2="50" y2="90" stroke="#26282f" stroke-width="10" stroke-linecap="round"/>
+              <line x1="50" y1="50" x2="15" y2="30" stroke="#26282f" stroke-width="10" stroke-linecap="round"/>
+              <line x1="50" y1="50" x2="85" y2="30" stroke="#26282f" stroke-width="10" stroke-linecap="round"/>
+              <circle cx="50" cy="50" r="12" fill="#33363e" stroke="rgba(255,255,255,0.55)" stroke-width="2"/>
+              <circle cx="50" cy="50" r="4" fill="#ffd23f"/>
+              <circle cx="50" cy="8" r="3.5" fill="#ffd23f"/>
+            </svg>
+          </div>
+        </div>
       </div>
       <!-- Drag-steer scheme: hold anywhere, car steers toward the drag. -->
       <div id="drag-zone" class="scheme-el" data-schemes="drag" hidden>
         <div id="drag-hint">hold &amp; drag to steer — car follows your thumb</div>
       </div>
-      <!-- Shared right-hand controls for stick + drag schemes. -->
+      <!-- Shared right-hand controls for stick + drag schemes. v0.29:
+           E moved to the TOP-RIGHT, above the GAS pedal — the far
+           corner from the steering wheel, so the two can never meet. -->
       <div id="ctl-right" class="scheme-el" data-schemes="stick drag">
         <div class="ctl-col">
-          <button id="btn-e" type="button" class="e-btn round" aria-label="interact">E</button>
           <button id="btn-drift" type="button" class="round" aria-label="handbrake">DRIFT</button>
         </div>
-        <div class="pedals">
-          <button id="btn-brk" type="button" class="pedal brk" aria-label="brake/reverse">BRK</button>
-          <button id="btn-gas" type="button" class="pedal gas" aria-label="accelerate">GAS</button>
+        <div class="pedal-stack">
+          <button id="btn-e" type="button" class="e-btn round" aria-label="interact">E</button>
+          <div class="pedals">
+            <button id="btn-brk" type="button" class="pedal brk" aria-label="brake/reverse">BRK</button>
+            <button id="btn-gas" type="button" class="pedal gas" aria-label="accelerate">GAS</button>
+          </div>
         </div>
       </div>
       <!-- Buttons scheme: the legacy binary layout. -->
@@ -92,9 +112,9 @@
     </div>
 
     <div id="credit">
-      MVT Fredericton Web v0.28 · <span id="renderer-name">…</span> · buildings, roads &amp; water © GeoNB (OGL-NB) · mission coords © OpenStreetMap contributors (ODbL)
+      MVT Fredericton Web v0.29 · <span id="renderer-name">…</span> · buildings, roads &amp; water © GeoNB (OGL-NB) · mission coords © OpenStreetMap contributors (ODbL)
     </div>
-    <div id="help" title="Controls">WASD drive/walk · E interact · Space handbrake · <span id="help-toggle">?</span>
+    <div id="help" title="Controls">WASD drive/walk · S reverse · E interact · Space handbrake · <span id="help-toggle">?</span>
       <span id="help-full" hidden> — steal cars, answer payphones ☎, watch the stars, respray on Queen St kills the heat. R restarts a finished run.
         <span class="ctl-settings">
           Touch controls:
@@ -104,7 +124,7 @@
           <label><input type="checkbox" id="haptics-toggle" checked /> Haptics</label>
           <label><input type="checkbox" id="audio-toggle" checked /> Sound</label>
           <label><input type="checkbox" id="readout-toggle" /> Input readout</label>
-          <span class="ctl-note">Stick: thumb anywhere left = analog steer + push up/down for gas/brake. Drag-steer: hold and drag, the car steers toward your thumb and drives itself. Haptics use the Vibration API — Android/Chrome only; iOS Safari has none. Gamepad: left stick steers, RT/LT are the pedals, A = E, X/Y = handbrake.</span>
+          <span class="ctl-note">REVERSE: hold BRK at a stop — it brakes first, then backs up (keyboard S, stick pulled down, gamepad LT). The speedo shows R and the car lights its white reverse lamps while you're backing up. Stick: thumb anywhere left = the steering wheel; push up/down for gas/brake. Drag-steer: hold and drag, the car steers toward your thumb and drives itself — BRK still reverses. Haptics use the Vibration API — Android/Chrome only; iOS Safari has none. Gamepad: left stick steers, RT/LT are the pedals, A = E, X/Y = handbrake.</span>
         </span>
       </span>
     </div>

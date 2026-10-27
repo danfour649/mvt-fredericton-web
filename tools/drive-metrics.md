@@ -52,3 +52,32 @@ only chased it through a blend — the car really took ~16.6 s.
    CAP raised above front (high-speed stability) while rear grip RATE
    stays lower (the tail needs more slip to build force = the visible
    slide at city speeds). All targets green.
+
+## v0.29 addendum — reverse + wall slide (physics.test.ts, same harness)
+
+The v0.21 metrics above are UNCHANGED by v0.29 (verified by re-run:
+every figure identical — the slide only touches the building-contact
+path and the reverse constants, neither of which the v0.21 scenarios
+exercise). New measured behaviour, pinned by the v0.29 test blocks:
+
+| Metric | v0.28 (before) | v0.29 (after) |
+|---|---|---|
+| Reverse top speed, standard | 28.2 km/h | **32.7 km/h** |
+| Reverse 0→−25 km/h, full throttle | 3.23 s | **2.02 s** |
+| Reverse top speed, half throttle | 22.3 km/h | **27.4 km/h** |
+| Brake 50→0 holding BRK | 1.18 s | 1.18 s (then −15 km/h at 2.10 s) |
+| Glance 13° off wall plane, speed 1 s after contact | ~0 km/h (dead stop) | **≥ pre-contact speed** (slides along the wall, engine pulling) |
+| Oblique crash 24° off normal, speed 1 s after contact | 0 km/h | 0 km/h (head-ons still stop) |
+| Nose-in head-on → reversed 1.9 m clear | 1.00 s | **0.85 s** |
+| Nose-in 45°, wrong-lock reverse | slid 13 m along wall, ground to 0 km/h, still pinned | nose swings free ≤1.03 s phase-1, drives out |
+| Two-wall corner pocket, reverse + either lock | NEVER freed (0.0 km/h, unmoved) | frees in 1.5 s / 3.5 s |
+
+Root cause of the v0.28 wedge: the collision response multiplied the
+whole velocity by 0.3 per 180 Hz substep on any building contact —
+one frame of contact cost ~97% of speed and sustained contact while
+reversing kept re-killing the escape velocity. v0.29 removes only the
+into-wall velocity component (collideBuildingsN reports the contact
+normal), applies time-scaled scrape friction (a flat per-hit factor
+compounds at 180 Hz — that was the first fix attempt's own bug), and
+swings the nose toward wall-parallel weighted by the glancing
+fraction, so tyres stop fighting the surviving tangential velocity.

@@ -22,7 +22,10 @@ export interface Sprite {
 
 const CAR_LEN = 4.4;
 const CAR_WID = 1.9;
-const PERSON_M = 1.15;
+/** Person sprite canvas extent (m). The BODY inside is ~0.9 m long /
+ *  0.55 m wide (v0.29 spec); the canvas keeps a little air around it
+ *  for the player ring and the drop shadow. */
+const PERSON_M = 1.0;
 
 const cache = new Map<string, Sprite>();
 
@@ -50,8 +53,8 @@ function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: n
 
 const PPM = 44; // sprite resolution, px per metre
 
-export function carSprite(color: string, opts: { police?: boolean; wrecked?: boolean; lightPhase?: 0 | 1 } = {}): Sprite {
-  const key = `car|${color}|${opts.police ? 'p' + (opts.lightPhase ?? 0) : ''}|${opts.wrecked ? 'w' : ''}`;
+export function carSprite(color: string, opts: { police?: boolean; wrecked?: boolean; lightPhase?: 0 | 1; reverseLights?: boolean } = {}): Sprite {
+  const key = `car|${color}|${opts.police ? 'p' + (opts.lightPhase ?? 0) : ''}|${opts.wrecked ? 'w' : ''}|${opts.reverseLights ? 'R' : ''}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
@@ -162,6 +165,20 @@ export function carSprite(color: string, opts: { police?: boolean; wrecked?: boo
       ctx.arc(3, ly, 3, 0, Math.PI * 2);
       ctx.fill();
     }
+    if (opts.reverseLights) {
+      // v0.29: bright white reverse lamps at the rear corners, with
+      // a halo — reversing must be visible at a glance, not inferred.
+      ctx.save();
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = '#ffffff';
+      ctx.fillStyle = '#ffffff';
+      for (const ly of [H * 0.14, H * 0.86]) {
+        ctx.beginPath();
+        ctx.arc(4.5, ly, 3.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
   } else {
     // Cracked windshield strokes for the wreck.
     ctx.strokeStyle = 'rgba(230,240,245,0.7)';
@@ -205,27 +222,83 @@ export function drawAnchorRing(
   ctx.stroke();
 }
 
-export function personSprite(color: string, opts: { player?: boolean; down?: boolean } = {}): Sprite {
-  const key = `person|${color}|${opts.player ? 'P' : ''}|${opts.down ? 'd' : ''}`;
+/** Hair palette for the person sprites — peds pick by id hash so a
+ *  given walker always wears the same hair. */
+export const HAIR_COLORS = ['#241a12', '#0f0d0b', '#4a3220', '#6e5136', '#8f9096', '#c8c9cc', '#7a3b14', '#2e2119'];
+
+/** Deterministic hair colour for an entity id (pure — unit-tested). */
+export function hairFor(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return HAIR_COLORS[h % HAIR_COLORS.length];
+}
+
+/** The player's hair — constant, pairs with the gold shirt. */
+export const PLAYER_HAIR = '#1c1410';
+
+/**
+ * Walk-cycle frame from a distance-driven phase (pure — unit-tested).
+ * Frame 0 is the neutral stance (feet together); while moving, the
+ * cycle runs stride-A → passing → stride-B → passing, so the feet
+ * alternate in step with distance covered, never with wall time.
+ */
+export function walkFrame(phase: number, moving: boolean): 0 | 1 | 2 | 3 {
+  if (!moving) return 0;
+  const p = ((phase % 1) + 1) % 1;
+  const idx = Math.floor(p * 4) % 4;
+  return [1, 2, 3, 2][idx] as 0 | 1 | 2 | 3;
+}
+
+/** Foot specks per walk frame: [x, z] offsets in metres from the
+ *  body centre, facing = +X. Feet trail the torso and alternate. */
+const FEET: Record<number, [number, number][]> = {
+  0: [[-0.14, -0.13], [-0.14, 0.13]],
+  1: [[-0.01, -0.14], [-0.28, 0.14]],
+  2: [[-0.14, -0.07], [-0.14, 0.07]],
+  3: [[-0.28, -0.14], [-0.01, 0.14]],
+};
+
+/**
+ * The person (v0.29 — Daniel: "the dot should be a person"). A GTA 1
+ * top-down walker, ~0.9 m long / ~0.55 m wide inside a 1 m canvas:
+ * HAIR-coloured head disc (top-down you mostly see hair) with a skin
+ * crescent at the face edge, a shirt-coloured shoulder/torso mass,
+ * and dark foot specks that alternate through the walk cycle. Bold
+ * shapes + dark ink outline so it still reads as a person at the
+ * real on-foot framing (~13–15 px on a phone), not a blob.
+ */
+export function personSprite(
+  color: string,
+  opts: { player?: boolean; down?: boolean; frame?: number; hair?: string } = {},
+): Sprite {
+  const frame = opts.down ? 0 : (opts.frame ?? 0);
+  const hair = opts.hair ?? '#2e2119';
+  const key = `person|${color}|${hair}|${opts.player ? 'P' : ''}|${opts.down ? 'd' : ''}|f${frame}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
   const S = Math.round(PERSON_M * PPM);
   const [c, ctx] = canvas(S, S);
   const cx = S / 2, cy = S / 2;
+  const M = PPM; // px per metre in sprite space
 
   if (opts.down) {
     // Lying flat: elongated torso along +X, head at the front end.
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.ellipse(cx, cy, S * 0.4, S * 0.17, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy, 0.4 * M, 0.16 * M, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'rgba(10,10,14,0.55)';
     ctx.stroke();
+    // Head: hair disc with a skin crescent, same as standing.
     ctx.fillStyle = '#e8b88a';
     ctx.beginPath();
-    ctx.arc(cx + S * 0.42, cy, S * 0.11, 0, Math.PI * 2);
+    ctx.arc(cx + 0.44 * M, cy, 0.1 * M, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = hair;
+    ctx.beginPath();
+    ctx.arc(cx + 0.415 * M, cy, 0.115 * M, 0, Math.PI * 2);
     ctx.fill();
     const sprite = { img: c, wM: PERSON_M, hM: PERSON_M };
     cache.set(key, sprite);
@@ -241,31 +314,39 @@ export function personSprite(color: string, opts: { player?: boolean; down?: boo
     ctx.strokeStyle = 'rgba(255,255,255,0.9)';
     ctx.stroke();
   }
-  // Feet (direction cue: they lead).
-  ctx.fillStyle = '#22242a';
-  for (const s of [-1, 1]) {
+  // Feet (behind the torso, alternating with the walk frame).
+  ctx.fillStyle = '#211d19';
+  for (const [fx, fz] of FEET[frame] ?? FEET[0]) {
     ctx.beginPath();
-    ctx.ellipse(cx + S * 0.2, cy + s * S * 0.16, S * 0.1, S * 0.07, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx + fx * M, cy + fz * M, 0.085 * M, 0.055 * M, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Torso / shoulders.
+  // Torso / shoulders: the shirt-coloured mass.
   ctx.beginPath();
-  ctx.ellipse(cx - S * 0.03, cy, S * 0.3, S * 0.34, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, 0.295 * M, 0.27 * M, 0, 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.fill();
   ctx.lineWidth = 2;
-  ctx.strokeStyle = 'rgba(10,10,14,0.55)';
+  ctx.strokeStyle = 'rgba(10,10,14,0.6)';
   ctx.stroke();
-  // Head.
+  // Rear shading so the mass has a front and a back.
+  ctx.save();
   ctx.beginPath();
-  ctx.arc(cx + S * 0.05, cy, S * 0.155, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, 0.295 * M, 0.27 * M, 0, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = 'rgba(0,0,0,0.14)';
+  ctx.fillRect(cx - 0.3 * M, cy - 0.28 * M, 0.13 * M, 0.56 * M);
+  ctx.restore();
+  // Head: skin disc first, hair disc over it — a skin crescent of
+  // forehead survives at the face edge; from above it's mostly hair.
+  ctx.beginPath();
+  ctx.arc(cx + 0.345 * M, cy, 0.105 * M, 0, Math.PI * 2);
   ctx.fillStyle = '#e8b88a';
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(cx + S * 0.02, cy, S * 0.15, Math.PI * 0.6, Math.PI * 1.7);
-  ctx.lineWidth = 3.4;
-  ctx.strokeStyle = '#2e2119';
-  ctx.stroke();
+  ctx.arc(cx + 0.3 * M, cy, 0.12 * M, 0, Math.PI * 2);
+  ctx.fillStyle = hair;
+  ctx.fill();
 
   const sprite = { img: c, wM: PERSON_M, hM: PERSON_M };
   cache.set(key, sprite);

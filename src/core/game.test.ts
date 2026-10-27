@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Game, GOAL_SCORE, RESPRAY_COST_PER_STAR, BUBBLE_R } from './game';
+import { Game, GOAL_SCORE, RESPRAY_COST_PER_STAR, BUBBLE_R, DRIVE_HINT } from './game';
 import { Wallet, BUSTED_FINE } from './wallet';
 import { loadWorld } from './world';
 import { unproject, dist } from './geo';
@@ -288,5 +288,114 @@ describe('v0.24 cold start & population bubble', () => {
       }
     }
     expect(teleports).toBeGreaterThan(0); // the bubble actually recycled
+  });
+});
+
+describe('v0.29 — first-drive hint, reversing signal, walk cycle', () => {
+  it('the drive hint (with REVERSE) shows once, on the first car entry ever', () => {
+    const storage = new MemoryStorage();
+    const g = new Game(toyWorld(), storage);
+    // Walk up to a parked car and press E — a real entry, not a poke.
+    const car = g.cars.find((c) => c.kind === 'parked')!;
+    g.playerPos = { ...car.pos };
+    g.pressInteract();
+    expect(g.drivenCar).toBe(car);
+    // The theft toast owns the slot first; the hint queues behind it.
+    // (Heat cleared per-tick so a cop can't bust the parked test car.)
+    let sawHint = false;
+    for (let i = 0; i < 400 && !sawHint; i++) {
+      g.wanted.heat = 0;
+      g.cops = [];
+      g.update(0.05);
+      if (g.hud().toast === DRIVE_HINT) sawHint = true;
+    }
+    expect(sawHint).toBe(true);
+    // Let the first hint's toast fully expire before judging round 2.
+    for (let i = 0; i < 200 && g.hud().toast !== ''; i++) {
+      g.wanted.heat = 0;
+      g.cops = [];
+      g.update(0.05);
+    }
+    expect(g.hud().toast).toBe('');
+    // Exit, re-enter: the hint never fires again in this Game...
+    g.pressInteract();
+    expect(g.drivenCar).toBeNull();
+    g.playerPos = { ...car.pos };
+    g.pressInteract();
+    expect(g.drivenCar).toBe(car);
+    for (let i = 0; i < 200; i++) {
+      g.wanted.heat = 0;
+      g.cops = [];
+      g.update(0.05);
+      expect(g.hud().toast).not.toBe(DRIVE_HINT);
+    }
+    // ...and the flag persisted: a fresh Game on the same storage
+    // stays silent too.
+    const g2 = new Game(toyWorld(), storage);
+    const car2 = g2.cars.find((c) => c.kind === 'parked')!;
+    g2.playerPos = { ...car2.pos };
+    g2.pressInteract();
+    expect(g2.drivenCar).toBe(car2);
+    for (let i = 0; i < 200; i++) {
+      g2.wanted.heat = 0;
+      g2.cops = [];
+      g2.update(0.05);
+      expect(g2.hud().toast).not.toBe(DRIVE_HINT);
+    }
+  });
+
+  it('hud().reversing and the driven entity flag light up while backing up', () => {
+    const g = newGame();
+    const car = g.cars.find((c) => c.kind === 'parked')!;
+    car.stolen = true; // skip the theft/cop noise; this is a signal test
+    g.drivenCar = car;
+    g.playerPos = { ...car.pos };
+    g.carInput = { throttle: -1, steer: 0 };
+    let reversing = false;
+    for (let i = 0; i < 120 && !reversing; i++) {
+      g.update(0.05);
+      reversing = g.hud().reversing;
+    }
+    expect(reversing).toBe(true);
+    // Keep backing up until the speed is unambiguous, then check.
+    for (let i = 0; i < 60 && g.hud().speedKmh < 10; i++) g.update(0.05);
+    expect(g.hud().speedKmh).toBeGreaterThan(5);
+    const driven = g.buildFrame().entities.find((e) => e.kind === 'car-driven')!;
+    expect(driven.reversing).toBe(true);
+    // Forward again: the signal clears.
+    g.carInput = { throttle: 1, steer: 0 };
+    for (let i = 0; i < 120 && g.hud().reversing; i++) g.update(0.05);
+    expect(g.hud().reversing).toBe(false);
+  });
+
+  it('the player walk cycle advances with distance walked, not wall time', () => {
+    const g = newGame();
+    const before = g.buildFrame().entities.find((e) => e.kind === 'player')!;
+    expect(before.walkPhase).toBe(0);
+    expect(before.speedMps).toBe(0);
+    // Stand still for game-time: phase must NOT advance.
+    for (let i = 0; i < 40; i++) g.update(0.05);
+    const idle = g.buildFrame().entities.find((e) => e.kind === 'player')!;
+    expect(idle.walkPhase).toBe(0);
+    // Walk east for a second: ~5.4 m at WALK_SPEED → phase cycles.
+    g.moveInput = { x: 1, z: 0 };
+    for (let i = 0; i < 20; i++) g.update(0.05);
+    const walking = g.buildFrame().entities.find((e) => e.kind === 'player')!;
+    expect(walking.speedMps!).toBeGreaterThan(4);
+    expect(walking.walkPhase).toBeGreaterThan(0);
+    expect(walking.heading).toBeCloseTo(0, 5); // facing the way he walks
+  });
+
+  it('peds carry a walk phase and speed too', () => {
+    // The toy world spawns no peds (its roads start >420 m from
+    // spawn) — use the real dataset, which has 20 walkers at spawn.
+    const g = new Game(loadWorld(JSON.parse(downtownRaw)), new MemoryStorage());
+    for (let i = 0; i < 20; i++) g.update(0.05);
+    const peds = g.buildFrame().entities.filter((e) => e.kind === 'ped');
+    expect(peds.length).toBeGreaterThan(0);
+    for (const p of peds) {
+      expect(typeof p.walkPhase).toBe('number');
+      expect(p.speedMps).toBeGreaterThan(0);
+    }
   });
 });

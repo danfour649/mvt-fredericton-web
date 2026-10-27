@@ -7,7 +7,7 @@
  * in tools/drive-metrics.md.
  */
 import { describe, it, expect } from 'vitest';
-import { loadWorld, type WorldModel } from './world';
+import { loadWorld, type WorldModel, type Building } from './world';
 import { makeCar, stepCar, type CarInput, type CarState } from './physics';
 
 const DT = 1 / 60;
@@ -225,5 +225,184 @@ describe('drive metrics — GTA 1 feel targets', () => {
   it('standstill full lock with light throttle pivot-turns (yaw, small travel)', () => {
     expect(m.pivot.yawDeg).toBeGreaterThanOrEqual(35);
     expect(m.pivot.distM).toBeLessThan(14);
+  });
+});
+
+// --- v0.29: reverse authority + wall slide + unstick -------------------------
+//
+// Daniel's v0.28 report: "maybe I just don't know how to reverse" and
+// "too easy to drive into a building and get stuck". The investigation
+// (temporary probe, measured on the v0.28 code) found:
+//  - reverse existed in the core (28 km/h cap) but took 3.2 s to reach
+//    −25 km/h — slow enough to read as broken, and nothing taught it;
+//  - the building response multiplied the WHOLE velocity by 0.3 per
+//    180 Hz substep on any contact, so one frame of wall contact cost
+//    ~97% of speed (a 30 km/h glance stopped dead), and a nose-in car
+//    reversing in an arc kept re-losing its escape velocity — the
+//    wedge. A two-wall corner pocket NEVER freed with either lock.
+// The fix: slide response (only the into-wall velocity component is
+// removed, with time-scaled scrape friction + a glance-weighted nose
+// deflection toward wall-parallel) and stronger reverse. These tests
+// pin the new behaviour.
+
+function wallWorld(): WorldModel {
+  const polygon = [
+    { x: 10, z: -40 }, { x: 16, z: -40 }, { x: 16, z: 40 }, { x: 10, z: 40 },
+  ];
+  const b: Building = {
+    polygon, heightM: 10, center: { x: 13, z: 0 },
+    minX: 10, maxX: 16, minZ: -40, maxZ: 40,
+  };
+  return { buildings: [b], roads: [], water: [], bounds: { minX: -1e3, maxX: 1e3, minZ: -1e3, maxZ: 1e3 } };
+}
+
+function runWorld(world: WorldModel, car: CarState, input: CarInput, seconds: number, onStep?: (c: CarState, t: number) => void): CarState {
+  const steps = Math.round(seconds / DT);
+  for (let i = 0; i < steps; i++) {
+    car = stepCar(world, car, input, DT).car;
+    onStep?.(car, (i + 1) * DT);
+  }
+  return car;
+}
+
+describe('v0.29 — reverse authority', () => {
+  it('reverse from standstill: ≥30 km/h top, −25 km/h within 2.6 s', () => {
+    let car = makeCar({ x: 0, z: 0 }, 0);
+    let top = 0;
+    let t25 = -1;
+    car = runWorld(emptyWorld, car, { throttle: -1, steer: 0 }, 5, (c, t) => {
+      top = Math.min(top, fwdSpeed(c));
+      if (t25 < 0 && fwdSpeed(c) <= -25 / 3.6) t25 = t;
+    });
+    expect(-top * 3.6).toBeGreaterThanOrEqual(30);
+    expect(t25).toBeGreaterThan(0);
+    expect(t25).toBeLessThanOrEqual(2.6);
+  });
+
+  it('half-throttle reverse (a partial stick pull) still reaches ≥25 km/h', () => {
+    let car = makeCar({ x: 0, z: 0 }, 0);
+    let top = 0;
+    car = runWorld(emptyWorld, car, { throttle: -0.5, steer: 0 }, 6, (c) => {
+      top = Math.min(top, fwdSpeed(c));
+    });
+    expect(-top * 3.6).toBeGreaterThanOrEqual(25);
+  });
+
+  it('holding BRK from 50 km/h brakes first, then reverses', () => {
+    let car = freshCar(50 / 3.6);
+    let tStop = -1;
+    let tRev = -1;
+    car = runWorld(emptyWorld, car, { throttle: -1, steer: 0 }, 5, (c, t) => {
+      if (tStop < 0 && Math.abs(fwdSpeed(c)) < 0.3) tStop = t;
+      if (tRev < 0 && fwdSpeed(c) <= -15 / 3.6) tRev = t;
+    });
+    expect(tStop).toBeGreaterThan(0);
+    expect(tStop).toBeLessThanOrEqual(1.8);
+    expect(tRev).toBeGreaterThan(tStop);
+    expect(tRev).toBeLessThanOrEqual(3.2);
+  });
+});
+
+describe('v0.29 — wall slide, not wall glue', () => {
+  it('a 13°-off-plane glance keeps ≥60% of its speed and slides ≥6 m along the wall', () => {
+    const w = wallWorld();
+    let car = makeCar({ x: 5, z: 20 }, -1.35);
+    car.vel = { x: Math.cos(-1.35) * 30 / 3.6, z: Math.sin(-1.35) * 30 / 3.6 };
+    car.speed = 30 / 3.6;
+    let contactT = -1;
+    let preSpeed = 0;
+    let speedAfter = -1;
+    let zAtContact = 0;
+    let zAfter = 0;
+    car = runWorld(w, car, { throttle: 0.4, steer: 0 }, 5, (c, t) => {
+      if (contactT < 0) preSpeed = Math.hypot(c.vel.x, c.vel.z);
+      if (contactT < 0 && c.pos.x >= 8.39) {
+        contactT = t;
+        zAtContact = c.pos.z;
+      }
+      if (contactT > 0 && speedAfter < 0 && t >= contactT + 1) {
+        speedAfter = Math.hypot(c.vel.x, c.vel.z);
+        zAfter = c.pos.z;
+      }
+    });
+    expect(contactT).toBeGreaterThan(0);
+    expect(speedAfter).toBeGreaterThanOrEqual(preSpeed * 0.6);
+    expect(Math.abs(zAfter - zAtContact)).toBeGreaterThanOrEqual(6);
+  });
+
+  it('a 24°-off-normal oblique crash still stops hard (no slide-through)', () => {
+    const w = wallWorld();
+    let car = makeCar({ x: 0, z: 0 }, -0.42);
+    car.vel = { x: Math.cos(-0.42) * 30 / 3.6, z: Math.sin(-0.42) * 30 / 3.6 };
+    car.speed = 30 / 3.6;
+    let contactT = -1;
+    let speedAfter = -1;
+    car = runWorld(w, car, { throttle: 0, steer: 0 }, 4, (c, t) => {
+      if (contactT < 0 && c.pos.x >= 8.39) contactT = t;
+      if (contactT > 0 && speedAfter < 0 && t >= contactT + 1) {
+        speedAfter = Math.hypot(c.vel.x, c.vel.z);
+      }
+    });
+    expect(contactT).toBeGreaterThan(0);
+    expect(speedAfter * 3.6).toBeLessThanOrEqual(2);
+    // And it never entered the building.
+    expect(car.pos.x).toBeLessThanOrEqual(8.41);
+  });
+});
+
+describe('v0.29 — unstick: nose-in extraction', () => {
+  it('head-on nose-in: straight reverse clears 1.9 m within 1.5 s', () => {
+    const w = wallWorld();
+    let car = makeCar({ x: 8.4, z: 0 }, 0);
+    let freeT = -1;
+    car = runWorld(w, car, { throttle: -1, steer: 0 }, 3, (c, t) => {
+      if (freeT < 0 && c.pos.x < 6.5) freeT = t;
+    });
+    expect(freeT).toBeGreaterThan(0);
+    expect(freeT).toBeLessThanOrEqual(1.5);
+  });
+
+  // The extraction, as a human does it: hold reverse at full lock.
+  // The backing arc swings the nose around; once the nose points
+  // AWAY from the wall (cos(heading) < −0.2) the car is by then
+  // already metres clear of the face and travelling — extracted.
+  // (Measured crossings: 1.9–3.75 s across both starts × both locks,
+  // clearing the face by 5.4–16.8 m at 23–28 km/h in reverse.)
+  function extract(w: WorldModel, start: CarState, steer: number): { t: number; clearOfFace: number; revKmh: number } {
+    let car = start;
+    const steps = Math.round(6 / DT);
+    for (let i = 0; i < steps; i++) {
+      car = stepCar(w, car, { throttle: -1, steer }, DT).car;
+      if (Math.cos(car.heading) < -0.2) {
+        return {
+          t: (i + 1) * DT,
+          clearOfFace: 10 - car.pos.x,
+          revKmh: -fwdSpeed(car) * 3.6,
+        };
+      }
+    }
+    return { t: -1, clearOfFace: 10 - car.pos.x, revKmh: -fwdSpeed(car) * 3.6 };
+  }
+
+  it('45° nose-in frees with EITHER full lock, reversing only', () => {
+    const w = wallWorld();
+    for (const steer of [-1, 1]) {
+      const r = extract(w, makeCar({ x: 8.4, z: 0 }, Math.PI / 4), steer);
+      expect(r.t).toBeGreaterThan(0);
+      expect(r.t).toBeLessThanOrEqual(5);
+      expect(r.clearOfFace).toBeGreaterThanOrEqual(3);
+      expect(r.revKmh).toBeGreaterThanOrEqual(15);
+    }
+  });
+
+  it('head-on nose-in frees with full lock too, reversing only', () => {
+    const w = wallWorld();
+    for (const steer of [-1, 1]) {
+      const r = extract(w, makeCar({ x: 8.4, z: 0 }, 0), steer);
+      expect(r.t).toBeGreaterThan(0);
+      expect(r.t).toBeLessThanOrEqual(5);
+      expect(r.clearOfFace).toBeGreaterThanOrEqual(3);
+      expect(r.revKmh).toBeGreaterThanOrEqual(15);
+    }
   });
 });
