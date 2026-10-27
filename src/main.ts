@@ -18,6 +18,12 @@ import { CanvasRenderer } from './render/canvas/CanvasRenderer';
 import { Haptics } from './platform/haptics';
 import { GameAudio, stationForClass, STATIONS, type AudioStateSnapshot } from './platform/audio';
 import { shapeSteer, stickDeflection } from './platform/stickMath';
+import {
+  TiltSensor,
+  tiltConfigFor,
+  TILT_DEFAULT_SENSITIVITY,
+  type TiltEnableResult,
+} from './platform/tilt';
 
 const localStorageAdapter: StorageAdapter = {
   read: (key) => {
@@ -126,10 +132,33 @@ async function boot(): Promise<void> {
       try { window.localStorage.setItem(k, v); } catch { /* ignore */ }
     },
   };
-  type Scheme = 'stick' | 'drag' | 'buttons';
-  let scheme: Scheme = (['stick', 'drag', 'buttons'].includes(store.get('mvt-input-scheme') ?? '')
+  type Scheme = 'stick' | 'drag' | 'buttons' | 'tilt';
+  let scheme: Scheme = (['stick', 'drag', 'buttons', 'tilt'].includes(store.get('mvt-input-scheme') ?? '')
     ? store.get('mvt-input-scheme')
     : 'stick') as Scheme;
+  // Tilt steering (v0.31): gamma-roll steering as a peer scheme —
+  // see platform/tilt.ts and docs/CONTROLS-RESEARCH.md. The sensor
+  // is created idle; it only listens while the tilt scheme is live.
+  const tiltSensor = new TiltSensor();
+  let tiltSens = store.get('mvt-tilt-sens') ?? TILT_DEFAULT_SENSITIVITY;
+  const tiltCfg = () => tiltConfigFor(tiltSens);
+  (window as unknown as {
+    __mvtTilt?: () => unknown;
+  }).__mvtTilt = () => ({
+    scheme,
+    sensitivity: tiltSens,
+    ...tiltSensor.snapshot(),
+    steer: Math.round(tiltSensor.steer(tiltCfg()) * 1000) / 1000,
+  });
+  // Chrome toast: transient platform messages (tilt state, radio
+  // station) that must not be clobbered by the per-frame HUD toast
+  // write. Wins over hud.toast until it expires.
+  let chromeToastText = '';
+  let chromeToastUntil = 0;
+  function chromeToast(msg: string, ms = 3500): void {
+    chromeToastText = msg;
+    chromeToastUntil = performance.now() + ms;
+  }
   let hapticsOn = store.get('mvt-haptics') !== 'off';
   const haptics = new Haptics(() => hapticsOn);
   // Audio (v0.26): WebAudio synth layer, same shape as haptics — the
@@ -199,15 +228,42 @@ async function boot(): Promise<void> {
   const stickBase = el('stick-base');
   const stickWheel = el('stick-wheel');
   const stick = { id: -1, ox: 0, oy: 0, dx: 0, dy: 0, active: false };
+  let lastWheelDeg = 0;
+  function setWheelDeg(deg: number): void {
+    if (Math.abs(deg - lastWheelDeg) < 0.3) return;
+    lastWheelDeg = deg;
+    stickWheel.style.transform = `rotate(${deg.toFixed(1)}deg)`;
+  }
   function stickVisual(): void {
     // v0.29: the stick IS a steering wheel — it rotates with the
     // (shaped) steer value, ±135° at full lock, and springs back to
     // centre with it. Same v0.27 math underneath; this is the skin.
-    const deg = shapeSteer(stick.dx) * 135;
-    stickWheel.style.transform = `rotate(${deg.toFixed(1)}deg)`;
+    setWheelDeg(shapeSteer(stick.dx) * 135);
+  }
+  function tiltWheelVisual(): void {
+    // v0.31: under tilt the wheel is a MIRROR of the sensor steer —
+    // no thumb is on it, so it rotates from the tilt value (the
+    // normalized deflection; the visible angle matches what the
+    // merge will shape it to, same as the stick's display math).
+    setWheelDeg(tiltSensor.steer(tiltCfg()) * 135);
+  }
+  function resetStick(): void {
+    stick.id = -1;
+    stick.active = false;
+    stick.dx = 0;
+    stick.dy = 0;
+    stickBase.classList.remove('active');
+    stickBase.style.left = '';
+    stickBase.style.top = '';
+    stickBase.style.bottom = '';
+    stickVisual();
   }
   stickZone.addEventListener('pointerdown', (e) => {
     if (stick.id !== -1) return;
+    // v0.31: driving under tilt — the sensors own steering and the
+    // left side must not fight them (CSS also drops pointer events
+    // on the zone in this state; this is the same rule in code).
+    if (scheme === 'tilt' && game.drivenCar) return;
     // v0.29: a touch that starts on a control button is the button's,
     // never the stick's (the buttons live in a sibling subtree, so
     // this is belt-and-braces — but the wheel must never spawn under
@@ -249,15 +305,7 @@ async function boot(): Promise<void> {
   });
   const stickEnd = (e: PointerEvent): void => {
     if (e.pointerId !== stick.id) return;
-    stick.id = -1;
-    stick.active = false;
-    stick.dx = 0;
-    stick.dy = 0;
-    stickBase.classList.remove('active');
-    stickBase.style.left = '';
-    stickBase.style.top = '';
-    stickBase.style.bottom = '';
-    stickVisual();
+    resetStick();
   };
   stickZone.addEventListener('pointerup', stickEnd);
   stickZone.addEventListener('pointercancel', stickEnd);
@@ -322,6 +370,9 @@ async function boot(): Promise<void> {
     elm.addEventListener('lostpointercapture', end);
   }
   holdButton(el('btn-e'), () => interact(), () => undefined);
+  // v0.31: the on-foot cluster has its own E (the car group's E is
+  // hidden on foot) — same interact action.
+  holdButton(el('btn-e-foot'), () => interact(), () => undefined);
   holdButton(el('btn-drift'), () => { driftTouch = true; }, () => { driftTouch = false; });
   holdButton(el('btn-fire'), () => { fireTouch = true; }, () => { fireTouch = false; });
   holdButton(el('btn-weapon'), () => game.cycleWeapon(), () => undefined);
@@ -364,15 +415,116 @@ async function boot(): Promise<void> {
     document.querySelectorAll<HTMLButtonElement>('[data-set-scheme]').forEach((b) => {
       b.classList.toggle('on', b.dataset.setScheme === scheme);
     });
+    syncChromeState();
+  }
+
+  /** v0.31 contextual chrome: which button group shows depends on
+   *  whether the player is in a car (car cluster) or on foot (foot
+   *  cluster) — never both, never buttons that can't act — and
+   *  whether tilt owns steering while driving (stick zone drops
+   *  pointer events; a held stick is reset). Called on scheme
+   *  changes and on car enter/exit transitions in the frame loop. */
+  function syncChromeState(): void {
+    const inCar = !!game.drivenCar;
+    const state = inCar ? 'car' : 'foot';
+    document.querySelectorAll<HTMLElement>('[data-state-group]').forEach((g) => {
+      g.hidden = g.dataset.stateGroup !== state;
+    });
+    document.querySelectorAll<HTMLElement>('#ctl-buttons [data-state]').forEach((b) => {
+      const s = b.dataset.state;
+      b.hidden = !(s === 'both' || s === state);
+    });
+    const tiltDriving = scheme === 'tilt' && inCar;
+    document.body.classList.toggle('tilt-driving', tiltDriving);
+    if (tiltDriving) resetStick();
+  }
+
+  /** v0.31: switch schemes. Tilt must prove the sensors are real
+   *  before it may own steering — the permission ask (iOS) is why
+   *  this runs from the settings tap, a user gesture. Any failure:
+   *  a toast and the player keeps the scheme they had. */
+  async function setScheme(next: Scheme): Promise<void> {
+    if (next !== 'tilt') {
+      tiltSensor.stop();
+      scheme = next;
+      store.set('mvt-input-scheme', scheme);
+      applyScheme();
+      return;
+    }
+    const res: TiltEnableResult = await tiltSensor.enable();
+    if (res === 'ok') {
+      scheme = 'tilt';
+      store.set('mvt-input-scheme', scheme);
+      applyScheme();
+      chromeToast('🌀 Tilt steering on — the pose you hold is "straight" (Calibrate tilt re-zeros it)');
+    } else {
+      chromeToast(
+        res === 'denied'
+          ? 'Tilt permission denied — staying on the wheel'
+          : "Tilt isn't available here — staying on the wheel",
+      );
+      applyScheme(); // scheme unchanged; just refresh the .on markers
+    }
   }
   document.querySelectorAll<HTMLButtonElement>('[data-set-scheme]').forEach((b) => {
     b.addEventListener('click', () => {
-      scheme = (b.dataset.setScheme ?? 'stick') as Scheme;
-      store.set('mvt-input-scheme', scheme);
-      applyScheme();
+      void setScheme((b.dataset.setScheme ?? 'stick') as Scheme);
     });
   });
   applyScheme();
+  // Tilt sensitivity (Low / Standard / High) + Calibrate.
+  function applyTiltSens(): void {
+    document.querySelectorAll<HTMLButtonElement>('[data-tilt-sens]').forEach((b) => {
+      b.classList.toggle('on', b.dataset.tiltSens === tiltSens);
+    });
+  }
+  document.querySelectorAll<HTMLButtonElement>('[data-tilt-sens]').forEach((b) => {
+    b.addEventListener('click', () => {
+      tiltSens = b.dataset.tiltSens ?? TILT_DEFAULT_SENSITIVITY;
+      store.set('mvt-tilt-sens', tiltSens);
+      applyTiltSens();
+    });
+  });
+  applyTiltSens();
+  el('tilt-calibrate').addEventListener('click', () => {
+    if (scheme !== 'tilt') {
+      chromeToast('Switch to Tilt first, then calibrate');
+      return;
+    }
+    chromeToast(
+      tiltSensor.calibrate()
+        ? 'Tilt calibrated — this pose is now "straight"'
+        : 'No tilt signal yet — hold the phone still a moment',
+    );
+  });
+  // Boot restore: tilt was the saved scheme. Permission can't be
+  // requested without a gesture, so gated platforms (iOS) arm a
+  // one-time retry on the first touch; open platforms just start
+  // listening. If no usable sample shows up either way: toast and
+  // fall back to the wheel — never leave dead steering.
+  if (scheme === 'tilt') {
+    const tiltDead = (): void => {
+      if (scheme !== 'tilt') return;
+      chromeToast("Tilt isn't available here — back to the wheel");
+      void setScheme('stick');
+    };
+    if (tiltSensor.needsPermission()) {
+      window.addEventListener(
+        'pointerdown',
+        () => {
+          void tiltSensor.enable().then((res) => {
+            if (res !== 'ok') tiltDead();
+          });
+        },
+        { once: true },
+      );
+    } else {
+      tiltSensor.listen();
+      window.setTimeout(() => {
+        if (tiltSensor.snapshot().samples === 0) tiltDead();
+      }, 1800);
+    }
+  }
   const hapticsToggle = el('haptics-toggle') as HTMLInputElement;
   hapticsToggle.checked = hapticsOn;
   hapticsToggle.addEventListener('change', () => {
@@ -413,7 +565,7 @@ async function boot(): Promise<void> {
       if (!p || !p.connected) continue;
       if (!padSeen.has(p.id)) {
         padSeen.add(p.id);
-        el('hud-toast').textContent = `🎮 Gamepad connected: ${p.id.slice(0, 48)}`;
+        chromeToast(`🎮 Gamepad connected: ${p.id.slice(0, 48)}`);
       }
       const dz = (v: number): number => (Math.abs(v) < 0.12 ? 0 : v);
       const aPressed = !!p.buttons[0]?.pressed;
@@ -479,6 +631,12 @@ async function boot(): Promise<void> {
           throttle = pedal.brk ? -1 : 0;
         }
       }
+      if (scheme === 'tilt') {
+        // v0.31: tilt emits a normalized linear deflection like the
+        // keyboard does; throttle/handbrake already came from the
+        // shared pedal cluster above (pedal.gas/brk, driftTouch).
+        steer = maxAbs(steer, tiltSensor.steer(tiltCfg()));
+      }
       // v0.27: steer response curve (|s|^0.7) — endpoints 0/±1 are
       // exact, so keyboard full-lock and the drive metrics don't
       // move; the mid-range a thumb actually reaches is amplified.
@@ -488,7 +646,10 @@ async function boot(): Promise<void> {
     } else {
       let mx = maxAbs(down('KeyD', 'ArrowRight') - down('KeyA', 'ArrowLeft'), pad?.moveX ?? 0);
       let mz = maxAbs(down('KeyS', 'ArrowDown') - down('KeyW', 'ArrowUp'), pad?.moveZ ?? 0);
-      if (scheme === 'stick' && stick.active) {
+      // v0.31: under the tilt scheme the stick still walks the
+      // player on foot (tilt is a DRIVING scheme — no surveyed game
+      // tilts the walker; see docs/CONTROLS-RESEARCH.md).
+      if ((scheme === 'stick' || scheme === 'tilt') && stick.active) {
         mx = maxAbs(mx, stick.dx);
         mz = maxAbs(mz, stick.dy);
       }
@@ -611,7 +772,10 @@ async function boot(): Promise<void> {
       audio.enterCar();
     }
     if (prevInCar && !hud.inCar && hud.phase === 'play') audio.exitCar();
+    if (prevInCar !== hud.inCar) syncChromeState();
     prevInCar = hud.inCar;
+    // v0.31: the wheel mirrors the tilt while tilt-driving.
+    if (scheme === 'tilt' && hud.inCar) tiltWheelVisual();
     if (hud.stamp !== prevStamp) {
       if (hud.stamp === 'BUSTED') {
         haptics.busted();
@@ -674,7 +838,7 @@ async function boot(): Promise<void> {
     // different class) announces it on the toast line.
     const station = hud.inCar ? stationForClass(hud.carClass) : -1;
     if (station !== prevStation) {
-      if (station >= 0) hudToast.textContent = `📻 ${STATIONS[station].name}`;
+      if (station >= 0) chromeToast(`📻 ${STATIONS[station].name}`, 2600);
       prevStation = station;
     }
     audio.update(
@@ -719,7 +883,6 @@ async function boot(): Promise<void> {
       } else {
         hudTimer.hidden = true;
       }
-      hudToast.textContent = hud.toast;
       // Gear line (v0.30): weapon + ammo on foot, armour/card always.
       {
         const bits = [
@@ -757,11 +920,19 @@ async function boot(): Promise<void> {
         overlay.hidden = true;
       }
     }
+    // Toast: a live chrome toast (tilt state, radio station) wins
+    // over the core's toast until it expires. Written every frame —
+    // the old in-block write raced the station announcement.
+    hudToast.textContent = performance.now() < chromeToastUntil ? chromeToastText : hud.toast;
     if (readoutOn) {
       const car = game.drivenCar;
+      const tiltBit =
+        scheme === 'tilt'
+          ? ` · TILT ${tiltSensor.snapshot().gamma?.toFixed(0) ?? '—'}°→${tiltSensor.steer(tiltCfg()).toFixed(2)}`
+          : '';
       readout.textContent = car
-        ? `STEER ${game.carInput.steer.toFixed(2)} · THR ${game.carInput.throttle.toFixed(2)} · WHEEL ${((car.steer * 180) / Math.PI).toFixed(1)}° · ${hud.speedKmh} km/h`
-        : `MOVE ${game.moveInput.x.toFixed(2)} / ${game.moveInput.z.toFixed(2)} · on foot · stick ${stick.active ? `${stick.dx.toFixed(2)},${stick.dy.toFixed(2)}` : '—'}`;
+        ? `STEER ${game.carInput.steer.toFixed(2)} · THR ${game.carInput.throttle.toFixed(2)} · WHEEL ${((car.steer * 180) / Math.PI).toFixed(1)}° · ${hud.speedKmh} km/h${tiltBit}`
+        : `MOVE ${game.moveInput.x.toFixed(2)} / ${game.moveInput.z.toFixed(2)} · on foot · stick ${stick.active ? `${stick.dx.toFixed(2)},${stick.dy.toFixed(2)}` : '—'}${tiltBit}`;
     }
     requestAnimationFrame(frame);
   }

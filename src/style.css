@@ -170,40 +170,57 @@ body { font-family: system-ui, sans-serif; }
   font: 700 12px system-ui, sans-serif; color: rgba(255,255,255,0.85);
   text-shadow: 0 1px 3px rgba(0,0,0,0.8); white-space: nowrap;
 }
-/* Right-hand controls: DRIFT circle + E over the GAS/BRK pedals.
-   v0.29: E sits in the pedal stack, top-right above GAS — the far
-   corner from the steering wheel's zone. */
+/* Right-hand controls — v0.31 contextual clusters.
+   v0.29 put E top-right above GAS; v0.30 then stacked FIRE and WPN
+   into the same corner and all six buttons showed in BOTH states —
+   Daniel: "the buttons still overlap and I can't easily press
+   them". Now exactly one state group shows (car: DRIFT/E over
+   BRK/GAS; foot: WPN/E over FIRE), with hard layout rules, proven
+   mechanically by tools/layout-audit.mjs at 390×844 and 360×740:
+   every target ≥56 px (pedals 76 wide), every gap ≥12 px, clusters
+   anchored to the corner with safe-area insets, dim at rest and
+   fully opaque while pressed. */
 #ctl-right {
-  position: absolute; right: 10px; bottom: 30px;
-  display: flex; gap: 12px; align-items: flex-end; pointer-events: none;
-}
-#ctl-right .ctl-col { display: flex; flex-direction: column; gap: 10px; pointer-events: auto; }
-#ctl-right .pedal-stack {
-  display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
+  position: absolute;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(26px, calc(env(safe-area-inset-bottom) + 16px));
   pointer-events: none;
 }
-#ctl-right .pedal-stack > button { pointer-events: auto; }
+#ctl-right .state-group {
+  display: flex; flex-direction: column; gap: 12px; align-items: flex-end;
+}
+#ctl-right .state-group[hidden] { display: none; }
+#ctl-right .ctl-row {
+  display: flex; gap: 12px; align-items: flex-end; pointer-events: none;
+}
+#ctl-right .ctl-row > button { pointer-events: auto; }
 #ctl-right button {
   border: 2px solid rgba(255,255,255,0.75); background: rgba(10, 14, 8, 0.5);
   color: #fff; font: 800 13px system-ui, sans-serif;
   touch-action: none; user-select: none; -webkit-user-select: none;
+  opacity: 0.85; /* dim at rest; .pressed goes fully opaque */
 }
-#ctl-right button.round { width: 60px; height: 60px; border-radius: 50%; }
+#ctl-right button.round { width: 64px; height: 64px; border-radius: 50%; }
 #ctl-right button.e-btn { background: rgba(31, 170, 85, 0.55); }
-#ctl-right .pedals { display: flex; gap: 10px; align-items: flex-end; pointer-events: auto; }
 #ctl-right button.pedal {
-  width: 66px; height: 92px; border-radius: 14px; font-size: 15px;
+  width: 76px; height: 100px; border-radius: 14px; font-size: 15px;
 }
-#ctl-right button.pedal.gas { height: 108px; background: rgba(31, 140, 60, 0.5); }
+#ctl-right button.pedal.gas { height: 116px; background: rgba(31, 140, 60, 0.5); }
 #ctl-right button.pedal.brk { background: rgba(170, 45, 35, 0.5); }
 #ctl-right button.pressed {
-  background: rgba(255, 210, 63, 0.7); color: #20180a; transform: translateY(2px);
+  background: rgba(255, 210, 63, 0.75); color: #20180a; transform: translateY(2px);
+  opacity: 1;
 }
-/* v0.30: FIRE + weapon-cycle join the right cluster. */
-#ctl-right .stack-row { display: flex; gap: 10px; pointer-events: none; }
-#ctl-right .stack-row > button { pointer-events: auto; }
-#ctl-right button.fire-btn { background: rgba(190, 40, 30, 0.55); }
-#ctl-right button.wpn-btn { width: 48px; height: 48px; font-size: 11px; align-self: center; }
+#ctl-right button.fire-btn {
+  width: 80px; height: 80px; font-size: 15px; background: rgba(190, 40, 30, 0.55);
+}
+#ctl-right button.wpn-btn { width: 60px; height: 60px; font-size: 11px; }
+/* v0.31 tilt: while DRIVING under the tilt scheme the sensors own
+   steering — the stick zone must not capture left-side touches at
+   all (the wheel is a mirror of the tilt value, not a control).
+   On foot the same zone is the walk stick again, so this applies
+   only with body.tilt-driving (set from main.ts on transitions). */
+body.tilt-driving #stick-zone { pointer-events: none; }
 /* Gear line: weapon/ammo/armour/card, under the top bar. */
 #hud-gear {
   position: fixed; top: 34px; right: 10px; z-index: 20;
@@ -295,14 +312,22 @@ body { font-family: system-ui, sans-serif; }
   text-shadow: 1px 1px 0 rgba(0,0,0,0.7);
 }
 #loading .load-footer .r { color: #ffd23f; }
-/* Buttons scheme (legacy binary layout). */
+/* Buttons scheme (legacy binary layout) — v0.31: same size/gap
+   rules as the main cluster (≥56 px targets, ≥12 px gaps), same
+   contextual data-state visibility. */
 #ctl-buttons {
-  position: absolute; left: 0; right: 0; bottom: 26px;
-  display: flex; justify-content: space-between; padding: 0 10px; pointer-events: none;
+  position: absolute; left: 0; right: 0;
+  bottom: max(26px, calc(env(safe-area-inset-bottom) + 16px));
+  display: flex; justify-content: space-between; align-items: flex-end;
+  padding: 0 12px; pointer-events: none;
 }
-#ctl-buttons .cluster { display: flex; gap: 8px; align-items: flex-end; pointer-events: auto; }
+#ctl-buttons .cluster { display: flex; gap: 12px; align-items: flex-end; pointer-events: auto; }
+#ctl-buttons .right-col { flex-direction: column; align-items: flex-end; pointer-events: none; }
+#ctl-buttons .cluster-row { display: flex; gap: 12px; pointer-events: none; }
+#ctl-buttons .cluster-row > button { pointer-events: auto; }
+#ctl-buttons button[hidden] { display: none; }
 #ctl-buttons button {
-  width: 54px; height: 54px; border-radius: 50%;
+  width: 58px; height: 58px; border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.75); background: rgba(10, 14, 8, 0.5);
   color: #fff; font: 800 12px system-ui, sans-serif;
   touch-action: none; user-select: none; -webkit-user-select: none;

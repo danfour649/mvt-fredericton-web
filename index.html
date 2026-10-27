@@ -183,7 +183,7 @@
            the stick renders as a STEERING WHEEL that rotates with the
            steer value; the zone stops well short of the right cluster
            so the wheel can never spawn under the buttons. -->
-      <div id="stick-zone" class="scheme-el" data-schemes="stick">
+      <div id="stick-zone" class="scheme-el" data-schemes="stick tilt">
         <div id="stick-base">
           <div id="stick-wheel">
             <svg viewBox="0 0 100 100" aria-hidden="true">
@@ -203,44 +203,61 @@
       <div id="drag-zone" class="scheme-el" data-schemes="drag" hidden>
         <div id="drag-hint">hold &amp; drag to steer — car follows your thumb</div>
       </div>
-      <!-- Shared right-hand controls for stick + drag schemes. v0.29:
-           E moved to the TOP-RIGHT, above the GAS pedal — the far
-           corner from the steering wheel, so the two can never meet. -->
-      <div id="ctl-right" class="scheme-el" data-schemes="stick drag">
-        <div class="ctl-col">
-          <button id="btn-drift" type="button" class="round" aria-label="handbrake">DRIFT</button>
-          <button id="btn-fire" type="button" class="round fire-btn" aria-label="fire weapon">FIRE</button>
-        </div>
-        <div class="pedal-stack">
-          <div class="stack-row">
-            <button id="btn-weapon" type="button" class="round wpn-btn" aria-label="switch weapon">WPN</button>
-            <button id="btn-e" type="button" class="e-btn round" aria-label="interact">E</button>
+      <!-- Shared right-hand controls for stick + drag + tilt schemes.
+           v0.31 CONTEXTUAL CLUSTERS (the v0.30 cluster showed all six
+           buttons in both states and they crowded/overlapped): only
+           the buttons that can ACT in the current state are shown —
+           in a car: GAS, BRK, DRIFT, E(exit); on foot: FIRE, WPN,
+           E(interact). main.ts toggles the groups on car transitions;
+           tools/layout-audit.mjs proves the geometry mechanically. -->
+      <div id="ctl-right" class="scheme-el" data-schemes="stick drag tilt">
+        <div class="state-group" data-state-group="car">
+          <div class="ctl-row">
+            <button id="btn-drift" type="button" class="round" aria-label="handbrake">DRIFT</button>
+            <button id="btn-e" type="button" class="e-btn round" aria-label="exit car">E</button>
           </div>
-          <div class="pedals">
+          <div class="ctl-row pedals">
             <button id="btn-brk" type="button" class="pedal brk" aria-label="brake/reverse">BRK</button>
             <button id="btn-gas" type="button" class="pedal gas" aria-label="accelerate">GAS</button>
           </div>
         </div>
+        <div class="state-group" data-state-group="foot" hidden>
+          <div class="ctl-row">
+            <button id="btn-weapon" type="button" class="round wpn-btn" aria-label="switch weapon">WPN</button>
+            <button id="btn-e-foot" type="button" class="e-btn round" aria-label="interact">E</button>
+          </div>
+          <div class="ctl-row">
+            <button id="btn-fire" type="button" class="round fire-btn" aria-label="fire weapon">FIRE</button>
+          </div>
+        </div>
       </div>
-      <!-- Buttons scheme: the legacy binary layout. -->
+      <!-- Buttons scheme: the legacy binary layout, with the same
+           v0.31 contextual rule via data-state on each button. -->
       <div id="ctl-buttons" class="scheme-el" data-schemes="buttons" hidden>
         <div class="cluster">
-          <button type="button" data-code="KeyA" aria-label="left">◀</button>
-          <button type="button" data-code="KeyD" aria-label="right">▶</button>
+          <button type="button" data-code="KeyA" data-state="both" aria-label="left">◀</button>
+          <button type="button" data-code="KeyD" data-state="both" aria-label="right">▶</button>
         </div>
-        <div class="cluster">
-          <button type="button" data-action="interact" class="e-btn" aria-label="interact">E</button>
-          <button type="button" data-action="weapon" aria-label="switch weapon">WPN</button>
-          <button type="button" data-code="KeyF" aria-label="fire weapon">FIRE</button>
-          <button type="button" data-code="Space" aria-label="handbrake">DRIFT</button>
-          <button type="button" data-code="KeyS" aria-label="brake/reverse">BRK</button>
-          <button type="button" data-code="KeyW" aria-label="accelerate">GAS</button>
+        <!-- v0.31: two-row column like the main cluster — six 58px
+             buttons in one row overflowed 360–390px phones (proven
+             by tools/layout-audit.mjs). -->
+        <div class="cluster right-col">
+          <div class="cluster-row">
+            <button type="button" data-action="interact" data-state="both" class="e-btn" aria-label="interact">E</button>
+            <button type="button" data-action="weapon" data-state="foot" aria-label="switch weapon">WPN</button>
+            <button type="button" data-code="Space" data-state="car" aria-label="handbrake">DRIFT</button>
+          </div>
+          <div class="cluster-row">
+            <button type="button" data-code="KeyF" data-state="foot" aria-label="fire weapon">FIRE</button>
+            <button type="button" data-code="KeyS" data-state="car" aria-label="brake/reverse">BRK</button>
+            <button type="button" data-code="KeyW" data-state="car" aria-label="accelerate">GAS</button>
+          </div>
         </div>
       </div>
     </div>
 
     <div id="credit">
-      MVT Fredericton Web v0.30 · <span id="renderer-name">…</span> · buildings, roads &amp; water © GeoNB (OGL-NB) · mission coords © OpenStreetMap contributors (ODbL)
+      MVT Fredericton Web v0.31 · <span id="renderer-name">…</span> · buildings, roads &amp; water © GeoNB (OGL-NB) · mission coords © OpenStreetMap contributors (ODbL)
     </div>
     <div id="help" title="Controls">WASD drive/walk · S reverse · E interact · Space handbrake · on foot: Space/F FIRE, Q weapon · <span id="help-toggle">?</span>
       <span id="help-full" hidden> — steal cars, answer payphones ☎, watch the stars, respray on Queen St kills the heat. R restarts a finished run.
@@ -250,10 +267,20 @@
           <button type="button" data-set-scheme="stick">Stick</button>
           <button type="button" data-set-scheme="drag">Drag-steer</button>
           <button type="button" data-set-scheme="buttons">Buttons</button>
+          <button type="button" data-set-scheme="tilt">Tilt</button>
           <label><input type="checkbox" id="haptics-toggle" checked /> Haptics</label>
           <label><input type="checkbox" id="audio-toggle" checked /> Sound</label>
           <label><input type="checkbox" id="readout-toggle" /> Input readout</label>
           <span class="ctl-note">REVERSE: hold BRK at a stop — it brakes first, then backs up (keyboard S, stick pulled down, gamepad LT). The speedo shows R and the car lights its white reverse lamps while you're backing up. Stick: thumb anywhere left = the steering wheel; push up/down for gas/brake. Drag-steer: hold and drag, the car steers toward your thumb and drives itself — BRK still reverses. Haptics use the Vibration API — Android/Chrome only; iOS Safari has none. Gamepad: left stick steers, RT/LT are the pedals in a car and RT is FIRE on foot, A = E, X = handbrake, Y = switch weapon.</span>
+        </span>
+        <span class="ctl-settings" id="tilt-settings">
+          Tilt steering:
+          <button type="button" id="tilt-calibrate">Calibrate tilt</button>
+          Sensitivity:
+          <button type="button" data-tilt-sens="low">Low</button>
+          <button type="button" data-tilt-sens="standard">Standard</button>
+          <button type="button" data-tilt-sens="high">High</button>
+          <span class="ctl-note">TILT (v0.31): roll the phone like a steering wheel to steer — the on-screen wheel mirrors your tilt. Hold the phone how you'll play, then Calibrate: that pose becomes "straight". GAS/BRK stay on screen; on foot you still walk with the stick. iOS asks permission to use motion sensors when you tap Tilt.</span>
         </span>
       </span>
     </div>
