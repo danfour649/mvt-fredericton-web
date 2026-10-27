@@ -81,3 +81,15 @@ normal), applies time-scaled scrape friction (a flat per-hit factor
 compounds at 180 Hz — that was the first fix attempt's own bug), and
 swings the nose toward wall-parallel weighted by the glancing
 fraction, so tyres stop fighting the surviving tangential velocity.
+
+## v0.30 note (2026-10-27)
+
+Physics untouched — `src/core/physics.ts` is byte-identical and every
+figure above re-verified green in the metric block of
+`src/core/physics.test.ts` (standard 0–100 5.57 s, fast 3.40 s,
+police 4.17 s; handbrake peak slip 149°; coast 8.55 s; brake 2.35 s;
+pivot 77°/7.9 m). v0.30 added systems AROUND the driving (water,
+weapons, fire, pickups, wanted teeth), not to it. One interaction
+worth recording: a BURNING driven car's input is zeroed by the game
+layer (the engine is dead; the car rolls out on momentum through the
+unchanged physics) — bail with E before the fuse ends.
