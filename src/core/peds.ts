@@ -26,6 +26,16 @@ export interface Ped {
   /** v0.29: cumulative metres walked — the walk-cycle phase source
    *  (distance-driven, so feet step in sync with the ground). */
   walkM: number;
+  /** v0.30: set-piece group id (the Gouranga procession) — the game
+   *  tracks group members going down together for the bonus. */
+  group?: string;
+}
+
+/** v0.30: put a ped on the ground for `seconds` (fists, gunfire,
+ *  explosions — the game routes all non-car downs through here). */
+export function forceDown(ped: Ped, seconds: number): void {
+  ped.state = 'down';
+  ped.downT = seconds;
 }
 
 const PED_COLORS = ['#d35450', '#5b8dd9', '#58b368', '#e8c547', '#9d7bd8', '#e07a5f', '#4fb8ac', '#c0c6ce'];
@@ -162,6 +172,46 @@ export function updatePed(ped: Ped, dt: number, threat?: PedThreat): 'downed' | 
   }
   placeOnPath(ped);
   return null;
+}
+
+/**
+ * v0.30: a procession line (the Gouranga set piece) — `count` walkers
+ * on ONE road, same direction and side, spaced ~1.3 m apart along the
+ * path so they read as a line crossing the city, not a crowd.
+ */
+export function spawnProcession(
+  road: Road,
+  count: number,
+  rng: () => number,
+  group: string,
+  idBase: string,
+): Ped[] {
+  const dir: 1 | -1 = rng() > 0.5 ? 1 : -1;
+  const side: 1 | -1 = rng() > 0.5 ? 1 : -1;
+  const start = road.lengthM * (0.25 + 0.4 * rng());
+  const peds: Ped[] = [];
+  for (let i = 0; i < count; i++) {
+    const ped: Ped = {
+      id: `${idBase}-${i}`,
+      pos: { x: 0, z: 0 },
+      heading: 0,
+      color: '#e8862e', // saffron
+      state: 'walk',
+      road,
+      distAlong: Math.max(3, Math.min(road.lengthM - 3, start + (i - count / 2) * 1.35 * dir)),
+      dir,
+      speed: WALK_SPEED,
+      side,
+      fleeDir: { x: 0, z: 0 },
+      fleeT: 0,
+      downT: 0,
+      walkM: 0,
+      group,
+    };
+    placeOnPath(ped);
+    peds.push(ped);
+  }
+  return peds;
 }
 
 /** Harmless on-foot bump: shove the ped a little, no state change. */

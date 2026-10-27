@@ -15,7 +15,8 @@
 import type { Vec2 } from './geo';
 import type { WorldModel } from './world';
 
-export type EntityKind = 'player' | 'car-parked' | 'car-traffic' | 'car-driven' | 'car-cop' | 'ped';
+export type EntityKind =
+  | 'player' | 'car-parked' | 'car-traffic' | 'car-driven' | 'car-cop' | 'ped' | 'pickup';
 
 export interface RenderEntity {
   id: string;
@@ -49,6 +50,27 @@ export interface RenderEntity {
   walkPhase?: number;
   /** v0.29: rolling backwards — adapters light the reverse lamps. */
   reversing?: boolean;
+  /** v0.30: vehicle is on fire (fuse burning) — adapters flame it. */
+  burning?: boolean;
+  /** v0.30: traffic body variety — 'car' (default) | 'taxi' | 'van' | 'pickup'. */
+  bodyType?: 'car' | 'taxi' | 'van' | 'pickup';
+  /** v0.30: pickup glyph + label (kind 'pickup' only). */
+  glyph?: string;
+  label?: string;
+}
+
+/**
+ * v0.30: transient visual effects. `age01` is progress through the
+ * effect's life (0..1); -1 means a standing effect whose flicker
+ * phase the adapter derives from the frame clock (burning cars).
+ */
+export interface RenderEffect {
+  kind: 'fire' | 'explosion' | 'splash' | 'tracer' | 'muzzle';
+  pos: Vec2;
+  /** End point (tracers). */
+  to?: Vec2;
+  age01: number;
+  radiusM?: number;
 }
 
 export interface RenderMarker {
@@ -59,7 +81,7 @@ export interface RenderMarker {
   label: string;
   /** Single glyph drawn inside the marker badge (payphone ☎, etc.). */
   icon: string;
-  kind: 'payphone' | 'objective' | 'respray' | 'exit';
+  kind: 'payphone' | 'objective' | 'respray' | 'exit' | 'chopshop' | 'vehicle';
 }
 
 export interface RenderFrame {
@@ -77,6 +99,10 @@ export interface RenderFrame {
   timeSec: number;
   entities: RenderEntity[];
   markers: RenderMarker[];
+  /** v0.30: transient effects (fire, explosions, splashes, tracers). */
+  effects: RenderEffect[];
+  /** v0.30: permanent scorch marks left by explosions (metres). */
+  scorches: Vec2[];
   /** 0..1 hard-impact pulse, decaying — adapters shake the view. */
   impact: number;
 }

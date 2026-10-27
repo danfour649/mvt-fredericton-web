@@ -13,6 +13,19 @@ export interface CopCar extends CarState {
   id: string;
   /** Seconds since this cop last rammed something (ram cooldown). */
   ramCooldown: number;
+  /** v0.30: cop cars have health now — they can be shot, burned and
+   *  blown up like any other car. 100 = fresh. */
+  health: number;
+  /** v0.30: on fire (health hit 0) — explodes when burnT runs out. */
+  burning: boolean;
+  burnT: number;
+  /** v0.30: the current fire was started by the player's actions
+   *  (frenzy destroy credit + cop-kill payout attribution). */
+  burnByPlayer: boolean;
+  /** v0.30: a roadblock unit — parked across a road, does not pursue. */
+  roadblock: boolean;
+  /** v0.30: return-fire cooldown (seconds until this cop may shoot). */
+  shootCd: number;
 }
 
 let copSeq = 0;
@@ -29,6 +42,12 @@ export function spawnCop(pos: Vec2, heading: number): CopCar {
     slipAngle: 0,
     classId: 'police',
     ramCooldown: 0,
+    health: 100,
+    burning: false,
+    burnT: 0,
+    burnByPlayer: false,
+    roadblock: false,
+    shootCd: 0,
   };
 }
 

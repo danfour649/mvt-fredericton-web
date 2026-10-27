@@ -24,30 +24,48 @@
  * No DOM, no MapLibre, no canvas anywhere in here.
  */
 import { dist, mvtGridToLocal, type Vec2 } from './geo';
-import { nearestRoadPoint, pointAlongRoad, type Road, type WorldModel } from './world';
+import { nearestRoadPoint, pointAlongRoad, pointInWater, type Road, type WorldModel } from './world';
 import { moveCircle, stepCar, type CarInput, type CarState } from './physics';
 import { spawnTraffic, updateTraffic, type TrafficCar } from './traffic';
 import { buildRoadGraph, type RoadGraph } from './routing';
 import { spawnCop, updateCop, type CopCar } from './cops';
-import { spawnPeds, updatePed, nudgePed, reanchorPed, type Ped } from './peds';
+import { spawnPeds, spawnProcession, updatePed, nudgePed, reanchorPed, forceDown, type Ped } from './peds';
 import { Wanted } from './wanted';
 import { Wallet, BUSTED_FINE, HOSPITAL_FEE } from './wallet';
 import { MissionRunner, SPAWN_POS, type MissionDef } from './missions';
 import { SaveStore, type StorageAdapter } from './save';
-import type { RenderFrame, RenderEntity, RenderMarker } from './renderer';
+import { Loadout, WEAPONS, type WeaponId } from './weapons';
+import { placePickups, PICKUP_STYLE, RESPAWN_SEC, type Pickup } from './pickups';
+import type { RenderFrame, RenderEntity, RenderEffect, RenderMarker } from './renderer';
+
+export type BodyType = 'car' | 'taxi' | 'van' | 'pickup';
 
 export interface CarEntity extends CarState {
   id: string;
   kind: 'parked' | 'traffic';
   color: string;
   traffic?: TrafficCar;
-  /** 0..100. 0 = wreck. */
+  /** 0..100. 0 = burning (v0.30: fire comes before the wreck). */
   health: number;
   wrecked: boolean;
   /** Player has stolen this car at least once. */
   stolen: boolean;
   /** Seconds a traffic car stays stopped after being hit. */
   trafficStopT: number;
+  /** v0.30: health hit 0 — the car is ON FIRE and will explode when
+   *  burnT runs out. Bail, or burn with it. */
+  burning: boolean;
+  burnT: number;
+  exploded: boolean;
+  /** v0.30: this fire is the player's work (frenzy/payout credit). */
+  burnByPlayer: boolean;
+  /** v0.30: accumulated flamethrower heat — ignites the car early. */
+  flameHeat: number;
+  /** v0.30: sprite variety on the shared handling classes. */
+  bodyType: BodyType;
+  /** v0.30: delivered for the vehicle job — the chop shop won't
+   *  double-pay for the same car. */
+  delivered: boolean;
 }
 
 export type GamePhase = 'play' | 'busted' | 'wasted' | 'gameover' | 'district-done';
@@ -76,7 +94,46 @@ export interface HudState {
   carHealth: number | null;
   /** v0.29: the driven car is rolling backwards — HUD shows the R. */
   reversing: boolean;
+  /** v0.30: current weapon + ammo (null ammo = infinite, fists). */
+  weaponId: WeaponId;
+  weaponName: string;
+  ammo: number | null;
+  /** v0.30: armour pool (absorbs on-foot damage before health). */
+  armour: number;
+  /** v0.30: holding a Get Outta Jail Free card. */
+  jailCard: boolean;
+  /** v0.30: class of the driven car (radio station source), null on foot. */
+  carClass: string | null;
+  /** v0.30: active Kill Frenzy readout, null when none. */
+  frenzy: { label: string; have: number; need: number; secsLeft: number } | null;
+  /** v0.30: monotonic event counters — main.ts diffs these to fire
+   *  one-shot audio (the established state-diff seam). */
+  shotsFired: number;
+  explosions: number;
+  splashes: number;
+  pickupsTaken: number;
+  frenzyStarts: number;
+  frenzyWins: number;
 }
+
+/** v0.30: an active Kill Frenzy (timed quota, GTA 1 rampage shape). */
+export interface FrenzyState {
+  kind: 'runover' | 'destroy' | 'gun';
+  label: string;
+  need: number;
+  have: number;
+  tLeft: number;
+  /** Gun frenzy: this weapon fires for free while the frenzy runs. */
+  weapon?: WeaponId;
+}
+
+const FRENZY_DEFS: Record<FrenzyState['kind'], { need: number; secs: number; label: string; weapon?: WeaponId }> = {
+  runover: { need: 8, secs: 75, label: 'run down 8 pedestrians' },
+  destroy: { need: 4, secs: 90, label: 'destroy 4 cars' },
+  gun: { need: 10, secs: 90, label: 'shoot 10 pedestrians', weapon: 'mg' },
+};
+export const FRENZY_PAYOUT = 2500;
+export const FRENZY_CONSOLATION = 100;
 
 /** v0.29: shown once, on the first car entry ever (persisted). */
 export const DRIVE_HINT = 'Drive: steer ◀ ▶ · GAS / BRK pedals · hold BRK at a stop to REVERSE';
@@ -106,6 +163,21 @@ export const PED_BUBBLE_R = 260;
 export const PED_TARGET = 12;
 const PED_SCORE = 100;
 const THEFT_SCORE = 500;
+/** v0.30 crime economy (audit #9): GTA 1 paid for violence directly —
+ *  ramming 10, a pedestrian down 100, a cop destroyed 1,000. */
+const SHOOT_PED_SCORE = 150;
+const FIST_PED_SCORE = 25;
+const COP_KILL_SCORE = 1000;
+const RAM_SCORE = 30;
+/** v0.30: a cop within this range has "eyes on" you — wanted decay
+ *  pauses entirely (audit #4: GTA 1 heat never melted on its own;
+ *  ours still can, but only once you've actually broken contact). */
+const COP_EYES_M = 80;
+/** v0.30: chop shop pays class base × remaining health fraction. */
+const CHOP_BASE: Record<string, number> = { standard: 800, fast: 1600 };
+/** v0.30: the vehicle job (a marked parked car → timed delivery). */
+const VEH_JOB_PAYOUT = 250; // × MISSION_SCORE_SCALE, like the payphones
+const VEH_JOB_SECS = 90;
 const WALK_SPEED = 5.4;
 /** v0.29: metres per full 4-frame walk cycle (two steps). */
 const PLAYER_STRIDE_M = 1.5;
@@ -210,9 +282,49 @@ export class Game {
   moveInput: Vec2 = { x: 0, z: 0 };
   carInput: CarInput = { throttle: 0, steer: 0 };
 
+  // --- v0.30 systems state -------------------------------------------------
+  /** The player's arsenal (weapons.ts). Public: input layer + rig. */
+  loadout = new Loadout();
+  /** Set by the input layer (touch FIRE button / Space / gamepad). */
+  fireHeld = false;
+  private fireCooldown = 0;
+  /** Armour pool: soaks on-foot damage before health (pickup-fed). */
+  armour = 0;
+  /** Holding a Get Outta Jail Free card: the next bust is free. */
+  jailCard = false;
+  /** The world's pickups (crates, cards, skulls). Public for the rig. */
+  pickups: Pickup[] = [];
+  frenzy: FrenzyState | null = null;
+  /** Transient visual effects (explosions, splashes, tracers). */
+  private fx: { kind: RenderEffect['kind']; pos: Vec2; to?: Vec2; t: number; ttl: number; radiusM?: number }[] = [];
+  /** Scorch marks left by explosions (capped, oldest fade out). */
+  scorches: Vec2[] = [];
+  private projectiles: { pos: Vec2; vel: Vec2; life: number }[] = [];
+  /** Why the player last died — applyWasted prefers it in the toast. */
+  private wastedReason = '';
+  // Monotonic event counters for the audio seam (see HudState).
+  private shotsFired = 0;
+  private explosionsCount = 0;
+  private splashesCount = 0;
+  private pickupsTaken = 0;
+  private frenzyStarts = 0;
+  private frenzyWins = 0;
+  /** Vehicle job: a marked parked car + the active delivery. */
+  private markedCarId: string | null = null;
+  private vehJob: { carId: string; tLeft: number } | null = null;
+  private vehJobCd = 0;
+  private roadblockCd = 0;
+  private witnessCd = 0;
+  /** Gouranga procession timer + per-group down tracking. */
+  private gourangaT = 75;
+  private gourangaSeq = 0;
+  private gourangaDowns = new Map<string, Map<string, number>>();
+
   /** Snapped POIs (core metres). */
   readonly resprayPos: Vec2;
   readonly exitPos: Vec2;
+  /** v0.30: the chop shop — stolen cars in, money out. */
+  readonly chopShopPos: Vec2;
 
   private toast = '';
   private toastTtl = 0;
@@ -268,8 +380,29 @@ export class Game {
     this.missions = new MissionRunner(); // a fresh run: payphones ring again
     this.resprayPos = snapToRoad(world, 95, 55);
     this.exitPos = snapToRoad(world, 170, 20);
+    this.chopShopPos = snapToRoad(world, -120, 100);
     this.spawnCars();
     this.peds = spawnPeds(world, SPAWN_POS, 20, mulberry32(777));
+    this.pickups = placePickups(world);
+    this.markVehJobCar();
+  }
+
+  /** v0.30: designate a parked car as the vehicle-job car (nearest
+   *  parked car to the east-side job point). Entering it starts the
+   *  timed delivery to the chop shop. */
+  private markVehJobCar(): void {
+    const target = snapToRoad(this.world, 140, 60);
+    let best: CarEntity | null = null;
+    let bestD = 70;
+    for (const car of this.cars) {
+      if (car.kind !== 'parked' || car.wrecked) continue;
+      const d = dist(car.pos, target);
+      if (d < bestD) {
+        bestD = d;
+        best = car;
+      }
+    }
+    this.markedCarId = best?.id ?? null;
   }
 
   // --- world population ---------------------------------------------------
@@ -289,12 +422,26 @@ export class Game {
     const rng = mulberry32(20261025);
     this.cars = [];
     let n = 0;
+    // v0.30 body variety: deterministic by spawn index — taxis are
+    // yellow with a roof sign, vans and pickups share the car
+    // footprint/handling (sprite variety only, physics untouched).
+    const bodyFor = (i: number): { bodyType: BodyType; color: string } => {
+      if (i % 5 === 4) return { bodyType: 'taxi', color: '#e0a81c' };
+      if (i % 7 === 3) return { bodyType: 'van', color: CAR_COLORS[(i + 2) % CAR_COLORS.length] };
+      if (i % 6 === 2) return { bodyType: 'pickup', color: CAR_COLORS[(i + 5) % CAR_COLORS.length] };
+      return { bodyType: 'car', color: CAR_COLORS[i % CAR_COLORS.length] };
+    };
+    const freshCar = {
+      burning: false, burnT: 0, exploded: false, burnByPlayer: false,
+      flameHeat: 0, delivered: false,
+    };
     const addParked = (road: Road, along: number): CarEntity => {
       const at = kerbPlacement(road, along, rng);
+      const body = bodyFor(n);
       const car: CarEntity = {
         id: `parked-${n}`,
         kind: 'parked',
-        color: CAR_COLORS[n % CAR_COLORS.length],
+        color: body.color,
         pos: at.pos,
         heading: at.heading,
         speed: 0,
@@ -307,6 +454,8 @@ export class Game {
         wrecked: false,
         stolen: false,
         trafficStopT: 0,
+        bodyType: body.bodyType,
+        ...freshCar,
       };
       this.cars.push(car);
       n++;
@@ -315,10 +464,11 @@ export class Game {
     let t = 0;
     const addTraffic = (road: Road, along: number): void => {
       const traffic = spawnTraffic(road, along);
+      const body = bodyFor(t + 3);
       this.cars.push({
         id: `traffic-${t}`,
         kind: 'traffic',
-        color: CAR_COLORS[(t + 3) % CAR_COLORS.length],
+        color: body.color,
         pos: { ...traffic.pos },
         heading: traffic.heading,
         speed: 0,
@@ -332,6 +482,8 @@ export class Game {
         wrecked: false,
         stolen: false,
         trafficStopT: 0,
+        bodyType: body.bodyType,
+        ...freshCar,
       });
       t++;
     };
@@ -660,6 +812,14 @@ export class Game {
         this.afterMissionEvents();
       }
     }
+    // v0.30 vehicle job: the marked car starts its delivery the
+    // moment you get in (GTA 1's vehicle-triggered missions).
+    if (car.id === this.markedCarId && !this.vehJob) {
+      this.markedCarId = null;
+      this.vehJob = { carId: car.id, tLeft: VEH_JOB_SECS };
+      this.brief = 'VEHICLE JOB — a buyer wants this exact car. Deliver it to the CHOP SHOP across town, fast and in one piece.';
+      this.briefTtl = 8;
+    }
   }
 
   /** Buttons/keys on the end overlays. */
@@ -685,7 +845,22 @@ export class Game {
     this.playerPos = { ...SPAWN_POS };
     this.bustMeter = 0;
     this.copContactT = 0;
+    // v0.30: a fresh run starts unarmed and unarmoured, GTA-style.
+    this.loadout = new Loadout();
+    this.armour = 0;
+    this.jailCard = false;
+    this.frenzy = null;
+    this.fx = [];
+    this.scorches = [];
+    this.projectiles = [];
+    this.vehJob = null;
+    this.vehJobCd = 0;
+    this.gourangaT = 75;
+    this.gourangaDowns.clear();
+    this.wastedReason = '';
+    this.pickups = placePickups(this.world);
     this.spawnCars();
+    this.markVehJobCar();
     this.peds = spawnPeds(this.world, SPAWN_POS, 20, mulberry32(777));
     this.phase = 'play';
     this.camPos = { ...SPAWN_POS };
@@ -754,9 +929,19 @@ export class Game {
     this.copContactT = 0;
   }
 
-  /** Apply the bust: fine + halved multiplier + heat cleared + respawn. */
+  /** Apply the bust: fine + halved multiplier + heat cleared + respawn.
+   *  v0.30: holding a Get Outta Jail Free card makes it FREE — no
+   *  fine, no multiplier halving, and you keep your weapons/armour
+   *  (the GTA 1 card, exactly). Without one, GTA 1 rules bite in
+   *  full: fine, halved multiplier, and your gear is confiscated. */
   applyBusted(): void {
-    const fine = this.wallet.bustedPenalty();
+    const hadCard = this.jailCard;
+    this.jailCard = false;
+    const fine = hadCard ? 0 : this.wallet.bustedPenalty();
+    if (!hadCard) {
+      this.loadout.strip();
+      this.armour = 0;
+    }
     if (this.drivenCar) {
       // The car is impounded — gone.
       this.cars = this.cars.filter((c) => c !== this.drivenCar);
@@ -764,10 +949,15 @@ export class Game {
     }
     this.wanted.reset();
     this.cops = [];
+    this.frenzy = null;
     this.playerHealth = 100;
     this.playerPos = { ...SPAWN_POS };
     this.camPos = { ...SPAWN_POS };
-    this.showToast(`Busted! Fine $${fine.toLocaleString()} — multiplier cut to ×${this.wallet.multiplier}`);
+    this.showToast(
+      hadCard
+        ? 'GET OUTTA JAIL FREE — card played! No fine, multiplier and gear intact'
+        : `Busted! Fine $${fine.toLocaleString()} — multiplier cut to ×${this.wallet.multiplier}, gear confiscated`,
+    );
     this.persist();
   }
 
@@ -785,12 +975,16 @@ export class Game {
     }
     this.wanted.reset();
     this.cops = [];
+    this.frenzy = null;
+    this.armour = 0;
     this.playerHealth = 100;
     this.playerPos = { ...SPAWN_POS };
     this.camPos = { ...SPAWN_POS };
     if (this.lives > 0) {
-      this.showToast(`Wasted! Hospital fee $${fee} — ${this.lives} ${this.lives === 1 ? 'life' : 'lives'} left`);
+      const reason = this.wastedReason ? `${this.wastedReason} ` : '';
+      this.showToast(`${reason}Wasted! Hospital fee $${fee} — ${this.lives} ${this.lives === 1 ? 'life' : 'lives'} left`);
     }
+    this.wastedReason = '';
     this.persist();
   }
 
@@ -814,6 +1008,10 @@ export class Game {
     this.resprayCooldown = Math.max(0, this.resprayCooldown - dt);
     this.copSpawnCooldown = Math.max(0, this.copSpawnCooldown - dt);
     this.healthRegenDelay = Math.max(0, this.healthRegenDelay - dt);
+    this.witnessCd = Math.max(0, this.witnessCd - dt);
+    // Age transient effects in every phase (an explosion should
+    // finish playing out behind the WASTED stamp).
+    this.fx = this.fx.filter((f) => (f.t += dt) < f.ttl);
 
     // Mission clock runs in every phase except overlays.
     if (this.phase === 'play') {
@@ -851,17 +1049,27 @@ export class Game {
       return;
     }
 
-    // Wanted decays only while no cop is on top of you.
+    // Wanted decay (v0.30): pauses entirely while any cop has eyes
+    // on you (within COP_EYES_M) — the melt only runs once you've
+    // broken contact, and at a third of the old rate.
     const nearestCop = this.cops.length
       ? Math.min(...this.cops.map((c) => dist(c.pos, this.playerPos)))
       : Infinity;
-    if (nearestCop > 45) this.wanted.update(dt);
+    if (nearestCop > COP_EYES_M) this.wanted.update(dt);
 
     if (this.drivenCar) this.updateDriving(dt);
     else this.updateOnFoot(dt);
 
     this.updatePeds(dt);
     this.updateCops(dt);
+    this.updateCombat(dt);
+    this.updateBurning(dt);
+    this.updateProjectiles(dt);
+    this.updatePickups(dt);
+    this.updateFrenzy(dt);
+    this.updateVehJob(dt);
+    this.updateChopShop();
+    this.updateGouranga(dt);
     this.updateRespray();
     this.updateExit();
     this.updateCamera(dt);
@@ -948,6 +1156,13 @@ export class Game {
       this.damageCar(mine, (mySpeed - 3) * 1.6);
       this.crashWanted();
     }
+    // v0.30 crime economy: ramming traffic at speed damages THEM a
+    // little and pays a little (GTA 1 paid 10 a ram; inflation).
+    if (mySpeed > 6 && !other.wrecked) {
+      this.damageCar(other, (mySpeed - 4) * 0.9, true);
+      const gained = this.wallet.earn(RAM_SCORE);
+      if (gained > 0) this.checkGoal();
+    }
   }
 
   private crashWanted(): void {
@@ -955,30 +1170,137 @@ export class Game {
     this.showToast('Reckless driving — wanted level up');
   }
 
-  private damageCar(car: CarEntity, amount: number): void {
+  /**
+   * v0.30: damage routes through FIRE (audit #10). A car at 0 health
+   * no longer dies in place — it catches fire and explodes a few
+   * seconds later. `byPlayer` marks the damage as the player's work
+   * (frenzy destroy credit, chain attribution); `burnT` overrides
+   * the fuse (chain ignitions burn shorter).
+   */
+  private damageCar(car: CarEntity, amount: number, byPlayer = false, burnT?: number): void {
     if (car.wrecked) return;
+    if (car.burning) {
+      if (byPlayer) car.burnByPlayer = true;
+      return;
+    }
     car.health = Math.max(0, car.health - amount);
     if (car.health <= 0) {
-      car.wrecked = true;
-      car.speed = 0;
-      car.vel = { x: 0, z: 0 };
-      car.angVel = 0;
-      if (car === this.drivenCar) {
-        this.showToast('WRECKED! Your car is dead');
-        this.playerPos = {
-          x: car.pos.x + Math.cos(car.heading - Math.PI / 2) * 2.4,
-          z: car.pos.z + Math.sin(car.heading - Math.PI / 2) * 2.4,
-        };
-        this.drivenCar = null;
-      } else if (car.traffic) {
-        car.traffic.stopped = true;
-      }
+      this.startBurning(car, byPlayer || car === this.drivenCar, burnT);
+    }
+  }
+
+  private startBurning(car: CarEntity, byPlayer: boolean, burnT?: number): void {
+    if (car.burning || car.wrecked) return;
+    car.burning = true;
+    car.burnByPlayer = byPlayer;
+    car.health = 0;
+    // Deterministic fuse spread from the id (same city, same fires).
+    let h = 0;
+    for (const ch of car.id) h = (h * 31 + ch.charCodeAt(0)) % 997;
+    car.burnT = burnT ?? 2.8 + (h % 100) / 100;
+    if (car.traffic) car.traffic.stopped = true;
+    if (car === this.drivenCar) {
+      this.showToast('YOUR CAR IS ON FIRE — E TO BAIL OUT!');
+    }
+  }
+
+  private damageCop(cop: CopCar, amount: number, byPlayer = false): void {
+    if (cop.health <= 0) return; // already burning or destroyed
+    cop.health = Math.max(0, cop.health - amount);
+    if (cop.health <= 0 && !cop.burning) {
+      cop.burning = true;
+      cop.burnByPlayer = byPlayer;
+      cop.burnT = 2.2;
+      cop.speed = 0;
+      cop.vel = { x: 0, z: 0 };
+      cop.angVel = 0;
+    }
+  }
+
+  private updateBurning(dt: number): void {
+    for (const car of this.cars) {
+      if (!car.burning) continue;
+      car.burnT -= dt;
+      if (car.burnT <= 0) this.explodeCar(car);
+    }
+    for (const cop of [...this.cops]) {
+      if (!cop.burning) continue;
+      cop.burnT -= dt;
+      if (cop.burnT <= 0) this.explodeCop(cop);
+    }
+  }
+
+  private explodeCar(car: CarEntity): void {
+    car.burning = false;
+    car.exploded = true;
+    car.wrecked = true;
+    car.speed = 0;
+    car.vel = { x: 0, z: 0 };
+    car.angVel = 0;
+    if (car.traffic) car.traffic.stopped = true;
+    const byPlayer = car.burnByPlayer;
+    if (byPlayer && car !== this.drivenCar) this.frenzyProgress('destroy');
+    if (this.drivenCar === car) {
+      // Sitting in it when it goes up is death (bailing in time is
+      // the whole point of the fuse).
+      this.drivenCar = null;
+      this.playerHealth = 0;
+      this.wastedReason = 'Your car exploded with you in it!';
+    }
+    this.explodeAt(car.pos, 7, byPlayer, car);
+  }
+
+  private explodeCop(cop: CopCar): void {
+    this.cops = this.cops.filter((c) => c !== cop);
+    const byPlayer = cop.burnByPlayer;
+    if (byPlayer) {
+      const gained = this.wallet.earn(COP_KILL_SCORE);
+      this.wanted.add(2);
+      this.frenzyProgress('destroy');
+      this.showToast(`Cop car destroyed! +$${gained.toLocaleString()} — wanted level up`);
+      this.checkGoal();
+    }
+    this.explodeAt(cop.pos, 6.5, byPlayer, cop);
+  }
+
+  /** One explosion: visual, scorch, radial damage, chain ignition. */
+  private explodeAt(pos: Vec2, radius: number, byPlayer: boolean, source?: CarEntity | CopCar): void {
+    this.explosionsCount++;
+    this.fx.push({ kind: 'explosion', pos: { ...pos }, t: 0, ttl: 0.55, radiusM: radius });
+    this.scorches.push({ ...pos });
+    if (this.scorches.length > 48) this.scorches.splice(0, this.scorches.length - 48);
+    for (const car of this.cars) {
+      if (car === source || car.wrecked) continue;
+      const d = dist(car.pos, pos);
+      if (d > radius + 2.2) continue;
+      this.damageCar(car, 90 * Math.max(0.25, 1 - d / (radius + 3)), byPlayer, 1.2 + (d % 1));
+    }
+    for (const cop of [...this.cops]) {
+      if (cop === source || cop.health <= 0) continue;
+      const d = dist(cop.pos, pos);
+      if (d > radius + 2.2) continue;
+      this.damageCop(cop, 90 * Math.max(0.25, 1 - d / (radius + 3)), byPlayer);
+    }
+    for (const ped of this.peds) {
+      if (ped.state === 'down') continue;
+      if (dist(ped.pos, pos) <= radius) this.pedDowned(ped, 'explosion');
+    }
+    // The player, caught in it: shrapnel in a car, the full thing
+    // on foot. (Being IN the exploding car is handled by explodeCar.)
+    if (this.drivenCar && this.drivenCar !== source) {
+      if (dist(this.drivenCar.pos, pos) <= radius + 1) this.hurtPlayer(10);
+    } else if (!this.drivenCar && dist(this.playerPos, pos) <= radius) {
+      const d = dist(this.playerPos, pos);
+      this.hurtPlayer(Math.round(8 + 34 * (1 - d / (radius + 1))));
     }
   }
 
   private updateDriving(dt: number): void {
     const car = this.drivenCar!;
-    const stepped = stepCar(this.world, car, this.carInput, dt);
+    // v0.30: a burning car's engine is dead — it rolls out on
+    // momentum with no throttle while the fuse burns.
+    const input = car.burning ? { throttle: 0, steer: 0 } : this.carInput;
+    const stepped = stepCar(this.world, car, input, dt);
     const impact = stepped.impactSpeed;
     Object.assign(car, stepped.car);
     if (stepped.hitBuilding && impact > 9) {
@@ -1003,6 +1325,43 @@ export class Game {
     this.playerHeading = car.heading;
     this.missions.update(this.playerPos, true);
     this.afterMissionEvents();
+    // v0.30: drive into the Saint John and the car sinks — deep
+    // water is death in GTA 1 — unless the surface under you is a
+    // road, which over this river means the Westmorland bridge.
+    if (this.inDeepWater(car.pos, 2.2)) {
+      car.wrecked = true;
+      car.burning = false;
+      car.speed = 0;
+      car.vel = { x: 0, z: 0 };
+      this.fx.push({ kind: 'splash', pos: { ...car.pos }, t: 0, ttl: 0.8, radiusM: 3.2 });
+      this.splashesCount++;
+      this.drivenCar = null;
+      this.wastedReason = 'Your car sank in the Saint John River!';
+      this.triggerWasted();
+    }
+  }
+
+  /** Road surface: within half a carriageway (+ kerb) of a centreline. */
+  private onRoadSurface(pos: Vec2): boolean {
+    const near = nearestRoadPoint(this.world, pos);
+    return !!near && dist(pos, near.pos) <= near.road.widthM / 2 + 1.0;
+  }
+
+  /**
+   * Deep water: inside a water polygon, off every road surface, with
+   * water (and no road) a full `sampleR` out in all four directions.
+   * The cross-sample keeps the shoreline itself safe — the bank
+   * trail runs at the polygon's edge — while one real step in is
+   * drowning depth. Bridges pass on the road test alone.
+   */
+  private inDeepWater(pos: Vec2, sampleR: number): boolean {
+    if (!pointInWater(this.world, pos) || this.onRoadSurface(pos)) return false;
+    const pts: [number, number][] = [[sampleR, 0], [-sampleR, 0], [0, sampleR], [0, -sampleR]];
+    for (const [dx, dz] of pts) {
+      const s = { x: pos.x + dx, z: pos.z + dz };
+      if (!pointInWater(this.world, s) || this.onRoadSurface(s)) return false;
+    }
+    return true;
   }
 
   private updateOnFoot(dt: number): void {
@@ -1032,10 +1391,24 @@ export class Game {
       if (dist(this.playerPos, ped.pos) < 0.95) nudgePed(ped, this.playerPos);
     }
     this.missions.update(this.playerPos, false);
+    // v0.30: walk into the river and you drown (GTA 1 rules) — the
+    // bank's edge is safe, the open water is not (see inDeepWater).
+    if (this.inDeepWater(this.playerPos, 1.0)) {
+      this.fx.push({ kind: 'splash', pos: { ...this.playerPos }, t: 0, ttl: 0.8, radiusM: 1.6 });
+      this.splashesCount++;
+      this.wastedReason = 'You drowned in the Saint John River!';
+      this.triggerWasted();
+    }
   }
 
+  /** v0.30: armour soaks damage first, point for point. */
   private hurtPlayer(amount: number): void {
-    this.playerHealth = Math.max(0, this.playerHealth - amount);
+    if (this.armour > 0) {
+      const absorbed = Math.min(this.armour, amount);
+      this.armour -= absorbed;
+      amount -= absorbed;
+    }
+    if (amount > 0) this.playerHealth = Math.max(0, this.playerHealth - amount);
     this.healthRegenDelay = 5;
   }
 
@@ -1052,19 +1425,81 @@ export class Game {
         ped.pos = pushed.pos;
       }
       void before;
-      if (ev === 'downed') {
-        const gained = this.wallet.earn(PED_SCORE);
+      if (ev === 'downed') this.pedDowned(ped, 'car', true);
+    }
+  }
+
+  /**
+   * v0.30: every way a pedestrian goes down, booked in one place —
+   * score, heat, frenzy credit, and the Gouranga tracker all hang
+   * off the cause. 'car' keeps the exact v0.20 semantics (updatePed
+   * already put them down; `alreadyDown` skips the force-down).
+   */
+  private pedDowned(
+    ped: Ped,
+    cause: 'car' | 'gun' | 'fist' | 'explosion',
+    alreadyDown = false,
+  ): void {
+    if (ped.state === 'down' && !alreadyDown) return;
+    if (!alreadyDown) {
+      forceDown(ped, cause === 'fist' ? 3.5 : cause === 'explosion' ? 8 : 10);
+    }
+    if (cause === 'car') {
+      const gained = this.wallet.earn(PED_SCORE);
+      this.wanted.add(1);
+      this.showToast(`Ped down! +$${gained.toLocaleString()} — wanted level up`);
+      this.frenzyProgress('runover');
+    } else if (cause === 'gun') {
+      const gained = this.wallet.earn(SHOOT_PED_SCORE);
+      this.wanted.add(1);
+      this.showToast(`Ped shot! +$${gained.toLocaleString()} — wanted level up`);
+      this.frenzyProgress('gun');
+    } else if (cause === 'fist') {
+      const gained = this.wallet.earn(FIST_PED_SCORE);
+      // A punch is quiet: it only draws heat if a cop sees it.
+      const witnessed = this.cops.some((c) => dist(c.pos, this.playerPos) < 45);
+      if (witnessed) {
         this.wanted.add(1);
-        this.showToast(`Ped down! +$${gained.toLocaleString()} — wanted level up`);
+        this.showToast(`Punched a pedestrian! +$${gained.toLocaleString()} — a cop saw that`);
+      } else {
+        this.showToast(`Punched a pedestrian! +$${gained.toLocaleString()}`);
+      }
+    } else {
+      this.wallet.earn(PED_SCORE);
+    }
+    if (cause !== 'explosion') this.checkGoal();
+    // Gouranga: the whole saffron line down inside 12 s = the bonus.
+    if (ped.group) {
+      let byPed = this.gourangaDowns.get(ped.group);
+      if (!byPed) {
+        byPed = new Map();
+        this.gourangaDowns.set(ped.group, byPed);
+      }
+      byPed.set(ped.id, this.time);
+      for (const [id, t] of byPed) if (this.time - t > 12) byPed.delete(id);
+      const members = this.peds.filter((p) => p.group === ped.group).length;
+      if (members >= 7 && byPed.size >= members) {
+        this.gourangaDowns.delete(ped.group);
+        const gained = this.wallet.earn(1500);
+        this.showToast(`GOURANGA! The whole procession! +$${gained.toLocaleString()}`);
+        this.checkGoal();
       }
     }
   }
 
+  /** Advance the active frenzy's quota when the cause matches. */
+  private frenzyProgress(kind: FrenzyState['kind']): void {
+    if (!this.frenzy || this.frenzy.kind !== kind) return;
+    this.frenzy.have++;
+  }
+
   private updateCops(dt: number): void {
     const stars = this.wanted.stars;
+    this.roadblockCd = Math.max(0, this.roadblockCd - dt);
+    const pursuitCount = this.cops.filter((c) => !c.roadblock).length;
     const desired = stars > 0 ? Math.min(stars, 4) : 0;
     // Spawn up to the desired pressure, at a road point ~120-170 m out.
-    if (this.cops.length < desired && this.copSpawnCooldown <= 0) {
+    if (pursuitCount < desired && this.copSpawnCooldown <= 0) {
       this.copSpawnCooldown = 1.5;
       const angle = this.time * 1.7 + this.cops.length * 2.1;
       const probe = {
@@ -1076,11 +1511,47 @@ export class Game {
         this.cops.push(spawnCop(near.pos, near.heading));
       }
     }
+    // v0.30 roadblocks (audit #5): at 4+ stars a pair of cop cars
+    // parks ACROSS a road ahead of the player's heading. They hold
+    // position (and shoot, below) until the heat drops or the
+    // player leaves them far behind.
+    if (stars >= 4 && !this.cops.some((c) => c.roadblock) && this.roadblockCd <= 0) {
+      const speed = Math.hypot(this.playerVel.x, this.playerVel.z);
+      const dirVec = speed > 2
+        ? { x: this.playerVel.x / speed, z: this.playerVel.z / speed }
+        : { x: Math.cos(this.playerHeading), z: Math.sin(this.playerHeading) };
+      const probe = {
+        x: this.playerPos.x + dirVec.x * 85,
+        z: this.playerPos.z + dirVec.z * 85,
+      };
+      const near = nearestRoadPoint(this.world, probe);
+      if (near && dist(near.pos, this.playerPos) > 35) {
+        const px = Math.cos(near.heading + Math.PI / 2);
+        const pz = Math.sin(near.heading + Math.PI / 2);
+        for (const side of [-1, 1]) {
+          const cop = spawnCop(
+            { x: near.pos.x + px * 2.3 * side, z: near.pos.z + pz * 2.3 * side },
+            near.heading + Math.PI / 2,
+          );
+          cop.roadblock = true;
+          this.cops.push(cop);
+        }
+        this.roadblockCd = 25;
+      }
+    }
     const target = { pos: this.playerPos, vel: this.playerVel };
     const survivors: CopCar[] = [];
     for (const cop of this.cops) {
-      updateCop(this.world, cop, target, dt);
       const d = dist(cop.pos, this.playerPos);
+      // Roadblocks abandon their post when the heat drops or the
+      // player is long gone.
+      if (cop.roadblock && (stars < 4 || d > 170)) continue;
+      // A burning cop car sits and burns (updateBurning owns it).
+      if (cop.burning) {
+        survivors.push(cop);
+        continue;
+      }
+      if (!cop.roadblock) updateCop(this.world, cop, target, dt);
       // Give up when the heat is gone and they're far behind.
       if (stars === 0 && d > 200) continue;
       // Ramming.
@@ -1091,10 +1562,11 @@ export class Game {
           const mine = this.drivenCar;
           const rel = Math.max(0, Math.abs(cop.speed) - Math.abs(mine.speed)) + Math.abs(cop.speed) * 0.4;
           this.damageCar(mine, 4 + rel * 1.4);
-          // v0.25 fix: damageCar may have WRECKED the car, which
-          // ejects the player and nulls drivenCar — dereferencing it
-          // for the shove threw a TypeError that killed the frame
-          // loop (found by the drive-level audit test). Only shove
+          // v0.25 fix (still load-bearing): the ram's damage used
+          // to be able to null drivenCar mid-loop (the old instant
+          // wreck ejected the player) and the shove then threw,
+          // freezing the frame loop. v0.30 damage starts a fire
+          // instead of ejecting, but the guard stays — only shove
           // a car the player is still sitting in.
           if (this.drivenCar === mine) {
             mine.vel = {
@@ -1121,14 +1593,29 @@ export class Game {
           }
         }
       }
+      // v0.30 return fire: at 4+ stars the police shoot at a
+      // player on foot (GTA 1's shoot-on-sight tier). Deliberately
+      // survivable: one shot per cop per ~2 s, accuracy falls with
+      // distance, armour eats it first. In a car they still ram.
+      cop.shootCd = Math.max(0, cop.shootCd - dt);
+      if (stars >= 4 && !this.drivenCar && cop.shootCd <= 0 && d < 34 && d > 2.6) {
+        cop.shootCd = 1.7 + Math.random() * 1.2;
+        this.fx.push({ kind: 'muzzle', pos: { ...cop.pos }, t: 0, ttl: 0.09 });
+        this.fx.push({ kind: 'tracer', pos: { ...cop.pos }, to: { ...this.playerPos }, t: 0, ttl: 0.12 });
+        if (Math.random() < Math.max(0.15, 0.6 - d * 0.011)) {
+          this.hurtPlayer(7);
+          this.showToast('Taking police fire!');
+        }
+      }
       survivors.push(cop);
     }
     this.cops = survivors;
 
-    // The bust itself.
-    if (stars > 0 && this.cops.length) {
+    // The bust itself. (Burning cop cars don't bust anyone.)
+    const activeCops = this.cops.filter((c) => !c.burning);
+    if (stars > 0 && activeCops.length) {
       if (this.drivenCar) {
-        const copNear = Math.min(...this.cops.map((c) => dist(c.pos, this.playerPos)));
+        const copNear = Math.min(...activeCops.map((c) => dist(c.pos, this.playerPos)));
         if (Math.abs(this.drivenCar.speed) < 1.5 && copNear < 7) {
           this.bustMeter += dt / 3;
           if (this.bustMeter >= 1) return this.triggerBusted();
@@ -1136,7 +1623,7 @@ export class Game {
           this.bustMeter = Math.max(0, this.bustMeter - dt / 2);
         }
       } else {
-        const touching = this.cops.some((c) => dist(c.pos, this.playerPos) < 2.6);
+        const touching = activeCops.some((c) => dist(c.pos, this.playerPos) < 2.6);
         if (touching) {
           this.copContactT += dt;
           if (this.copContactT >= 2) return this.triggerBusted();
@@ -1177,6 +1664,423 @@ export class Game {
       this.phase = 'district-done';
       this.persist();
     }
+  }
+
+  // --- v0.30: combat ---------------------------------------------------------
+
+  /** Weapon cycling (Q key / weapon button / gamepad Y). */
+  cycleWeapon(): void {
+    if (this.drivenCar) return;
+    const w = this.loadout.cycle();
+    this.showToast(`Weapon: ${WEAPONS[w].name}${WEAPONS[w].usesAmmo ? ` · ${this.loadout.ammo[w]} rounds` : ''}`);
+  }
+
+  private updateCombat(dt: number): void {
+    this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    for (const car of this.cars) {
+      if (car.flameHeat > 0) car.flameHeat = Math.max(0, car.flameHeat - dt * 10);
+    }
+    if (this.drivenCar || !this.fireHeld) return;
+    if (this.fireCooldown > 0) return;
+    const def = this.loadout.def;
+    // A weapon granted by a gun frenzy fires free while it runs.
+    const frenzyFree = this.frenzy?.weapon === this.loadout.weapon;
+    if (!frenzyFree && !this.loadout.canFire()) {
+      this.loadout.fallback();
+      this.showToast(`Out of ammo — ${this.loadout.def.name} ready`);
+      this.fireCooldown = 0.35;
+      return;
+    }
+    this.fireCooldown = def.cooldown;
+    this.fireOnce();
+  }
+
+  /**
+   * Pick the firing direction: the nearest valid target inside a
+   * modest auto-aim cone of the facing wins an exact snap (GTA 1
+   * shot where you faced; the cone is the mercy). Otherwise the
+   * shot goes straight down the facing.
+   */
+  private aimDirection(range: number): { dir: Vec2; target: { kind: 'ped' | 'car' | 'cop'; ref: Ped | CarEntity | CopCar } | null } {
+    const fx = Math.cos(this.playerHeading);
+    const fz = Math.sin(this.playerHeading);
+    let best: { kind: 'ped' | 'car' | 'cop'; ref: Ped | CarEntity | CopCar } | null = null;
+    let bestScore = Infinity;
+    const consider = (kind: 'ped' | 'car' | 'cop', ref: Ped | CarEntity | CopCar, pos: Vec2): void => {
+      const dx = pos.x - this.playerPos.x;
+      const dz = pos.z - this.playerPos.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 0.5 || d > range) return;
+      const dot = (dx * fx + dz * fz) / d;
+      if (dot < Math.cos(0.5)) return; // outside the ±0.5 rad cone
+      const score = d + (1 - dot) * 18;
+      if (score < bestScore) {
+        bestScore = score;
+        best = { kind, ref };
+      }
+    };
+    for (const ped of this.peds) if (ped.state !== 'down') consider('ped', ped, ped.pos);
+    for (const car of this.cars) if (!car.wrecked && car !== this.drivenCar) consider('car', car, car.pos);
+    for (const cop of this.cops) if (cop.health > 0) consider('cop', cop, cop.pos);
+    if (best) {
+      const t = best as { ref: Ped | CarEntity | CopCar };
+      const dx = t.ref.pos.x - this.playerPos.x;
+      const dz = t.ref.pos.z - this.playerPos.z;
+      const d = Math.hypot(dx, dz) || 1;
+      return { dir: { x: dx / d, z: dz / d }, target: best };
+    }
+    return { dir: { x: fx, z: fz }, target: null };
+  }
+
+  /** First thing a hitscan ray meets: building, ped, car or cop. */
+  private raycastHit(
+    from: Vec2,
+    dir: Vec2,
+    range: number,
+  ): { kind: 'building' | 'ped' | 'car' | 'cop'; ref?: Ped | CarEntity | CopCar; at: Vec2 } | null {
+    for (let s = 0.8; s <= range; s += 0.7) {
+      const p = { x: from.x + dir.x * s, z: from.z + dir.z * s };
+      for (const b of this.world.buildings) {
+        // The world stores buildings as axis-aligned boxes — the
+        // bbox IS the footprint here, so it stops the bullet.
+        if (p.x > b.minX && p.x < b.maxX && p.z > b.minZ && p.z < b.maxZ) {
+          return { kind: 'building', at: p };
+        }
+      }
+      for (const ped of this.peds) {
+        if (ped.state !== 'down' && dist(p, ped.pos) < 0.6) return { kind: 'ped', ref: ped, at: p };
+      }
+      for (const car of this.cars) {
+        if (!car.wrecked && car !== this.drivenCar && dist(p, car.pos) < 2.35) {
+          return { kind: 'car', ref: car, at: p };
+        }
+      }
+      for (const cop of this.cops) {
+        if (cop.health > 0 && dist(p, cop.pos) < 2.35) return { kind: 'cop', ref: cop, at: p };
+      }
+    }
+    return null;
+  }
+
+  private fireOnce(): void {
+    const def = this.loadout.def;
+    const frenzyFree = this.frenzy?.weapon === this.loadout.weapon;
+    const from = {
+      x: this.playerPos.x + Math.cos(this.playerHeading) * 0.5,
+      z: this.playerPos.z + Math.sin(this.playerHeading) * 0.5,
+    };
+
+    if (def.id === 'fists') {
+      // A swing: nearest ped in a short front arc goes down, stunned.
+      let best: Ped | null = null;
+      let bestD = def.range;
+      for (const ped of this.peds) {
+        if (ped.state === 'down') continue;
+        const d = dist(ped.pos, this.playerPos);
+        if (d >= bestD) continue;
+        const dot = ((ped.pos.x - this.playerPos.x) * Math.cos(this.playerHeading) +
+          (ped.pos.z - this.playerPos.z) * Math.sin(this.playerHeading)) / (d || 1);
+        if (dot < 0.2) continue;
+        bestD = d;
+        best = ped;
+      }
+      if (best) this.pedDowned(best, 'fist');
+      return;
+    }
+
+    if (def.projectile) {
+      // Rocket: a travelling projectile that explodes on contact.
+      const { dir } = this.aimDirection(def.range);
+      this.playerHeading = Math.atan2(dir.z, dir.x);
+      this.projectiles.push({
+        pos: { ...from },
+        vel: { x: dir.x * 42, z: dir.z * 42 },
+        life: def.range / 42,
+      });
+      if (!frenzyFree) this.loadout.consume();
+      this.shotsFired++;
+      this.fx.push({ kind: 'muzzle', pos: { ...from }, t: 0, ttl: 0.1 });
+      return;
+    }
+
+    if (def.id === 'flame') {
+      // Flamethrower: a short cone of fire, ticked damage. Cars
+      // soak damage AND heat — heat alone can light them early.
+      const { dir } = this.aimDirection(def.range);
+      this.playerHeading = Math.atan2(dir.z, dir.x);
+      if (!frenzyFree) this.loadout.consume(2);
+      this.shotsFired++;
+      for (let i = 1; i <= 3; i++) {
+        this.fx.push({
+          kind: 'fire',
+          pos: { x: from.x + dir.x * i * 2.2, z: from.z + dir.z * i * 2.2 },
+          t: 0, ttl: 0.14, radiusM: 1.1,
+        });
+      }
+      for (const car of this.cars) {
+        if (car.wrecked || car === this.drivenCar) continue;
+        const d = dist(car.pos, this.playerPos);
+        if (d > def.range + 2) continue;
+        const dot = ((car.pos.x - this.playerPos.x) * dir.x + (car.pos.z - this.playerPos.z) * dir.z) / (d || 1);
+        if (dot < 0.55) continue;
+        this.damageCar(car, def.carDamage, true);
+        if (!car.burning && !car.wrecked) {
+          car.flameHeat += 3.6;
+          if (car.flameHeat >= 18) this.startBurning(car, true, 1.6);
+        }
+      }
+      for (const cop of this.cops) {
+        if (cop.health <= 0) continue;
+        const d = dist(cop.pos, this.playerPos);
+        if (d > def.range + 2) continue;
+        const dot = ((cop.pos.x - this.playerPos.x) * dir.x + (cop.pos.z - this.playerPos.z) * dir.z) / (d || 1);
+        if (dot < 0.55) continue;
+        this.damageCop(cop, def.carDamage, true);
+      }
+      for (const ped of this.peds) {
+        if (ped.state === 'down') continue;
+        const d = dist(ped.pos, this.playerPos);
+        if (d > def.range) continue;
+        const dot = ((ped.pos.x - this.playerPos.x) * dir.x + (ped.pos.z - this.playerPos.z) * dir.z) / (d || 1);
+        if (dot < 0.5) continue;
+        this.pedDowned(ped, 'gun');
+      }
+      return;
+    }
+
+    // Hitscan (pistol / machine gun).
+    const { dir } = this.aimDirection(def.range);
+    this.playerHeading = Math.atan2(dir.z, dir.x);
+    if (!frenzyFree) this.loadout.consume();
+    this.shotsFired++;
+    this.fx.push({ kind: 'muzzle', pos: { ...from }, t: 0, ttl: 0.07 });
+    const hit = this.raycastHit(from, dir, def.range);
+    const end = hit ? hit.at : { x: from.x + dir.x * def.range, z: from.z + dir.z * def.range };
+    this.fx.push({ kind: 'tracer', pos: { ...from }, to: end, t: 0, ttl: 0.09 });
+    if (!hit) return;
+    if (hit.kind === 'ped') {
+      this.pedDowned(hit.ref as Ped, 'gun');
+    } else if (hit.kind === 'car') {
+      const car = hit.ref as CarEntity;
+      this.damageCar(car, def.carDamage, true);
+      // Hot metal in public draws heat when the law is watching.
+      if (this.witnessCd <= 0 && this.cops.some((c) => dist(c.pos, this.playerPos) < 42)) {
+        this.witnessCd = 4;
+        this.wanted.add(1);
+        this.showToast('Shots fired at a car — wanted level up');
+      }
+    } else if (hit.kind === 'cop') {
+      this.damageCop(hit.ref as CopCar, def.carDamage, true);
+    }
+  }
+
+  private updateProjectiles(dt: number): void {
+    const survivors: typeof this.projectiles = [];
+    for (const pr of this.projectiles) {
+      pr.pos = { x: pr.pos.x + pr.vel.x * dt, z: pr.pos.z + pr.vel.z * dt };
+      pr.life -= dt;
+      this.fx.push({ kind: 'fire', pos: { ...pr.pos }, t: 0, ttl: 0.12, radiusM: 0.55 });
+      let boom = pr.life <= 0;
+      if (!boom) {
+        for (const car of this.cars) {
+          if (!car.wrecked && car !== this.drivenCar && dist(pr.pos, car.pos) < 2.4) boom = true;
+        }
+        for (const cop of this.cops) {
+          if (cop.health > 0 && dist(pr.pos, cop.pos) < 2.4) boom = true;
+        }
+        if (!boom) {
+          for (const b of this.world.buildings) {
+            if (pr.pos.x > b.minX && pr.pos.x < b.maxX && pr.pos.z > b.minZ && pr.pos.z < b.maxZ) {
+              boom = true;
+              break;
+            }
+          }
+        }
+      }
+      if (boom) this.explodeAt(pr.pos, 6.5, true);
+      else survivors.push(pr);
+    }
+    this.projectiles = survivors;
+  }
+
+  // --- v0.30: pickups, frenzies, chop shop, procession -----------------------
+
+  private updatePickups(dt: number): void {
+    for (const p of this.pickups) {
+      if (!p.active) {
+        p.respawnT -= dt;
+        if (p.respawnT <= 0) p.active = true;
+        continue;
+      }
+      if (dist(this.playerPos, p.pos) <= 1.9) this.collectPickup(p);
+    }
+  }
+
+  private collectPickup(p: Pickup): void {
+    // A skull while a frenzy is already running is left standing.
+    if (p.kind.startsWith('frenzy-') && this.frenzy) {
+      this.showToast('A Kill Frenzy is already running!');
+      return;
+    }
+    p.active = false;
+    p.respawnT = RESPAWN_SEC[p.kind];
+    this.pickupsTaken++;
+    switch (p.kind) {
+      case 'pistol':
+        this.loadout.give('pistol', 24);
+        this.showToast('PISTOL — 24 rounds. FIRE to shoot');
+        break;
+      case 'mg':
+        this.loadout.give('mg', 60);
+        this.showToast('MACHINE GUN — 60 rounds');
+        break;
+      case 'rocket':
+        this.loadout.give('rocket', 4);
+        this.showToast('ROCKET LAUNCHER — 4 rockets. Mind the splash');
+        break;
+      case 'flame':
+        this.loadout.give('flame', 120);
+        this.showToast('FLAMETHROWER — lights cars beautifully');
+        break;
+      case 'ammo':
+        if (this.loadout.owned.has('mg')) this.loadout.addAmmo('mg', 40);
+        if (this.loadout.owned.has('pistol')) this.loadout.addAmmo('pistol', 18);
+        if (!this.loadout.owned.has('mg') && !this.loadout.owned.has('pistol')) {
+          this.loadout.give('pistol', 12);
+        }
+        this.showToast('AMMO — topped up');
+        break;
+      case 'armour':
+        this.armour = 100;
+        this.showToast('ARMOUR — soaks damage before your health');
+        break;
+      case 'bribe':
+        this.wanted.reset();
+        this.showToast('COP BRIBE — the heat is just… gone');
+        break;
+      case 'jailcard':
+        this.jailCard = true;
+        this.showToast('GET OUTTA JAIL FREE — your next bust costs nothing');
+        break;
+      case 'multiplier':
+        this.wallet.multiplier += 1;
+        this.showToast(`MULTIPLIER up — now ×${this.wallet.multiplier}`);
+        break;
+      case 'life':
+        this.lives = Math.min(9, this.lives + 1);
+        this.showToast('EXTRA LIFE!');
+        break;
+      case 'frenzy-runover':
+      case 'frenzy-destroy':
+      case 'frenzy-gun':
+        this.startFrenzy(p.kind.slice('frenzy-'.length) as FrenzyState['kind']);
+        break;
+    }
+  }
+
+  private startFrenzy(kind: FrenzyState['kind']): void {
+    const def = FRENZY_DEFS[kind];
+    this.frenzy = { kind, label: def.label, need: def.need, have: 0, tLeft: def.secs, weapon: def.weapon };
+    if (def.weapon && !this.loadout.owned.has(def.weapon)) {
+      this.loadout.give(def.weapon, 0); // frenzy ammo is on the house
+    }
+    if (def.weapon) this.loadout.weapon = def.weapon;
+    this.frenzyStarts++;
+    this.brief = `KILL FRENZY! ${def.label} — ${def.secs} seconds. Pays $${FRENZY_PAYOUT.toLocaleString()} and +1 multiplier.`;
+    this.briefTtl = 6;
+  }
+
+  private updateFrenzy(dt: number): void {
+    if (!this.frenzy) return;
+    if (this.frenzy.have >= this.frenzy.need) {
+      const gained = this.wallet.earn(FRENZY_PAYOUT);
+      this.wallet.multiplier += 1;
+      this.frenzyWins++;
+      this.showToast(
+        `FRENZY COMPLETE! +$${gained.toLocaleString()} — multiplier now ×${this.wallet.multiplier}`,
+      );
+      this.frenzy = null;
+      this.checkGoal();
+      return;
+    }
+    this.frenzy.tLeft -= dt;
+    if (this.frenzy.tLeft <= 0) {
+      const gained = this.wallet.earn(FRENZY_CONSOLATION);
+      this.showToast(`Frenzy failed — +$${gained.toLocaleString()} for the effort`);
+      this.frenzy = null;
+    }
+  }
+
+  private updateVehJob(dt: number): void {
+    this.vehJobCd = Math.max(0, this.vehJobCd - dt);
+    if (!this.vehJob) {
+      // Re-mark a new job car once the cooldown runs out.
+      if (!this.markedCarId && this.vehJobCd <= 0) this.markVehJobCar();
+      return;
+    }
+    const job = this.vehJob;
+    job.tLeft -= dt;
+    const car = this.cars.find((c) => c.id === job.carId);
+    if (!car || car.wrecked) {
+      this.showToast('VEHICLE JOB FAILED — the car is wreckage');
+      this.vehJob = null;
+      this.vehJobCd = 120;
+      return;
+    }
+    if (job.tLeft <= 0) {
+      this.showToast('VEHICLE JOB FAILED — too slow');
+      this.vehJob = null;
+      this.vehJobCd = 120;
+      return;
+    }
+    if (this.drivenCar === car && dist(this.playerPos, this.chopShopPos) <= 10 && Math.abs(car.speed) < 3) {
+      car.delivered = true;
+      const gained = this.wallet.earn(VEH_JOB_PAYOUT * MISSION_SCORE_SCALE);
+      this.wallet.missionCompleted();
+      this.showToast(`VEHICLE JOB complete! +$${gained.toLocaleString()} — multiplier now ×${this.wallet.multiplier}`);
+      this.vehJob = null;
+      this.vehJobCd = 120;
+      this.checkGoal();
+      this.persist();
+    }
+  }
+
+  private updateChopShop(): void {
+    const car = this.drivenCar;
+    if (!car || !car.stolen || car.burning || car.delivered) return;
+    if (this.vehJob && this.vehJob.carId === car.id) return; // the job pays for this one
+    if (dist(this.playerPos, this.chopShopPos) > 8) return;
+    // You have to actually STOP in the bay — rolling through the
+    // forecourt at speed is not a sale (and must never yank the car
+    // out from under a drive that happens to pass the marker).
+    if (Math.abs(car.speed) > 2) return;
+    const base = CHOP_BASE[car.classId] ?? CHOP_BASE.standard;
+    const pay = Math.round(base * (car.health / 100));
+    const gained = this.wallet.earn(pay);
+    this.cars = this.cars.filter((c) => c !== car);
+    this.drivenCar = null;
+    this.showToast(
+      `CHOP SHOP: sold the ${car.classId === 'fast' ? 'fast one' : 'ride'} at ${Math.round(car.health)}% condition — +$${gained.toLocaleString()}`,
+    );
+    this.checkGoal();
+    this.persist();
+  }
+
+  /** The Gouranga procession: a saffron line crossing downtown. */
+  private updateGouranga(dt: number): void {
+    this.gourangaT -= dt;
+    if (this.gourangaT > 0) return;
+    this.gourangaT = 170;
+    const candidates = this.world.roads.filter(
+      (r) => r.lengthM > 90 && r.path.some((p) => dist(p, this.playerPos) < 150),
+    );
+    if (!candidates.length) return;
+    const rng = mulberry32(Math.floor(this.time * 977) + this.gourangaSeq * 7919);
+    const road = candidates[Math.floor(rng() * candidates.length)];
+    const line = spawnProcession(road, 7, rng, `gouranga-${this.gourangaSeq}`, `gouranga-${this.gourangaSeq}`);
+    this.gourangaSeq++;
+    this.peds.push(...line);
+    this.showToast('A saffron procession is crossing downtown…');
   }
 
   private updateCamera(dt: number): void {
@@ -1261,6 +2165,15 @@ export class Game {
 
   objectiveText(): string {
     if (this.goalState === 'to-exit') return 'Goal reached! Get to the EXIT point downtown';
+    // v0.30: frenzies and the vehicle job outrank the payphone list.
+    if (this.frenzy) {
+      return `KILL FRENZY — ${this.frenzy.label}: ${this.frenzy.have}/${this.frenzy.need}`;
+    }
+    if (this.vehJob) {
+      return this.drivenCar && this.drivenCar.id === this.vehJob.carId
+        ? 'VEHICLE JOB — deliver this car to the CHOP SHOP'
+        : 'VEHICLE JOB — get back in the marked car';
+    }
     const step = this.missions.currentStep;
     if (this.missions.active && step) {
       return `${this.missions.active.title}: ${step.objective}`;
@@ -1286,11 +2199,37 @@ export class Game {
       toast: this.toast,
       stamp: this.phase === 'busted' ? 'BUSTED' : this.phase === 'wasted' ? 'WASTED' : '',
       phase: this.phase,
-      timerSec: this.missions.active ? this.missions.timeLeft : null,
+      timerSec: this.missions.active
+        ? this.missions.timeLeft
+        : this.frenzy
+          ? this.frenzy.tLeft
+          : this.vehJob
+            ? this.vehJob.tLeft
+            : null,
       inCar: !!this.drivenCar,
       speedKmh: this.drivenCar ? Math.round(Math.abs(this.drivenCar.speed) * 3.6) : 0,
       carHealth: this.drivenCar ? Math.round(this.drivenCar.health) : null,
       reversing: !!this.drivenCar && this.drivenCar.speed < -0.5,
+      weaponId: this.loadout.weapon,
+      weaponName: this.loadout.def.name,
+      ammo: this.loadout.def.usesAmmo ? this.loadout.ammo[this.loadout.weapon] : null,
+      armour: Math.round(this.armour),
+      jailCard: this.jailCard,
+      carClass: this.drivenCar ? this.drivenCar.classId : null,
+      frenzy: this.frenzy
+        ? {
+            label: this.frenzy.label,
+            have: this.frenzy.have,
+            need: this.frenzy.need,
+            secsLeft: Math.ceil(this.frenzy.tLeft),
+          }
+        : null,
+      shotsFired: this.shotsFired,
+      explosions: this.explosionsCount,
+      splashes: this.splashesCount,
+      pickupsTaken: this.pickupsTaken,
+      frenzyStarts: this.frenzyStarts,
+      frenzyWins: this.frenzyWins,
     };
   }
 
@@ -1309,6 +2248,9 @@ export class Game {
         handbrake: car === this.drivenCar ? !!this.carInput.handbrake : false,
         // v0.29: reverse lights while the driven car rolls backwards.
         reversing: car === this.drivenCar && car.speed < -0.3,
+        // v0.30: fire state + traffic body variety.
+        burning: car.burning,
+        bodyType: car.bodyType,
       });
     }
     for (const cop of this.cops) {
@@ -1320,6 +2262,21 @@ export class Game {
         color: '#f2f3f5',
         slip: cop.slipAngle,
         speedMps: Math.hypot(cop.vel.x, cop.vel.z),
+        burning: cop.burning,
+      });
+    }
+    // v0.30: pickups as entities (ground-anchored crates + glyphs).
+    for (const p of this.pickups) {
+      if (!p.active) continue;
+      const style = PICKUP_STYLE[p.kind];
+      entities.push({
+        id: `pickup-${p.kind}-${Math.round(p.pos.x)}-${Math.round(p.pos.z)}`,
+        kind: 'pickup',
+        pos: p.pos,
+        heading: 0,
+        color: style.color,
+        glyph: style.glyph,
+        label: style.label,
       });
     }
     for (const ped of this.peds) {
@@ -1364,10 +2321,34 @@ export class Game {
       });
     }
     markers.push({ pos: this.resprayPos, radius: 7, label: 'RESPRAY', icon: 'S', kind: 'respray' });
+    // v0.30: the chop shop is a standing landmark; the marked job
+    // car gets its own beacon while it waits.
+    markers.push({ pos: this.chopShopPos, radius: 7, label: 'CHOP SHOP', icon: '$', kind: 'chopshop' });
+    if (this.markedCarId && !this.vehJob) {
+      const jc = this.cars.find((c) => c.id === this.markedCarId);
+      if (jc && !jc.wrecked) {
+        markers.push({ pos: jc.pos, radius: 6, label: 'JOB CAR', icon: '★', kind: 'vehicle' });
+      }
+    }
     if (this.goalState === 'to-exit') {
       markers.push({ pos: this.exitPos, radius: 10, label: 'EXIT', icon: '⚑', kind: 'exit' });
     }
     const impactAge = this.time - this.lastImpactAt;
+    // v0.30 effects: the fx queue plus standing fire on every
+    // burning vehicle (flicker phase rides the world clock).
+    const effects: RenderEffect[] = this.fx.map((f) => ({
+      kind: f.kind,
+      pos: f.pos,
+      to: f.to,
+      age01: f.t / f.ttl,
+      radiusM: f.radiusM,
+    }));
+    for (const car of this.cars) {
+      if (car.burning) effects.push({ kind: 'fire', pos: car.pos, age01: -1, radiusM: 2.6 });
+    }
+    for (const cop of this.cops) {
+      if (cop.burning) effects.push({ kind: 'fire', pos: cop.pos, age01: -1, radiusM: 2.6 });
+    }
     return {
       camera: { ...this.camPos },
       viewWidthM: this.camViewM,
@@ -1375,6 +2356,8 @@ export class Game {
       timeSec: this.time,
       entities,
       markers,
+      effects,
+      scorches: this.scorches,
       impact: impactAge < 0.45 ? this.lastImpactMag * (1 - impactAge / 0.45) : 0,
     };
   }

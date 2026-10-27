@@ -354,21 +354,34 @@ describe('audit: BUSTED / WASTED / GAME OVER flows', () => {
 });
 
 describe('audit: crash regressions', () => {
-  it('[v0.25-fix] a cop ram that wrecks the player car ejects instead of throwing', () => {
+  it('[v0.25-fix → v0.30] a cop ram that kills the player car sets it BURNING, never throws; the explosion wastes the player who stays in', () => {
     const g = newGame();
     const car = g.cars.find((c) => c.kind === 'parked')!;
     g.playerPos = { x: car.pos.x + 2.5, z: car.pos.z };
     g.pressInteract();
     expect(g.drivenCar).toBe(car);
-    car.health = 1; // one solid ram from wrecked
+    car.health = 1; // one solid ram from dead
     g.wanted.add(2);
     const cop = spawnCop({ x: car.pos.x + 3, z: car.pos.z }, Math.PI);
     cop.vel = { x: -12, z: 0 };
     cop.speed = -12;
     g.cops.push(cop);
     expect(() => run(g, 0.5)).not.toThrow();
-    expect(car.wrecked).toBe(true);
-    expect(g.drivenCar).toBeNull(); // ejected beside the wreck
+    // v0.30: death is a FIRE now, not an instant wreck — the player
+    // is still sitting in the burning car. (The v0.25 crash was the
+    // old code ejecting mid-loop and the shove then dereferencing a
+    // null drivenCar; the no-throw property is what this guards.)
+    expect(car.burning).toBe(true);
+    expect(g.drivenCar).toBe(car);
+    g.cops = []; // keep the bust meter out of the fuse window
+    // Burn the fuse down in small steps until the stamp lands
+    // (fuse length varies with the car id, 2.8–3.8 s).
+    expect(() => {
+      for (let i = 0; i < 100 && g.phase !== 'wasted'; i++) g.update(0.1);
+    }).not.toThrow();
+    expect(car.wrecked).toBe(true); // it went up
+    expect(g.drivenCar).toBeNull();
+    expect(g.phase).toBe('wasted'); // with the player still inside
   });
 });
 

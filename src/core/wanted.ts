@@ -2,11 +2,16 @@
  * Wanted level, 0-5 stars — a miniature of the desktop game's Wanted
  * autoload (single source of heat). Heat is continuous; stars are the
  * floored display value. Heat decays over time.
+ *
+ * v0.30 (GTA 1 teeth): decay slowed to one star per 60 s, and the
+ * GAME only calls update() while no cop has eyes on the player (a
+ * cop within sight range pauses decay entirely) — hiding has to
+ * actually break contact now, not just wait out a 20 s melt.
  */
 export class Wanted {
   /** 0..5 continuous heat. */
   heat = 0;
-  private decayPerSec = 1 / 20; // one star per 20 s of staying clean
+  private decayPerSec = 1 / 60; // v0.30: one star per 60 s of staying clean AND unseen
 
   get stars(): number {
     // All heat sources add whole stars, so display rounds: a fresh
