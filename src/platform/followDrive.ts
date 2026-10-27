@@ -1,0 +1,186 @@
+/**
+ * Follow drive — pure seams for the FOLLOW tap-to-drive scheme (PR
+ * preview, not yet a numbered release).
+ *
+ * The finger-follow pattern (Ketchapp's Finger Driver and its kin):
+ * instead of holding a stick, you point at the world and the car
+ * goes there. This module is the whole control law — main.ts only
+ * converts taps to world points, feeds the driven car's state in,
+ * and merges the returned CarInput-shaped output with the keyboard /
+ * gamepad exactly like the other schemes' outputs.
+ *
+ * Driving model: pure pursuit (steer at a lookahead point on the
+ * line to the target, lookahead grows with speed) + an arrive
+ * profile (desired speed falls linearly with distance, and the
+ * throttle P-loop brakes actively against it, so the car slows IN
+ * to the point instead of sailing through it). Within
+ * ARRIVE_RADIUS_M the answer is 'arrived' with zero input — main.ts
+ * clears the target on that signal, exactly like Finger Driver's
+ * finger lifting at the destination.
+ *
+ * Reverse: a target in the rear cone (within REAR_CONE_RAD of dead
+ * astern) and no farther than REVERSE_MAX_DIST_M is backed into —
+ * the pursuit runs off the car's tail with inverted steering — while
+ * a far target behind loops around forward like a human making a
+ * three-point turn the long way. The R indication needs nothing
+ * special: it reads off the car's signed speed, which goes negative
+ * all by itself.
+ */
+
+import type { Vec2 } from '../core/geo';
+
+/** Distance at which the car is declared ON the point (m). */
+export const FOLLOW_ARRIVE_RADIUS_M = 2.2;
+/** On-foot arrive distance (m) — walking stops this close. */
+export const FOLLOW_WALK_ARRIVE_M = 0.9;
+/** Tap-the-car stop: a tap this close to the car just stops it (m). */
+export const FOLLOW_STOP_TAP_M = 3.5;
+/** Rear targets farther than this are looped to, not reversed to (m). */
+export const FOLLOW_REVERSE_MAX_DIST_M = 25;
+/** |bearing error| beyond this counts as "astern" (rad, ≈135°). */
+export const FOLLOW_REAR_CONE_RAD = 2.35;
+
+const CRUISE_MPS = 11.5; // ≈41 km/h — a city pace, not top speed
+const REVERSE_CRUISE_MPS = 5.0;
+const STEER_GAIN = 2.0; // full lock at ~0.5 rad of pursuit error
+const THROTTLE_GAIN = 0.6; // P-loop on desired-minus-actual speed
+const TURN_CAP_ERR_RAD = 2.2; // target this far off the nose…
+const TURN_CAP_MPS = 3.5; // …caps desired speed to a tight-turn pace
+
+export interface FollowCarPose {
+  pos: Vec2;
+  /** Radians, 0 = +X (east), clockwise positive (z is south). */
+  heading: number;
+  /** Signed m/s along heading (negative = rolling backwards). */
+  speed: number;
+}
+
+export type FollowMode = 'forward' | 'reverse' | 'arrived';
+
+export interface FollowCarOutput {
+  /** -1..1, same convention as CarInput.throttle. */
+  throttle: number;
+  /** -1..1, same convention as CarInput.steer (+ = right). */
+  steer: number;
+  mode: FollowMode;
+  /** Live distance to the target (m) — HUD/readout/diagnostics. */
+  distM: number;
+}
+
+function wrapAngle(a: number): number {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
+const clamp = (v: number, lo: number, hi: number): number =>
+  Math.max(lo, Math.min(hi, v));
+
+/**
+ * One control step for the driven car toward `target` (core metres).
+ * Stateless: gear choice (forward vs reverse) is a pure function of
+ * pose + target, and the arrive profile makes both gears converge
+ * without latching or a limit cycle (proven by the sim tests in
+ * followDrive.test.ts, which drive the REAL stepCar physics).
+ */
+export function followCarInput(car: FollowCarPose, target: Vec2): FollowCarOutput {
+  const dx = target.x - car.pos.x;
+  const dz = target.z - car.pos.z;
+  const dist = Math.hypot(dx, dz);
+  if (dist <= FOLLOW_ARRIVE_RADIUS_M) {
+    return { throttle: 0, steer: 0, mode: 'arrived', distM: dist };
+  }
+  const bearing = Math.atan2(dz, dx);
+  const err = wrapAngle(bearing - car.heading);
+
+  if (Math.abs(err) > FOLLOW_REAR_CONE_RAD && dist <= FOLLOW_REVERSE_MAX_DIST_M) {
+    // Back in: pursue with the tail. The pursuit point sits on the
+    // ray from the car's REAR toward the target; steering inverts
+    // because a backwards car yaws opposite to the same wheel angle.
+    const look = clamp(2 + Math.abs(car.speed) * 0.5, 2.5, 8);
+    const back = {
+      x: car.pos.x - Math.cos(car.heading) * look,
+      z: car.pos.z - Math.sin(car.heading) * look,
+    };
+    const errRear = wrapAngle(Math.atan2(target.z - back.z, target.x - back.x) - (car.heading + Math.PI));
+    const vDes = Math.min(REVERSE_CRUISE_MPS, 0.9 + dist * 0.45);
+    return {
+      throttle: clamp((-vDes - car.speed) * THROTTLE_GAIN, -1, 1),
+      steer: clamp(-errRear * STEER_GAIN, -1, 1),
+      mode: 'reverse',
+      distM: dist,
+    };
+  }
+
+  // Forward pure pursuit: aim at a point `look` metres along the
+  // line to the target (the target itself when closer than that).
+  const look = clamp(2.5 + Math.abs(car.speed) * 0.6, 3, 16);
+  const px = dist <= look ? target.x : car.pos.x + (dx / dist) * look;
+  const pz = dist <= look ? target.z : car.pos.z + (dz / dist) * look;
+  const errP = wrapAngle(Math.atan2(pz - car.pos.z, px - car.pos.x) - car.heading);
+  let vDes = Math.min(CRUISE_MPS, 0.9 + dist * 0.42);
+  if (Math.abs(errP) > TURN_CAP_ERR_RAD) vDes = Math.min(vDes, TURN_CAP_MPS);
+  return {
+    throttle: clamp((vDes - car.speed) * THROTTLE_GAIN, -1, 1),
+    steer: clamp(errP * STEER_GAIN, -1, 1),
+    mode: 'forward',
+    distM: dist,
+  };
+}
+
+export interface FollowWalkOutput {
+  /** Unit-ish move vector for Game.moveInput (zero when arrived). */
+  move: Vec2;
+  arrived: boolean;
+  distM: number;
+}
+
+/** On-foot twin: walk straight at the target, stop on arrival. */
+export function followWalkInput(playerPos: Vec2, target: Vec2): FollowWalkOutput {
+  const dx = target.x - playerPos.x;
+  const dz = target.z - playerPos.z;
+  const dist = Math.hypot(dx, dz);
+  if (dist <= FOLLOW_WALK_ARRIVE_M) {
+    return { move: { x: 0, z: 0 }, arrived: true, distM: dist };
+  }
+  // Ease off inside the last 2 m so the stop lands on the point,
+  // not past it (the core scales walk speed by input magnitude).
+  const m = Math.min(1, dist / 2);
+  return { move: { x: (dx / dist) * m, z: (dz / dist) * m }, arrived: false, distM: dist };
+}
+
+/**
+ * Screen (client px) → world (core metres), using the frame camera.
+ * The camera in this game is a pure translation: no rotation in
+ * either adapter (MapLibre bearing 0, canvas axis-aligned), centre =
+ * frame camera, scale = viewWidthM across the viewport WIDTH.
+ */
+export function screenToWorld(
+  px: number,
+  py: number,
+  viewportW: number,
+  viewportH: number,
+  camera: Vec2,
+  viewWidthM: number,
+): Vec2 {
+  const mPerPx = viewWidthM / Math.max(1, viewportW);
+  return {
+    x: camera.x + (px - viewportW / 2) * mPerPx,
+    z: camera.z + (py - viewportH / 2) * mPerPx,
+  };
+}
+
+/** World (core metres) → screen (client px); inverse of screenToWorld. */
+export function worldToScreen(
+  p: Vec2,
+  viewportW: number,
+  viewportH: number,
+  camera: Vec2,
+  viewWidthM: number,
+): { x: number; y: number } {
+  const mPerPx = viewWidthM / Math.max(1, viewportW);
+  return {
+    x: viewportW / 2 + (p.x - camera.x) / mPerPx,
+    y: viewportH / 2 + (p.z - camera.z) / mPerPx,
+  };
+}
