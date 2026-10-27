@@ -210,7 +210,7 @@
            in a car: GAS, BRK, DRIFT, E(exit); on foot: FIRE, WPN,
            E(interact). main.ts toggles the groups on car transitions;
            tools/layout-audit.mjs proves the geometry mechanically. -->
-      <div id="ctl-right" class="scheme-el" data-schemes="stick drag tilt">
+      <div id="ctl-right" class="scheme-el" data-schemes="stick drag tilt follow">
         <div class="state-group" data-state-group="car">
           <div class="ctl-row">
             <button id="btn-drift" type="button" class="round" aria-label="handbrake">DRIFT</button>
@@ -231,6 +231,11 @@
           </div>
         </div>
       </div>
+      <!-- Follow scheme (preview): no zone of its own — taps are
+           captured at window level in main.ts (guarded off buttons
+           and chrome), because the whole screen is the input. This
+           is just the hint line. -->
+      <div id="follow-hint" class="scheme-el" data-schemes="follow" hidden>👆 tap where you want to go</div>
       <!-- Buttons scheme: the legacy binary layout, with the same
            v0.31 contextual rule via data-state on each button. -->
       <div id="ctl-buttons" class="scheme-el" data-schemes="buttons" hidden>
@@ -256,8 +261,13 @@
       </div>
     </div>
 
+    <!-- Follow target marker (preview): a DOM pin projected from
+         the frame camera by main.ts each frame — the tapped point
+         the car is driving to. Never intercepts touches. -->
+    <div id="follow-target" hidden><div class="ft-ring"></div><div class="ft-dot"></div></div>
+
     <div id="credit">
-      MVT Fredericton Web v0.31 · <span id="renderer-name">…</span> · buildings, roads &amp; water © GeoNB (OGL-NB) · mission coords © OpenStreetMap contributors (ODbL)
+      MVT Fredericton Web v0.32 · <span id="renderer-name">…</span> · buildings, roads &amp; water © GeoNB (OGL-NB) · mission coords © OpenStreetMap contributors (ODbL)
     </div>
     <div id="help" title="Controls">WASD drive/walk · S reverse · E interact · Space handbrake · on foot: Space/F FIRE, Q weapon · <span id="help-toggle">?</span>
       <span id="help-full" hidden> — steal cars, answer payphones ☎, watch the stars, respray on Queen St kills the heat. R restarts a finished run.
@@ -268,10 +278,11 @@
           <button type="button" data-set-scheme="drag">Drag-steer</button>
           <button type="button" data-set-scheme="buttons">Buttons</button>
           <button type="button" data-set-scheme="tilt">Tilt</button>
+          <button type="button" data-set-scheme="follow">Follow</button>
           <label><input type="checkbox" id="haptics-toggle" checked /> Haptics</label>
           <label><input type="checkbox" id="audio-toggle" checked /> Sound</label>
           <label><input type="checkbox" id="readout-toggle" /> Input readout</label>
-          <span class="ctl-note">REVERSE: hold BRK at a stop — it brakes first, then backs up (keyboard S, stick pulled down, gamepad LT). The speedo shows R and the car lights its white reverse lamps while you're backing up. Stick: thumb anywhere left = the steering wheel; push up/down for gas/brake. Drag-steer: hold and drag, the car steers toward your thumb and drives itself — BRK still reverses. Haptics use the Vibration API — Android/Chrome only; iOS Safari has none. Gamepad: left stick steers, RT/LT are the pedals in a car and RT is FIRE on foot, A = E, X = handbrake, Y = switch weapon.</span>
+          <span class="ctl-note">FOLLOW (new, preview): tap a point on the street and the car drives there and stops on it — hold and drag to move the point under your finger, tap the car itself to stop. Tap BEHIND the car, close in, and it reverses in; farther behind and it loops around. On foot the same tap walks you there. The pursuit controller owns gas/brake (GAS/BRK hide); DRIFT and E still work. REVERSE: hold BRK at a stop — it brakes first, then backs up (keyboard S, stick pulled down, gamepad LT). The speedo shows R and the car lights its white reverse lamps while you're backing up. Stick: thumb anywhere left = the steering wheel; push up/down for gas/brake. Drag-steer: hold and drag, the car steers toward your thumb and drives itself — BRK still reverses. Haptics use the Vibration API — Android/Chrome only; iOS Safari has none. Gamepad: left stick steers, RT/LT are the pedals in a car and RT is FIRE on foot, A = E, X = handbrake, Y = switch weapon.</span>
         </span>
         <span class="ctl-settings" id="tilt-settings">
           Tilt steering:

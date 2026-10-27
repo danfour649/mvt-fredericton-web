@@ -11,7 +11,8 @@
 import './style.css';
 import { loadWorld } from './core/world';
 import { Game } from './core/game';
-import type { Renderer } from './core/renderer';
+import type { Renderer, RenderFrame } from './core/renderer';
+import type { Vec2 } from './core/geo';
 import type { StorageAdapter } from './core/save';
 import { MapLibreRenderer } from './render/maplibre/MapLibreRenderer';
 import { CanvasRenderer } from './render/canvas/CanvasRenderer';
@@ -24,6 +25,13 @@ import {
   TILT_DEFAULT_SENSITIVITY,
   type TiltEnableResult,
 } from './platform/tilt';
+import {
+  followCarInput,
+  followWalkInput,
+  screenToWorld,
+  worldToScreen,
+  FOLLOW_STOP_TAP_M,
+} from './platform/followDrive';
 
 const localStorageAdapter: StorageAdapter = {
   read: (key) => {
@@ -132,8 +140,8 @@ async function boot(): Promise<void> {
       try { window.localStorage.setItem(k, v); } catch { /* ignore */ }
     },
   };
-  type Scheme = 'stick' | 'drag' | 'buttons' | 'tilt';
-  let scheme: Scheme = (['stick', 'drag', 'buttons', 'tilt'].includes(store.get('mvt-input-scheme') ?? '')
+  type Scheme = 'stick' | 'drag' | 'buttons' | 'tilt' | 'follow';
+  let scheme: Scheme = (['stick', 'drag', 'buttons', 'tilt', 'follow'].includes(store.get('mvt-input-scheme') ?? '')
     ? store.get('mvt-input-scheme')
     : 'stick') as Scheme;
   // Tilt steering (v0.31): gamma-roll steering as a peer scheme —
@@ -340,6 +348,83 @@ async function boot(): Promise<void> {
   dragZone.addEventListener('pointercancel', dragEnd);
   dragZone.addEventListener('lostpointercapture', dragEnd);
 
+  // Follow scheme (preview): tap-to-drive. Taps are captured at the
+  // WINDOW level — the whole screen is the input surface, so a zone
+  // div would just fight the chrome stacking (drag-zone's full-screen
+  // layer is the cautionary tale). Guards: the press must not start
+  // on a button or inside the help/overlay/loading chrome (the same
+  // closest('button') rule the stick uses, widened to the containers
+  // that own taps). #map has touch-action:none and the MapLibre map
+  // is interactive:false, so pointer events stream cleanly off the
+  // canvas. The controller itself is platform/followDrive.ts (pure,
+  // unit-tested against the real physics).
+  let followTarget: Vec2 | null = null;
+  let followPointerId = -1;
+  /** Last rendered frame's camera — taps convert through it. One
+   *  frame stale by construction; irrelevant at tap timescales. */
+  let lastFollowCam: { camera: Vec2; viewWidthM: number } | null = null;
+  const followTargetEl = el('follow-target');
+  (window as unknown as { __mvtFollow?: () => unknown }).__mvtFollow = () => ({
+    scheme,
+    target: followTarget,
+  });
+  function followTapAllowed(e: PointerEvent): boolean {
+    if (scheme !== 'follow' || !e.isPrimary || e.button > 0) return false;
+    const t = e.target as HTMLElement | null;
+    if (!t || typeof t.closest !== 'function') return false;
+    if (t.closest('button, input, select, textarea, label, a')) return false;
+    if (t.closest('#help, #overlay, #loading')) return false;
+    return true;
+  }
+  function followPointAt(clientX: number, clientY: number): void {
+    if (!lastFollowCam) return;
+    const w = screenToWorld(
+      clientX, clientY, window.innerWidth, window.innerHeight,
+      lastFollowCam.camera, lastFollowCam.viewWidthM,
+    );
+    // Tapping the car (or yourself, on foot) means STOP — clear the
+    // target instead of parking it on your own roof.
+    const anchor = game.drivenCar ? game.drivenCar.pos : game.playerPos;
+    followTarget =
+      Math.hypot(w.x - anchor.x, w.z - anchor.z) <= FOLLOW_STOP_TAP_M ? null : w;
+  }
+  window.addEventListener('pointerdown', (e) => {
+    if (followPointerId !== -1 || !followTapAllowed(e)) return;
+    followPointerId = e.pointerId;
+    followPointAt(e.clientX, e.clientY);
+  });
+  window.addEventListener('pointermove', (e) => {
+    // Hold/drag: the target rides under the finger until release;
+    // the LAST point stays as the destination (finger-follow).
+    if (e.pointerId !== followPointerId || scheme !== 'follow') return;
+    followPointAt(e.clientX, e.clientY);
+  });
+  const followTapEnd = (e: PointerEvent): void => {
+    if (e.pointerId === followPointerId) followPointerId = -1;
+  };
+  window.addEventListener('pointerup', followTapEnd);
+  window.addEventListener('pointercancel', followTapEnd);
+  /** Project the target marker into the corner of the screen it
+   *  currently sits in; hidden when there's no target, when another
+   *  scheme owns input, or when the point is off-screen. */
+  function updateFollowMarker(): void {
+    if (scheme !== 'follow' || !followTarget || !lastFollowCam) {
+      followTargetEl.hidden = true;
+      return;
+    }
+    const s = worldToScreen(
+      followTarget, window.innerWidth, window.innerHeight,
+      lastFollowCam.camera, lastFollowCam.viewWidthM,
+    );
+    if (s.x < -30 || s.y < -30 || s.x > window.innerWidth + 30 || s.y > window.innerHeight + 30) {
+      followTargetEl.hidden = true;
+      return;
+    }
+    followTargetEl.hidden = false;
+    followTargetEl.style.left = `${s.x}px`;
+    followTargetEl.style.top = `${s.y}px`;
+  }
+
   // Hold-buttons (pedals / DRIFT / E) with a visible pressed state.
   const pedal = { gas: false, brk: false };
   let driftTouch = false;
@@ -412,6 +497,8 @@ async function boot(): Promise<void> {
       const list = (elm.dataset.schemes ?? '').split(' ');
       elm.hidden = !list.includes(scheme);
     });
+    // Follow owns the throttle: GAS/BRK hide while it's the scheme.
+    document.body.classList.toggle('follow-controls', scheme === 'follow');
     document.querySelectorAll<HTMLButtonElement>('[data-set-scheme]').forEach((b) => {
       b.classList.toggle('on', b.dataset.setScheme === scheme);
     });
@@ -637,6 +724,24 @@ async function boot(): Promise<void> {
         // shared pedal cluster above (pedal.gas/brk, driftTouch).
         steer = maxAbs(steer, tiltSensor.steer(tiltCfg()));
       }
+      if (scheme === 'follow' && followTarget) {
+        // Follow (preview): the pursuit controller owns steer AND
+        // throttle while a target lives (the pedals are hidden);
+        // keyboard/pad still merge by maxAbs, so a held S or LT
+        // can outvote it. Arrival clears the target — after that
+        // the car is simply parked until the next tap.
+        const car = game.drivenCar;
+        const out = followCarInput(
+          { pos: car.pos, heading: car.heading, speed: car.speed },
+          followTarget,
+        );
+        if (out.mode === 'arrived') {
+          followTarget = null;
+        } else {
+          steer = maxAbs(steer, out.steer);
+          throttle = maxAbs(throttle, out.throttle);
+        }
+      }
       // v0.27: steer response curve (|s|^0.7) — endpoints 0/±1 are
       // exact, so keyboard full-lock and the drive metrics don't
       // move; the mid-range a thumb actually reaches is amplified.
@@ -661,6 +766,17 @@ async function boot(): Promise<void> {
           const m = Math.min(1, len / 90);
           mx = (vx / len) * m;
           mz = (vy / len) * m;
+        }
+      }
+      if (scheme === 'follow' && followTarget) {
+        // Follow on foot: the same tapped point is a walk target;
+        // arrival clears it and the player stops there.
+        const w = followWalkInput(game.playerPos, followTarget);
+        if (w.arrived) {
+          followTarget = null;
+        } else {
+          mx = maxAbs(mx, w.move.x);
+          mz = maxAbs(mz, w.move.z);
         }
       }
       game.moveInput = { x: mx, z: mz };
@@ -747,7 +863,12 @@ async function boot(): Promise<void> {
 
     gatherInputs();
     game.update(dt);
-    renderer.sync(game.buildFrame());
+    const frameState: RenderFrame = game.buildFrame();
+    renderer.sync(frameState);
+    // Follow (preview): taps convert through the frame camera, and
+    // the target marker is projected from it every frame.
+    lastFollowCam = { camera: frameState.camera, viewWidthM: frameState.viewWidthM };
+    updateFollowMarker();
 
     // v0.30: the first rendered frame dismisses the loading screen
     // (after a minimum display so the lockup reads as a splash).
@@ -772,7 +893,13 @@ async function boot(): Promise<void> {
       audio.enterCar();
     }
     if (prevInCar && !hud.inCar && hud.phase === 'play') audio.exitCar();
-    if (prevInCar !== hud.inCar) syncChromeState();
+    if (prevInCar !== hud.inCar) {
+      syncChromeState();
+      // Follow: a target belongs to the context it was tapped in —
+      // entering or leaving a car starts fresh, so a stale point
+      // can't drag the player (or the new car) across the map.
+      followTarget = null;
+    }
     prevInCar = hud.inCar;
     // v0.31: the wheel mirrors the tilt while tilt-driving.
     if (scheme === 'tilt' && hud.inCar) tiltWheelVisual();
@@ -789,6 +916,9 @@ async function boot(): Promise<void> {
     if (hud.phase !== prevPhase) {
       if (hud.phase === 'district-done') audio.districtComplete();
       else if (hud.phase === 'gameover') audio.wasted();
+      // Follow: BUSTED/WASTED teleport the player to spawn — a
+      // target set across town must not auto-walk the fresh spawn.
+      if (hud.phase !== 'play') followTarget = null;
       prevPhase = hud.phase;
     }
     if (hud.toast !== prevToast) {
@@ -930,9 +1060,23 @@ async function boot(): Promise<void> {
         scheme === 'tilt'
           ? ` · TILT ${tiltSensor.snapshot().gamma?.toFixed(0) ?? '—'}°→${tiltSensor.steer(tiltCfg()).toFixed(2)}`
           : '';
+      let followBit = '';
+      if (scheme === 'follow') {
+        if (!followTarget) followBit = ' · FOLLOW no target';
+        else if (car) {
+          const o = followCarInput(
+            { pos: car.pos, heading: car.heading, speed: car.speed },
+            followTarget,
+          );
+          followBit = ` · FOLLOW ${o.mode} ${o.distM.toFixed(1)}m`;
+        } else {
+          const w = followWalkInput(game.playerPos, followTarget);
+          followBit = ` · FOLLOW walk ${w.distM.toFixed(1)}m`;
+        }
+      }
       readout.textContent = car
-        ? `STEER ${game.carInput.steer.toFixed(2)} · THR ${game.carInput.throttle.toFixed(2)} · WHEEL ${((car.steer * 180) / Math.PI).toFixed(1)}° · ${hud.speedKmh} km/h${tiltBit}`
-        : `MOVE ${game.moveInput.x.toFixed(2)} / ${game.moveInput.z.toFixed(2)} · on foot · stick ${stick.active ? `${stick.dx.toFixed(2)},${stick.dy.toFixed(2)}` : '—'}${tiltBit}`;
+        ? `STEER ${game.carInput.steer.toFixed(2)} · THR ${game.carInput.throttle.toFixed(2)} · WHEEL ${((car.steer * 180) / Math.PI).toFixed(1)}° · ${hud.speedKmh} km/h${tiltBit}${followBit}`
+        : `MOVE ${game.moveInput.x.toFixed(2)} / ${game.moveInput.z.toFixed(2)} · on foot · stick ${stick.active ? `${stick.dx.toFixed(2)},${stick.dy.toFixed(2)}` : '—'}${tiltBit}${followBit}`;
     }
     requestAnimationFrame(frame);
   }
