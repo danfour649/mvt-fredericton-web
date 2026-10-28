@@ -42,6 +42,8 @@ import {
   isDoubleTap,
   nearestScreenHit,
   carTapIntent,
+  planFollowPoints,
+  RouteFollower,
   FOLLOW_STOP_TAP_M,
   FOLLOW_CAR_ENTER_M,
   FOLLOW_DRIFT_PULSE_MS,
@@ -416,6 +418,12 @@ async function boot(): Promise<void> {
     | { kind: 'car'; car: CarEntity }
     | { kind: 'phone'; pos: Vec2 };
   let followTarget: FollowTarget | null = null;
+  /** Iteration 5: the active route plan for the target (road-graph
+   *  waypoints for a far pick, a single point for a near one). */
+  let followRoute: RouteFollower | null = null;
+  /** Set the frame a ROUTED target is arrived at; the frame loop
+   *  turns it into the dive back to street framing. */
+  let followArrivedRouted = false;
   let followPointerId = -1;
   /** Double-tap bookkeeping (additive: the tap still lands first). */
   let lastFollowTap: TapStamp | null = null;
@@ -431,15 +439,130 @@ async function boot(): Promise<void> {
    *  frame stale by construction; irrelevant at tap timescales. */
   let lastFollowCam: { camera: Vec2; viewWidthM: number } | null = null;
   const followTargetEl = el('follow-target');
+
+  // --- iteration 5: pinch / wheel map zoom --------------------------------
+  // The camera is the game's; these gestures only name a desired
+  // view WIDTH. The core clamps it (≥18 m) and chases it in log
+  // space (game.ts updateCamera) — the same machinery the boot
+  // cinematic descends with. Pinching back in to street level
+  // hands framing back to the speed-based camera (override
+  // clears); pinching out runs to the whole-map framing the intro
+  // starts from. While zoomed out, a tap is a map pick: the
+  // follow target lands across town and routes there by road.
+  /** The player's chosen view width (the live override), or null. */
+  let desiredZoomM: number | null = null;
+  /** Arrival dive: after a routed trip ends wide, ease the zoom
+   *  override back to street framing over ~2 s. Any pinch, wheel
+   *  or fresh tap cancels it (the player's zoom wins). */
+  let zoomReturn: { fromView: number; t: number } | null = null;
+  const zoomPointers = new Map<number, { x: number; y: number }>();
+  let pinchState: { startDist: number; startView: number } | null = null;
+
+  function zoomSurfaceOk(e: PointerEvent | WheelEvent): boolean {
+    const t = e.target as HTMLElement | null;
+    if (!t || typeof t.closest !== 'function') return false;
+    if (t.closest('button, input, select, textarea, label, a')) return false;
+    if (t.closest('#help, #overlay, #loading')) return false;
+    return true;
+  }
+  function applyDesiredZoom(v: number): void {
+    zoomReturn = null; // the player's zoom always wins
+    const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+    const maxV = game.wholeMapFraming(aspect)?.view ?? 2600;
+    const clamped = Math.max(24, Math.min(maxV, v));
+    if (clamped <= game.streetViewM + 2) {
+      desiredZoomM = null;
+      game.setZoomView(null);
+    } else {
+      desiredZoomM = clamped;
+      game.setZoomView(clamped);
+    }
+  }
+  window.addEventListener('pointerdown', (e) => {
+    if (game.introRunning || !zoomSurfaceOk(e)) return;
+    zoomPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (zoomPointers.size === 2) {
+      const [a, b] = [...zoomPointers.values()];
+      pinchState = {
+        startDist: Math.max(8, Math.hypot(a.x - b.x, a.y - b.y)),
+        startView: desiredZoomM ?? lastFollowCam?.viewWidthM ?? game.streetViewM,
+      };
+      zoomReturn = null;
+      // The second finger makes this a pinch, not a tap: the
+      // first finger's tap already landed on its pointerdown
+      // (targets are never delayed), but its HOLD ends here — no
+      // more drag-retargeting, no held trigger, until it lifts.
+      if (followPointerId !== -1) {
+        followFireDown = false;
+        followPointerId = -1;
+      }
+    }
+  });
+  window.addEventListener('pointermove', (e) => {
+    const p = zoomPointers.get(e.pointerId);
+    if (!p) return;
+    p.x = e.clientX;
+    p.y = e.clientY;
+    if (pinchState && zoomPointers.size === 2) {
+      const [a, b] = [...zoomPointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      // Fingers apart = zoom in (narrower view); together = out.
+      if (d > 4) applyDesiredZoom(pinchState.startView * (pinchState.startDist / d));
+    }
+  });
+  const zoomPointerEnd = (e: PointerEvent): void => {
+    zoomPointers.delete(e.pointerId);
+    if (zoomPointers.size < 2) pinchState = null;
+  };
+  window.addEventListener('pointerup', zoomPointerEnd);
+  window.addEventListener('pointercancel', zoomPointerEnd);
+  window.addEventListener(
+    'wheel',
+    (e) => {
+      if (game.introRunning || !zoomSurfaceOk(e)) return;
+      e.preventDefault();
+      const base = desiredZoomM ?? lastFollowCam?.viewWidthM ?? game.streetViewM;
+      applyDesiredZoom(base * Math.exp(e.deltaY * 0.0016));
+    },
+    { passive: false },
+  );
   function followTargetPos(): Vec2 | null {
     if (!followTarget) return null;
     return followTarget.kind === 'car' ? followTarget.car.pos : followTarget.pos;
+  }
+  /**
+   * Iteration 5: make sure a route plan exists for the live
+   * target, (re)built from `anchor` (the car or the walker) when
+   * the target is new or has drifted >6 m from the plan's final
+   * point (a dragged pick, a car that rolled). Waypoint skip radii
+   * differ by context: a car at speed blows through junction
+   * centres; a walker threads them.
+   */
+  function ensureFollowRoute(anchor: Vec2, onFoot: boolean): void {
+    const target = followTargetPos();
+    if (!target) {
+      followRoute = null;
+      return;
+    }
+    if (followRoute && dist(followRoute.finalPos, target) <= 6) return;
+    const plan = planFollowPoints(game.roadGraph, world, anchor, target);
+    followRoute = new RouteFollower(plan.points, {
+      routed: plan.routed,
+      replan: (from) => planFollowPoints(game.roadGraph, world, from, target).points,
+      ...(onFoot
+        ? { skipMinM: 2.5, skipPerSpeedM: 0.3, skipMaxM: 5 }
+        : { skipMinM: 7, skipPerSpeedM: 0.35, skipMaxM: 16 }),
+    });
   }
   (window as unknown as { __mvtFollow?: () => unknown }).__mvtFollow = () => ({
     scheme,
     intent: followTarget?.kind ?? null,
     target: followTargetPos(),
     firing: !!followFire,
+    routed: followRoute?.routed ?? false,
+    waypoints: followRoute?.points.length ?? 0,
+    wpIndex: followRoute?.idx ?? 0,
+    zoomViewM: desiredZoomM,
   });
   function followTapAllowed(e: PointerEvent): boolean {
     if (scheme !== 'follow' || !e.isPrimary || e.button > 0) return false;
@@ -453,6 +576,7 @@ async function boot(): Promise<void> {
   }
   function followPointAt(clientX: number, clientY: number): void {
     if (!lastFollowCam) return;
+    zoomReturn = null; // a fresh pick outranks the arrival dive
     const w = screenToWorld(
       clientX, clientY, window.innerWidth, window.innerHeight,
       lastFollowCam.camera, lastFollowCam.viewWidthM,
@@ -512,10 +636,12 @@ async function boot(): Promise<void> {
     followFireDown = true;
     followFireUntil = performance.now() + 130;
     followTarget = null; // shooting replaces any walk order
+    followRoute = null;
     haptics.tick();
   }
   /** One follow tap, fully interpreted. */
   function handleFollowTap(clientX: number, clientY: number): void {
+    zoomReturn = null; // a fresh pick outranks the arrival dive
     const now = performance.now();
     const dbl = isDoubleTap(lastFollowTap, now, clientX, clientY);
     lastFollowTap = { tMs: now, x: clientX, y: clientY };
@@ -886,8 +1012,15 @@ async function boot(): Promise<void> {
     return null;
   }
 
+  /** Iteration 5: wall-clock dt for the route follower's stuck
+   *  bookkeeping (gatherInputs is called once per frame). */
+  let lastGatherMs = performance.now();
+
   /** Merge keyboard + touch scheme + gamepad into the core inputs. */
   function gatherInputs(): void {
+    const nowMs = performance.now();
+    const gatherDtS = Math.min(0.1, Math.max(0, (nowMs - lastGatherMs) / 1000));
+    lastGatherMs = nowMs;
     const pad = pollPad();
     const maxAbs = (...vals: number[]): number =>
       vals.reduce((a, b) => (Math.abs(b) > Math.abs(a) ? b : a), 0);
@@ -939,22 +1072,41 @@ async function boot(): Promise<void> {
         // keyboard/pad still merge by maxAbs, so a held S or LT
         // can outvote it. Arrival clears the target — after that
         // the car is simply parked until the next tap.
+        // Iteration 5: the target is pursued through its ROUTE —
+        // road waypoints for a far (map-pick) target, the point
+        // itself for a near one. Intermediate waypoints are
+        // pass-throughs (no braking curve, no reverse); only the
+        // final point gets the full arrive/reverse treatment.
         const targetPos = followTargetPos();
         if (targetPos) {
           const car = game.drivenCar;
-          const out = followCarInput(
-            {
-              pos: car.pos, heading: car.heading, speed: car.speed,
-              topSpeedMps: CAR_CLASSES[car.classId ?? 'standard'].topSpeed,
-            },
-            targetPos,
-          );
-          if (out.mode === 'arrived') {
+          ensureFollowRoute(car.pos, false);
+          const step = followRoute?.update(car.pos, Math.abs(car.speed), gatherDtS) ?? null;
+          if (!step) {
+            // The route gave up (stuck past re-plan + skip): stop
+            // here rather than grind against the world forever.
             followTarget = null;
+            followRoute = null;
           } else {
-            steer = maxAbs(steer, out.steer);
-            throttle = maxAbs(throttle, out.throttle);
+            const out = followCarInput(
+              {
+                pos: car.pos, heading: car.heading, speed: car.speed,
+                topSpeedMps: CAR_CLASSES[car.classId ?? 'standard'].topSpeed,
+              },
+              step.aim,
+              { allowReverse: step.isFinal, through: !step.isFinal, cornerMps: step.cornerMps },
+            );
+            if (step.isFinal && out.mode === 'arrived') {
+              if (followRoute?.routed) followArrivedRouted = true;
+              followTarget = null;
+              followRoute = null;
+            } else {
+              steer = maxAbs(steer, out.steer);
+              throttle = maxAbs(throttle, out.throttle);
+            }
           }
+        } else {
+          followRoute = null;
         }
       }
       // v0.27: steer response curve (|s|^0.7) — endpoints 0/±1 are
@@ -998,24 +1150,43 @@ async function boot(): Promise<void> {
         } else if (followTarget) {
           const targetPos = followTargetPos();
           if (targetPos) {
-            let arrived = false;
-            if (
-              followTarget.kind === 'car' &&
-              dist(game.playerPos, targetPos) <= FOLLOW_CAR_ENTER_M
-            ) {
-              arrived = true; // close enough — the door's right there
-            } else {
-              const w = followWalkInput(game.playerPos, targetPos);
-              if (w.arrived) arrived = true;
-              else {
-                mx = maxAbs(mx, w.move.x);
-                mz = maxAbs(mz, w.move.z);
-              }
-            }
-            if (arrived) {
-              const kind = followTarget.kind;
+            // Iteration 5: walk the route like the car drives it —
+            // intermediate waypoints at full pace, the final point
+            // with the usual arrive/interact semantics.
+            ensureFollowRoute(game.playerPos, true);
+            const speedMag = Math.hypot(game.playerVel.x, game.playerVel.z);
+            const step = followRoute?.update(game.playerPos, speedMag, gatherDtS) ?? null;
+            if (!step) {
               followTarget = null;
-              if (kind === 'car' || kind === 'phone') interact();
+              followRoute = null;
+            } else if (!step.isFinal) {
+              const d = dist(game.playerPos, step.aim);
+              if (d > 1e-6) {
+                mx = maxAbs(mx, (step.aim.x - game.playerPos.x) / d);
+                mz = maxAbs(mz, (step.aim.z - game.playerPos.z) / d);
+              }
+            } else {
+              let arrived = false;
+              if (
+                followTarget.kind === 'car' &&
+                dist(game.playerPos, targetPos) <= FOLLOW_CAR_ENTER_M
+              ) {
+                arrived = true; // close enough — the door's right there
+              } else {
+                const w = followWalkInput(game.playerPos, targetPos);
+                if (w.arrived) arrived = true;
+                else {
+                  mx = maxAbs(mx, w.move.x);
+                  mz = maxAbs(mz, w.move.z);
+                }
+              }
+              if (arrived) {
+                const kind = followTarget.kind;
+                if (followRoute?.routed) followArrivedRouted = true;
+                followTarget = null;
+                followRoute = null;
+                if (kind === 'car' || kind === 'phone') interact();
+              }
             }
           }
         }
@@ -1179,6 +1350,35 @@ async function boot(): Promise<void> {
     lastFollowCam = { camera: frameState.camera, viewWidthM: frameState.viewWidthM };
     updateFollowMarker();
 
+    // Iteration 5: a routed trip that ends while the player is
+    // still zoomed out dives back to street framing (~2 s, the
+    // intro's ease-out-over-log-zoom profile) so the arrival reads
+    // as a landing, not a teleport of attention. A pinch, wheel or
+    // fresh tap cancels it instantly (applyDesiredZoom / the tap
+    // handlers clear zoomReturn).
+    if (followArrivedRouted) {
+      followArrivedRouted = false;
+      if (desiredZoomM !== null && frameState.viewWidthM > 200) {
+        zoomReturn = { fromView: frameState.viewWidthM, t: 0 };
+      }
+    }
+    if (zoomReturn) {
+      zoomReturn.t += dt / 2;
+      const p = Math.min(1, zoomReturn.t);
+      const e = 1 - Math.pow(1 - p, 3);
+      const street = game.streetViewM;
+      const v = Math.exp(
+        Math.log(zoomReturn.fromView) + (Math.log(street) - Math.log(zoomReturn.fromView)) * e,
+      );
+      if (p >= 1) {
+        zoomReturn = null;
+        desiredZoomM = null;
+        game.setZoomView(null);
+      } else {
+        game.setZoomView(v);
+      }
+    }
+
     // v0.30: the first rendered frame dismisses the loading screen
     // (after a minimum display so the lockup reads as a splash).
     if (!bootedFlag) {
@@ -1225,6 +1425,7 @@ async function boot(): Promise<void> {
       // context must never read as a double-tap in the new one
       // (tap-to-enter, then a quick drive tap, is NOT an exit).
       followTarget = null;
+      followRoute = null;
       followFire = null;
       followFireDown = false;
       lastFollowTap = null;
@@ -1249,6 +1450,7 @@ async function boot(): Promise<void> {
       // target set across town must not auto-walk the fresh spawn.
       if (hud.phase !== 'play') {
         followTarget = null;
+        followRoute = null;
         followFire = null;
         followFireDown = false;
         lastFollowTap = null;
@@ -1396,7 +1598,7 @@ async function boot(): Promise<void> {
           : '';
       let followBit = '';
       if (scheme === 'follow') {
-        const tp = followTargetPos();
+        const tp = followRoute?.currentAim ?? followTargetPos();
         if (followFire) followBit = ' · FOLLOW firing';
         else if (!tp) followBit = ' · FOLLOW no target';
         else if (car) {
@@ -1407,7 +1609,7 @@ async function boot(): Promise<void> {
             },
             tp,
           );
-          followBit = ` · FOLLOW ${o.mode} ${o.distM.toFixed(1)}m`;
+          followBit = ` · FOLLOW ${o.mode} ${o.distM.toFixed(1)}m${followRoute?.routed ? ` · route ${followRoute.idx + 1}/${followRoute.points.length}` : ''}`;
         } else {
           const w = followWalkInput(game.playerPos, tp);
           followBit = ` · FOLLOW ${followTarget?.kind ?? 'point'} ${w.distM.toFixed(1)}m`;

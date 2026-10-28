@@ -543,3 +543,44 @@ describe('FOLLOW iteration 2 — first-drive hint text is the scheme\u2019s', ()
     expect(saw).toBe(true);
   });
 });
+
+describe('FOLLOW iteration 5 — player zoom (pinch / wheel)', () => {
+  it('setZoomView eases the frame view to the chosen width in log space, monotonically', () => {
+    const g = newGame();
+    expect(g.playerZoomViewM).toBeNull();
+    expect(g.buildFrame().viewWidthM).toBeCloseTo(g.streetViewM, 3);
+    g.setZoomView(900);
+    expect(g.playerZoomViewM).toBe(900);
+    let last = -Infinity;
+    for (let i = 0; i < 60; i++) {
+      g.update(0.05);
+      const v = g.buildFrame().viewWidthM;
+      expect(v).toBeGreaterThanOrEqual(last - 1e-9);
+      last = v;
+    }
+    expect(last).toBeGreaterThan(850);
+    expect(last).toBeLessThan(950);
+  });
+
+  it('clearing the zoom returns the camera to street framing', () => {
+    const g = newGame();
+    g.setZoomView(1200);
+    for (let i = 0; i < 60; i++) g.update(0.05);
+    expect(g.buildFrame().viewWidthM).toBeGreaterThan(1000);
+    g.setZoomView(null);
+    expect(g.playerZoomViewM).toBeNull();
+    for (let i = 0; i < 60; i++) g.update(0.05);
+    expect(g.buildFrame().viewWidthM).toBeCloseTo(g.streetViewM, 0);
+  });
+
+  it('wholeMapFraming agrees with the intro start view (one machinery)', () => {
+    const world = loadWorld(JSON.parse(downtownRaw));
+    const g = new Game(world, new MemoryStorage());
+    const framing = g.wholeMapFraming(390 / 844);
+    expect(framing).not.toBeNull();
+    g.beginIntro(390 / 844);
+    expect(g.buildFrame().viewWidthM).toBeCloseTo(framing!.view, 3);
+    expect(Math.abs(g.buildFrame().camera.x - framing!.pos.x)).toBeLessThan(0.05);
+    expect(Math.abs(g.buildFrame().camera.z - framing!.pos.z)).toBeLessThan(0.05);
+  });
+});

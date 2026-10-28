@@ -35,7 +35,7 @@ import { drawScorches, drawEffects, drawPickup } from '../effects';
 import { SkidTracks, expandedPolygon, offsetPath, laneCentreOffsets } from '../groundwork';
 import { segmentRoof, shadeHex, polygonArea, type RoofPiece } from '../segment';
 import { generateAllTextures, generateWallTexture, hexToRgb, textureToCanvas, type TextureImage, type TextureKind, type WallTexture } from '../textures';
-import { WALL_COLORS, roofVariant, ROAD_CASING, ROAD_KERB, ROAD_POLISH, CENTRE_LINE, WATER_BANK, WATER_EDGE } from '../palette';
+import { WALL_COLORS, roofVariant, ROAD_CASING, ROAD_KERB, ROAD_POLISH, CENTRE_LINE, WATER_BANK, WATER_EDGE, RAIL_BEAM, RAIL_POST } from '../palette';
 import { extrudeM, offsetRing } from '../oblique';
 import { shadowRing, roofClutter, crosswalkStripes, scatterTrees, TREE_FILLS, type ClutterItem, type TreeSpot } from '../dressing';
 
@@ -271,6 +271,36 @@ export class CanvasRenderer implements Renderer {
       if (!near(cx, cz)) continue;
       trace(s);
       ctx.fill();
+    }
+
+    // Bridge guardrails (iteration 5): a dark shadow line under a
+    // light steel beam, posts standing on it every ~4 m — drawn
+    // from the same derived geometry that collides (world.bridges),
+    // so what you see is exactly what holds the car on the deck.
+    for (const br of this.world.bridges) {
+      if (
+        br.maxX < frame.camera.x - viewM.x || br.minX > frame.camera.x + viewM.x ||
+        br.maxZ < frame.camera.z - viewM.z || br.minZ > frame.camera.z + viewM.z
+      ) continue;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (const line of br.railLines) {
+        ctx.beginPath();
+        line.forEach((p, i) => (i === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
+        ctx.strokeStyle = RAIL_POST;
+        ctx.globalAlpha = 0.55;
+        ctx.lineWidth = Math.max(1.2, 0.55 * scale);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = RAIL_BEAM;
+        ctx.lineWidth = Math.max(1, 0.34 * scale);
+        ctx.stroke();
+      }
+      const postPx = Math.max(1.4, 0.34 * scale);
+      ctx.fillStyle = RAIL_POST;
+      for (const p of br.posts) {
+        ctx.fillRect(sx(p.x) - postPx / 2, sy(p.z) - postPx / 2, postPx, postPx);
+      }
     }
 
     // Trees: SE shadow blob, then canopy.

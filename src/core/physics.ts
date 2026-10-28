@@ -31,7 +31,9 @@ export function moveCircle(
   radius: number,
 ): { pos: Vec2; hitBuilding: boolean } {
   const next = { x: pos.x + dx, z: pos.z + dz };
-  const pushed = collideBuildings(world.buildings, next, radius);
+  // Iteration 5: the collider set is buildings + bridge guardrails,
+  // so a walker slides along a rail exactly like a wall.
+  const pushed = collideBuildings(world.colliders, next, radius);
   if (pushed) return { pos: pushed, hitBuilding: true };
   return { pos: next, hitBuilding: false };
 }
@@ -308,7 +310,11 @@ export function stepCar(
     // impactSpeed is the into-wall component — a scrape is no longer
     // scored (or damaged) like a head-on.
     const attempted = { x: pos.x + vel.x * h, z: pos.z + vel.z * h };
-    const hit = collideBuildingsN(world.buildings, attempted, COLLISION_RADIUS);
+    // Iteration 5: buildings + bridge guardrails — a car at any
+    // speed or angle meets the rail and slides along the deck
+    // instead of leaving it (the v0.29 slide response below does
+    // the rest: only the into-rail velocity component dies).
+    const hit = collideBuildingsN(world.colliders, attempted, COLLISION_RADIUS);
     if (hit) {
       hitBuilding = true;
       pos = hit.pos;

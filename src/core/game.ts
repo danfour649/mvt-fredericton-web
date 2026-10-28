@@ -2149,8 +2149,66 @@ export class Game {
     this.showToast('A saffron procession is crossing downtown…');
   }
 
-  /** The framing the normal camera is steering toward this frame. */
+  /** FOLLOW iteration 5: the player's own zoom (pinch / wheel) —
+   *  a desired view WIDTH in metres that replaces the speed-based
+   *  framing while set. The platform owns the gesture state and
+   *  the arrival return; the core owns the clamp and the chase. */
+  private zoomViewM: number | null = null;
+
+  /** Set (or clear, with null) the player's zoom override. */
+  setZoomView(viewM: number | null): void {
+    this.zoomViewM = viewM === null ? null : Math.max(18, viewM);
+  }
+
+  get playerZoomViewM(): number | null {
+    return this.zoomViewM;
+  }
+
+  /** The framing the normal speed-based camera wants right now —
+   *  what the zoom override hands back to when it clears. */
+  get streetViewM(): number {
+    return this.dynamicCameraTarget().view;
+  }
+
+  /**
+   * The whole-map framing for a viewport aspect: centre + view
+   * width covering the full extract (buildings ∪ river), or null
+   * when the world has no finite bounds (toy worlds — there is no
+   * "whole map" to show). Shared by the boot cinematic (which
+   * starts here) and the player's zoom-out (which ends here).
+   */
+  wholeMapFraming(viewportAspect: number): { pos: Vec2; view: number } | null {
+    let { minX, maxX, minZ, maxZ } = this.world.bounds;
+    for (const w of this.world.water) {
+      minX = Math.min(minX, w.minX);
+      maxX = Math.max(maxX, w.maxX);
+      minZ = Math.min(minZ, w.minZ);
+      maxZ = Math.max(maxZ, w.maxZ);
+    }
+    if (![minX, maxX, minZ, maxZ].every(Number.isFinite)) return null;
+    const wM = Math.max(1, maxX - minX);
+    const hM = Math.max(1, maxZ - minZ);
+    const aspect = Math.max(0.2, Math.min(4, viewportAspect));
+    // Visible height = viewWidth / aspect, so the width must cover
+    // the extract's height × aspect as well as its own width.
+    return {
+      pos: { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 },
+      view: Math.max(wM, hM * aspect) * 1.06,
+    };
+  }
+
+  /** The framing the camera is steering toward this frame: the
+   *  player's zoom when one is set, else the speed-based framing.
+   *  The centre is the gameplay anchor either way — zoomed out,
+   *  the camera still follows the car across the map. */
   private cameraTarget(): { pos: Vec2; view: number } {
+    const t = this.dynamicCameraTarget();
+    if (this.zoomViewM === null) return t;
+    return { pos: t.pos, view: this.zoomViewM };
+  }
+
+  /** The framing the normal camera is steering toward this frame. */
+  private dynamicCameraTarget(): { pos: Vec2; view: number } {
     // Lookahead BY THE VELOCITY VECTOR (v0.21): the camera leans into
     // the direction of travel — including the lateral component when
     // the car slides — so a drift reads before it bites.
@@ -2193,30 +2251,15 @@ export class Game {
    */
   beginIntro(viewportAspect: number): void {
     if (this.introSuppressed || this.introActive) return;
-    let { minX, maxX, minZ, maxZ } = this.world.bounds;
-    for (const w of this.world.water) {
-      minX = Math.min(minX, w.minX);
-      maxX = Math.max(maxX, w.maxX);
-      minZ = Math.min(minZ, w.minZ);
-      maxZ = Math.max(maxZ, w.maxZ);
-    }
     // A world with no buildings has unbounded bounds (the toy test
     // worlds) — there is no "whole map" to descend from, so don't.
-    if (![minX, maxX, minZ, maxZ].every(Number.isFinite)) return;
-    const wM = Math.max(1, maxX - minX);
-    const hM = Math.max(1, maxZ - minZ);
-    const aspect = Math.max(0.2, Math.min(4, viewportAspect));
-    // Visible height = viewWidth / aspect, so the width must cover
-    // the extract's height × aspect as well as its own width.
-    const startView = Math.max(wM, hM * aspect) * 1.06;
-    this.introFrom = {
-      pos: { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 },
-      view: startView,
-    };
+    const framing = this.wholeMapFraming(viewportAspect);
+    if (!framing) return;
+    this.introFrom = framing;
     this.introT = 0;
     this.introActive = true;
     this.camPos = { ...this.introFrom.pos };
-    this.camViewM = startView;
+    this.camViewM = framing.view;
   }
 
   /** Any input ends the cinematic NOW: the camera snaps to exactly
@@ -2263,8 +2306,15 @@ export class Game {
     };
     // v0.21: GTA's zoom tracks speed aggressively — rate 3.6/s reaches
     // the target view in ~0.3 s (was 2.2/s, a visible ~0.5 s+ lag).
+    // Iteration 5: the chase runs in LOG space, like the intro's
+    // descent — across the street framing's small range it behaves
+    // exactly as before, but a pinch from 85 m to the 2 km map (or
+    // the arrival dive back) now eases through the orders of
+    // magnitude instead of sprinting linearly then crawling.
     const kv = 1 - Math.exp(-3.6 * dt);
-    this.camViewM += (target.view - this.camViewM) * kv;
+    this.camViewM = Math.exp(
+      Math.log(this.camViewM) + (Math.log(target.view) - Math.log(this.camViewM)) * kv,
+    );
   }
 
   // --- demo / test hooks -----------------------------------------------------

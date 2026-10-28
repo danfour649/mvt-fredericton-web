@@ -34,6 +34,9 @@
  */
 
 import type { Vec2 } from '../core/geo';
+import { dist } from '../core/geo';
+import { findRoute, type RoadGraph } from '../core/routing';
+import type { WorldModel } from '../core/world';
 
 /** Distance at which the car is declared ON the point (m). */
 export const FOLLOW_ARRIVE_RADIUS_M = 2.2;
@@ -91,6 +94,28 @@ function wrapAngle(a: number): number {
 const clamp = (v: number, lo: number, hi: number): number =>
   Math.max(lo, Math.min(hi, v));
 
+export interface FollowCarOpts {
+  /** Iteration 5: routed driving suppresses the reverse gear for
+   *  intermediate waypoints (a waypoint behind the car mid-route
+   *  is a loop-around, never a back-up). Default true (the final
+   *  target keeps the tap-behind-to-reverse behaviour). */
+  allowReverse?: boolean;
+  /** Iteration 5: this aim point is a pass-through waypoint, not
+   *  the destination — no braking curve, no arrive, cruise speed
+   *  is held until the point is reached/skipped. */
+  through?: boolean;
+  /** Corner speed for THIS aim (m/s at the point itself), from
+   *  the RouteFollower's look at the bend ahead. Through travel
+   *  brakes on a curve toward it — arriving at a 90° ramp hairpin
+   *  at full 137 km/h cruise ends on the guardrail, as the first
+   *  cross-river routed sim proved. */
+  cornerMps?: number | null;
+}
+
+/** Braking deceleration (m/s²) for corner approaches on routed
+ *  travel — firm, under the car's real full-brake capability. */
+const CORNER_BRAKE_A = 6.5;
+
 /**
  * One control step for the driven car toward `target` (core metres).
  * Stateless: gear choice (forward vs reverse) is a pure function of
@@ -98,17 +123,20 @@ const clamp = (v: number, lo: number, hi: number): number =>
  * without latching or a limit cycle (proven by the sim tests in
  * followDrive.test.ts, which drive the REAL stepCar physics).
  */
-export function followCarInput(car: FollowCarPose, target: Vec2): FollowCarOutput {
+export function followCarInput(car: FollowCarPose, target: Vec2, opts?: FollowCarOpts): FollowCarOutput {
   const dx = target.x - car.pos.x;
   const dz = target.z - car.pos.z;
   const dist = Math.hypot(dx, dz);
-  if (dist <= FOLLOW_ARRIVE_RADIUS_M) {
+  if (dist <= FOLLOW_ARRIVE_RADIUS_M && !opts?.through) {
     return { throttle: 0, steer: 0, mode: 'arrived', distM: dist };
   }
   const bearing = Math.atan2(dz, dx);
   const err = wrapAngle(bearing - car.heading);
 
-  if (Math.abs(err) > FOLLOW_REAR_CONE_RAD && dist <= FOLLOW_REVERSE_MAX_DIST_M) {
+  if (
+    opts?.allowReverse !== false &&
+    Math.abs(err) > FOLLOW_REAR_CONE_RAD && dist <= FOLLOW_REVERSE_MAX_DIST_M
+  ) {
     // Back in: pursue with the tail. The pursuit point sits on the
     // ray from the car's REAR toward the target; steering inverts
     // because a backwards car yaws opposite to the same wheel angle.
@@ -132,17 +160,27 @@ export function followCarInput(car: FollowCarPose, target: Vec2): FollowCarOutpu
   // Iteration 3 tightened the lookahead (was 2.5 + 0.6·v, cap 16)
   // for a snappier line now that cruise is the car's real top speed.
   const look = clamp(2 + Math.abs(car.speed) * 0.45, 2.5, 13);
-  const px = dist <= look ? target.x : car.pos.x + (dx / dist) * look;
-  const pz = dist <= look ? target.z : car.pos.z + (dz / dist) * look;
+  const px = dist <= look || dist < 1e-6 ? target.x : car.pos.x + (dx / dist) * look;
+  const pz = dist <= look || dist < 1e-6 ? target.z : car.pos.z + (dz / dist) * look;
   const errP = wrapAngle(Math.atan2(pz - car.pos.z, px - car.pos.x) - car.heading);
   // Full speed until the braking curve bites (see header), with the
-  // terminal governor taking the last metres gently.
+  // terminal governor taking the last metres gently. A pass-through
+  // waypoint (through) skips the curve entirely: cruise is the
+  // target and only the tight-turn cap slows the car.
   const vCruise = car.topSpeedMps ?? FOLLOW_DEFAULT_TOP_MPS;
-  let vDes = Math.min(
-    vCruise,
-    Math.sqrt(2 * BRAKE_PROFILE_A * Math.max(0, dist - 0.5)),
-    TERMINAL_SLOPE * dist + TERMINAL_BASE,
-  );
+  let vDes = opts?.through
+    ? vCruise
+    : Math.min(
+        vCruise,
+        Math.sqrt(2 * BRAKE_PROFILE_A * Math.max(0, dist - 0.5)),
+        TERMINAL_SLOPE * dist + TERMINAL_BASE,
+      );
+  if (opts?.through && opts?.cornerMps != null) {
+    // Brake on a curve to BE at corner speed when the aim point
+    // is reached: v² = corner² + 2·a·d.
+    const c = opts.cornerMps;
+    vDes = Math.min(vDes, Math.sqrt(c * c + 2 * CORNER_BRAKE_A * dist));
+  }
   if (Math.abs(errP) > TURN_CAP_ERR_RAD) vDes = Math.min(vDes, TURN_CAP_MPS);
   return {
     throttle: clamp((vDes - car.speed) * THROTTLE_GAIN, -1, 1),
@@ -171,6 +209,212 @@ export function followWalkInput(playerPos: Vec2, target: Vec2): FollowWalkOutput
   // not past it (the core scales walk speed by input magnitude).
   const m = Math.min(1, dist / 2);
   return { move: { x: (dx / dist) * m, z: (dz / dist) * m }, arrived: false, distM: dist };
+}
+
+// --- iteration 5: long-range targets route over the road graph -----------
+// A tap across the map (the zoomed-out pick) used to pure-pursue a
+// straight line and demolish itself on the first building. Now any
+// target beyond FOLLOW_ROUTE_MIN_M is planned over the junction
+// graph (core/routing.ts findRoute): the car drives its own street
+// to a junction, crosses town on centrelines — over the bridge, on
+// its new guardrails — and only the final leg is a free pursuit.
+
+/** Targets farther than this (m) are planned over the road graph. */
+export const FOLLOW_ROUTE_MIN_M = 120;
+
+export interface FollowPlan {
+  /** Pursuit waypoints; the last is always the exact target. */
+  points: Vec2[];
+  /** True when the points came from the road graph (vs a direct
+   *  single-point plan for a near tap or an unroutable far one). */
+  routed: boolean;
+}
+
+/**
+ * Plan a follow target: near → the point itself; far → the road
+ * route, falling back to the point itself when no route exists.
+ */
+export function planFollowPoints(
+  graph: RoadGraph,
+  world: WorldModel,
+  from: Vec2,
+  to: Vec2,
+): FollowPlan {
+  if (dist(from, to) > FOLLOW_ROUTE_MIN_M) {
+    const route = findRoute(graph, world, from, to);
+    if (route && route.length) return { points: route, routed: true };
+  }
+  return { points: [{ ...to }], routed: false };
+}
+
+export interface RouteFollowerOpts {
+  routed: boolean;
+  /** Re-plan from a new position (same final target). Used once
+   *  per route when progress stalls; null result = keep going. */
+  replan?: (from: Vec2) => Vec2[] | null;
+  /** Waypoint skip radius: min + per-speed, capped at max (m). */
+  skipMinM?: number;
+  skipPerSpeedM?: number;
+  skipMaxM?: number;
+  /** Seconds without ≥0.75 m of progress toward the aim point
+   *  before the stuck ladder steps (replan → advance → give up). */
+  stuckAfterS?: number;
+}
+
+export interface RouteStep {
+  aim: Vec2;
+  isFinal: boolean;
+  /** Speed the mover should carry AT the aim point (m/s), from
+   *  the bend to the NEXT point — null on straights and on the
+   *  final leg (the arrive profile owns that one). */
+  cornerMps: number | null;
+}
+
+/** Bends up to this angle (rad) at a waypoint are taken at cruise. */
+const CORNER_FREE_RAD = 0.3;
+/** Corner speed law beyond that: cap = max(MIN, BASE − SLOPE·θ).
+ *  θ=1.0 → 14 m/s, θ=π/2 → ~8 m/s, hairpins → the floor. */
+const CORNER_BASE_MPS = 24;
+const CORNER_SLOPE_MPS = 10;
+const CORNER_MIN_MPS = 6.5;
+
+/**
+ * Stateful waypoint walker for one follow plan. main.ts feeds it
+ * the mover's pose each frame; it answers the current aim point,
+ * advancing when a waypoint is reached (skip radius grows with
+ * speed so a fast car doesn't have to thread every junction
+ * centre) and climbing the stuck ladder when the mover stops
+ * making progress: re-plan ONCE, then skip the offending waypoint,
+ * then give up (update returns null) rather than grind forever.
+ * Arrival itself is NOT decided here — the final point is judged
+ * by followCarInput/followWalkInput exactly as before.
+ */
+export class RouteFollower {
+  points: Vec2[];
+  idx = 0;
+  gaveUp = false;
+  readonly routed: boolean;
+  private readonly replanFn?: (from: Vec2) => Vec2[] | null;
+  private readonly skipMinM: number;
+  private readonly skipPerSpeedM: number;
+  private readonly skipMaxM: number;
+  private readonly stuckAfterS: number;
+  private bestDist = Infinity;
+  private stuckT = 0;
+  private replanned = false;
+  private lastPos: Vec2 | null = null;
+  private movedWindowM = 0;
+
+  constructor(points: Vec2[], opts: RouteFollowerOpts) {
+    this.points = points;
+    this.routed = opts.routed;
+    this.replanFn = opts.replan;
+    this.skipMinM = opts.skipMinM ?? 7;
+    this.skipPerSpeedM = opts.skipPerSpeedM ?? 0.35;
+    this.skipMaxM = opts.skipMaxM ?? 16;
+    this.stuckAfterS = opts.stuckAfterS ?? 4;
+  }
+
+  get finalPos(): Vec2 {
+    return this.points[this.points.length - 1];
+  }
+
+  get currentAim(): Vec2 | null {
+    return this.gaveUp || this.idx >= this.points.length ? null : this.points[this.idx];
+  }
+
+  get isFinalAim(): boolean {
+    return this.idx === this.points.length - 1;
+  }
+
+  private resetProgress(): void {
+    this.bestDist = Infinity;
+    this.stuckT = 0;
+    this.movedWindowM = 0;
+  }
+
+  /** Corner speed at points[idx] given the approach from `pos`. */
+  private cornerFor(pos: Vec2, idx: number): number | null {
+    if (idx >= this.points.length - 1) return null;
+    const aim = this.points[idx];
+    const next = this.points[idx + 1];
+    const inx = aim.x - pos.x;
+    const inz = aim.z - pos.z;
+    const outx = next.x - aim.x;
+    const outz = next.z - aim.z;
+    const il = Math.hypot(inx, inz);
+    const ol = Math.hypot(outx, outz);
+    if (il < 1e-6 || ol < 1e-6) return null;
+    const cos = clamp((inx * outx + inz * outz) / (il * ol), -1, 1);
+    const theta = Math.acos(cos);
+    if (theta <= CORNER_FREE_RAD) return null;
+    return Math.max(CORNER_MIN_MPS, CORNER_BASE_MPS - CORNER_SLOPE_MPS * theta);
+  }
+
+  /**
+   * Advance the route for this frame. Returns the aim point, or
+   * null when the route is exhausted (gave up on the final leg —
+   * the caller clears the target and the mover stops).
+   */
+  update(pos: Vec2, speedMps: number, dt: number): RouteStep | null {
+    if (this.gaveUp || !this.points.length) return null;
+    if (this.lastPos) this.movedWindowM += dist(pos, this.lastPos);
+    this.lastPos = { ...pos };
+    const skipR = clamp(
+      this.skipMinM + Math.abs(speedMps) * this.skipPerSpeedM,
+      this.skipMinM,
+      this.skipMaxM,
+    );
+    while (this.idx < this.points.length - 1 && dist(pos, this.points[this.idx]) <= skipR) {
+      this.idx++;
+      this.resetProgress();
+    }
+    const aim = this.points[this.idx];
+    const d = dist(pos, aim);
+    if (d < this.bestDist - 0.75) {
+      this.bestDist = d;
+      this.stuckT = 0;
+      this.movedWindowM = 0;
+    } else {
+      this.stuckT += Math.max(0, dt);
+    }
+    if (this.stuckT >= this.stuckAfterS) {
+      if (!this.replanned && this.replanFn) {
+        this.replanned = true;
+        this.resetProgress();
+        const fresh = this.replanFn(pos);
+        if (fresh && fresh.length) {
+          this.points = fresh;
+          this.idx = 0;
+          return { aim: this.points[0], isFinal: this.points.length === 1, cornerMps: this.cornerFor(pos, 0) };
+        }
+      } else if (this.replanned && this.movedWindowM < 1.5) {
+        // Re-planned already and the mover has barely moved in a
+        // whole stuck window: it is physically wedged. Advancing
+        // the aim down the route would only fake progress (the
+        // first cross-river sim ground against a rail for 130 s
+        // while the ladder "advanced") — stop honestly instead.
+        this.gaveUp = true;
+        return null;
+      } else if (this.idx < this.points.length - 1) {
+        this.idx++;
+        this.resetProgress();
+        return {
+          aim: this.points[this.idx],
+          isFinal: this.idx === this.points.length - 1,
+          cornerMps: this.cornerFor(pos, this.idx),
+        };
+      } else {
+        this.gaveUp = true;
+        return null;
+      }
+    }
+    return {
+      aim,
+      isFinal: this.idx === this.points.length - 1,
+      cornerMps: this.cornerFor(pos, this.idx),
+    };
+  }
 }
 
 /**

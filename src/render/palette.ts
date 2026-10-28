@@ -56,3 +56,8 @@ export const CENTRE_LINE = '#f0c41c';
 export const WATER_BANK = '#d9e9f2';
 /** Water edge: the darker shoreline stroke right at the waterline. */
 export const WATER_EDGE = '#17486e';
+/** Bridge guardrail beam (iteration 5): galvanized light steel —
+ *  reads as a bright strip along both deck edges. */
+export const RAIL_BEAM = '#d8dde2';
+/** Guardrail posts + the beam's shadow line: dark steel. */
+export const RAIL_POST = '#4c5158';

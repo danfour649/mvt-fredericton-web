@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { loadWorld } from './world';
 import { unproject } from './geo';
-import { buildRoadGraph } from './routing';
+import { buildRoadGraph, findRoute } from './routing';
 import { spawnTraffic, updateTraffic } from './traffic';
 
 function line(name: string, pts: [number, number][]) {
@@ -100,5 +100,67 @@ describe('junction routing', () => {
     const dt = 1 / 30;
     for (let t = 0; t < 3; t += dt) updateTraffic(car, dt);
     expect(car.dir).toBe(-1);
+  });
+});
+
+describe('findRoute — iteration 5 map-pick routing', () => {
+  it('routes across a junction and ends exactly on the target', () => {
+    const world = network();
+    const graph = buildRoadGraph(world);
+    const route = findRoute(graph, world, { x: -100, z: 0 }, { x: 0, z: 100 });
+    expect(route).not.toBeNull();
+    const last = route![route!.length - 1];
+    expect(last.x).toBeCloseTo(0, 6);
+    expect(last.z).toBeCloseTo(100, 6);
+    // The path must pass through the junction, not cut the corner.
+    expect(route!.some((p) => Math.hypot(p.x, p.z) < 30)).toBe(true);
+  });
+
+  it('same-road targets take the direct sub-path along the street', () => {
+    const world = network();
+    const graph = buildRoadGraph(world);
+    const route = findRoute(graph, world, { x: -100, z: 0 }, { x: -40, z: 0 });
+    expect(route).not.toBeNull();
+    expect(route!.every((p) => Math.abs(p.z) < 0.01)).toBe(true);
+    const last = route![route!.length - 1];
+    expect(last.x).toBeCloseTo(-40, 6);
+    expect(last.z).toBeCloseTo(0, 6);
+  });
+
+  it('returns null for a road island with no junction or link to the network', () => {
+    const world = loadWorld({
+      buildings: { features: [] },
+      roads: {
+        features: [
+          line('A St', [[-120, 0], [0, 0]]),
+          line('B St', [[0, 0], [0, 120]]),
+          line('Far St', [[300, 300], [420, 300]]),
+        ],
+      },
+    });
+    const graph = buildRoadGraph(world);
+    expect(findRoute(graph, world, { x: -100, z: 0 }, { x: 360, z: 300 })).toBeNull();
+  });
+
+  it('leaves by the FAR endpoint when the near one is a dead end (multi-source start)', () => {
+    // R1 runs (0,0)->(100,0); only its east end junctions onward.
+    // A point 10 m from the west (dead) end must still route out
+    // east — seeding Dijkstra from the nearest endpoint only
+    // would strand it.
+    const world = loadWorld({
+      buildings: { features: [] },
+      roads: {
+        features: [
+          line('R1 St', [[0, 0], [100, 0]]),
+          line('R2 St', [[100, 0], [100, 100]]),
+        ],
+      },
+    });
+    const graph = buildRoadGraph(world);
+    const route = findRoute(graph, world, { x: 10, z: 0 }, { x: 100, z: 80 });
+    expect(route).not.toBeNull();
+    const last = route![route!.length - 1];
+    expect(last.x).toBeCloseTo(100, 6);
+    expect(last.z).toBeCloseTo(80, 6);
   });
 });

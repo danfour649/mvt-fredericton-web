@@ -48,7 +48,7 @@ import { drawScorches, drawEffects, drawPickup } from '../effects';
 import { SkidTracks, ribbonPolygon, expandedPolygon } from '../groundwork';
 import { segmentRoof, shadeHex, polygonArea } from '../segment';
 import { generateAllTextures, generateWallTexture, hexToRgb, type TextureKind, type TextureImage } from '../textures';
-import { WALL_COLORS, roofVariant, GROUND_BASE, CONTEXT_BUILDING, ROAD_CASING, ROAD_KERB, ROAD_POLISH, CENTRE_LINE, WATER_BANK, WATER_EDGE } from '../palette';
+import { WALL_COLORS, roofVariant, GROUND_BASE, CONTEXT_BUILDING, ROAD_CASING, ROAD_KERB, ROAD_POLISH, CENTRE_LINE, WATER_BANK, WATER_EDGE, RAIL_BEAM, RAIL_POST } from '../palette';
 import { shadowRing, roofClutter, crosswalkStripes, scatterTrees, TREE_FILLS } from '../dressing';
 import { extrudeM, offsetRing } from '../oblique';
 import { zoomForViewWidth } from '../cameraMath';
@@ -228,6 +228,7 @@ export class MapLibreRenderer implements Renderer {
           'game-crosswalks': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-trees': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-roads': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+          'game-rails': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         },
         layers: [
           { id: 'bg', type: 'background', paint: { 'background-color': GROUND_BASE } },
@@ -306,6 +307,20 @@ export class MapLibreRenderer implements Renderer {
               'line-width': ['interpolate', ['linear'], ['zoom'], 19, 1.6, 22, 4.6],
               'line-dasharray': [2.4, 2.2],
             },
+          },
+          {
+            // Iteration 5: bridge guardrails over the road stack —
+            // dark posts, light steel beam along both deck edges,
+            // from the same derived geometry that collides.
+            id: 'rails-posts', type: 'fill', source: 'game-rails',
+            filter: ['==', ['get', 'kind'], 'post'],
+            paint: { 'fill-color': RAIL_POST, 'fill-opacity': 0.95 },
+          },
+          {
+            id: 'rails-beam', type: 'line', source: 'game-rails',
+            filter: ['==', ['get', 'kind'], 'beam'],
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: { 'line-color': RAIL_BEAM, 'line-width': fixedWidthStops(0.38) as never },
           },
           {
             id: 'crosswalks', type: 'fill', source: 'game-crosswalks',
@@ -562,6 +577,29 @@ export class MapLibreRenderer implements Renderer {
     }
     // Crosswalks at junctions (v0.23, routing graph positions).
     const crosswalks: Feature[] = crosswalkStripes(buildRoadGraph(world)).map((s) => polyFeature(s, {}));
+    // Bridge guardrails (iteration 5): beam lines + post squares,
+    // from world.bridges — the same geometry the collision path
+    // uses, so the drawn rail is the rail that holds.
+    const rails: Feature[] = [];
+    for (const br of world.bridges) {
+      for (const line of br.railLines) {
+        rails.push({
+          type: 'Feature',
+          properties: { kind: 'beam' },
+          geometry: { type: 'LineString', coordinates: line.map(ll) },
+        });
+      }
+      for (const p of br.posts) {
+        const h = 0.19;
+        rails.push(polyFeature(
+          [
+            { x: p.x - h, z: p.z - h }, { x: p.x + h, z: p.z - h },
+            { x: p.x + h, z: p.z + h }, { x: p.x - h, z: p.z + h },
+          ],
+          { kind: 'post' },
+        ));
+      }
+    }
     // Street trees + their shadows (v0.23).
     const trees: Feature[] = [];
     for (const t of scatterTrees(world)) {
@@ -589,6 +627,7 @@ export class MapLibreRenderer implements Renderer {
     set('game-crosswalks', crosswalks);
     set('game-trees', trees);
     set('game-roads', roads);
+    set('game-rails', rails);
     this.ready = true;
     if (this.pending) {
       this.sync(this.pending);
