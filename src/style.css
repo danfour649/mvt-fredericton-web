@@ -2,7 +2,7 @@
    a downward drag starting on any uncovered pixel used to be able to
    reload the page mid-drive. touch-action:none on the map does the
    same for the bare-map area not covered by a control element. */
-html, body { margin: 0; height: 100%; background: #79b657; overflow: hidden; overscroll-behavior: none; }
+html, body { margin: 0; height: 100%; background: #69a83a; overflow: hidden; overscroll-behavior: none; }
 body { font-family: system-ui, sans-serif; }
 #map { position: fixed; inset: 0; touch-action: none; }
 #map canvas { touch-action: none; }
@@ -44,16 +44,50 @@ body { font-family: system-ui, sans-serif; }
   text-shadow: 0 2px 0 rgba(0,0,0,0.55); min-width: 4.5em; text-align: right;
 }
 
+/* --- vehicle banner + objective arrow (iteration 4, GTA 1) -------------- */
+#car-banner {
+  position: fixed; top: 40px; left: 50%; transform: translateX(-50%);
+  z-index: 26; min-width: 170px; text-align: center;
+  background: linear-gradient(#2e74d8, #1c56ad);
+  border: 2px solid #cfe6ff; border-radius: 4px;
+  color: #fff; font-size: 19px; font-weight: 800; letter-spacing: 0.05em;
+  padding: 5px 22px 6px; box-shadow: 0 3px 10px rgba(0,0,0,0.4);
+  pointer-events: none;
+}
+#car-banner[hidden] { display: none; }
+#obj-arrow {
+  position: fixed; z-index: 24; width: 30px; height: 30px;
+  font-size: 25px; line-height: 30px; text-align: center;
+  color: #f5b301; text-shadow: 0 2px 0 rgba(0,0,0,0.65), 0 0 6px rgba(0,0,0,0.4);
+  pointer-events: none;
+}
+#obj-arrow[hidden] { display: none; }
+#obj-arrow[data-kind="exit"] { color: #ff4b3e; }
+#obj-arrow[data-kind="vehicle"] { color: #c99aff; }
+#obj-arrow[data-kind="chopshop"] { color: #ffb35c; }
+#obj-arrow[data-kind="payphone"] { color: #37d67a; }
+
 /* --- pager -------------------------------------------------------------- */
 #pager {
   position: fixed; left: 10px; bottom: 34px; z-index: 20;
   pointer-events: none; /* v0.25: display-only — never eat a steer touch */
+  display: flex; gap: 8px; align-items: flex-start;
   max-width: min(330px, calc(100vw - 20px));
   background: rgba(16, 22, 14, 0.88); color: #b6f09a;
   border: 2px solid #3f6212; border-radius: 8px; padding: 7px 10px 8px;
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   box-shadow: 0 4px 14px rgba(0,0,0,0.35);
 }
+#pager[hidden] { display: none; }
+/* The footage's icon chip: a small blue info square at the line's left. */
+#pager .pager-chip {
+  flex: 0 0 auto; width: 25px; height: 25px; margin-top: 1px;
+  background: #1f6fd6; border: 2px solid #bcd9ff; border-radius: 5px;
+  color: #fff; font: italic 800 16px Georgia, 'Times New Roman', serif;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+}
+#pager .pager-main { min-width: 0; }
 #pager .pager-head { font-size: 10px; letter-spacing: 0.22em; color: #7fb069; margin-bottom: 2px; }
 #hud-brief { margin: 0; font-size: 12.5px; line-height: 1.4; color: #d9f7c4; }
 #hud-objective { margin: 3px 0 0; font-size: 12.5px; line-height: 1.4; color: #fff; font-weight: 700; }
@@ -63,7 +97,8 @@ body { font-family: system-ui, sans-serif; }
 
 /* --- toast --------------------------------------------------------------- */
 #hud-toast {
-  position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
+  /* top clears the iteration-4 car banner (40px + ~36px tall). */
+  position: fixed; top: 96px; left: 50%; transform: translateX(-50%);
   z-index: 25; max-width: calc(100vw - 24px); text-align: center;
   font-size: 16px; font-weight: 800; color: #fff;
   text-shadow: 0 2px 0 rgba(0,0,0,0.6), 0 0 8px rgba(0,0,0,0.4);
@@ -123,12 +158,44 @@ body { font-family: system-ui, sans-serif; }
   max-width: calc(100vw - 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 #help {
-  position: fixed; right: 8px; bottom: 6px; z-index: 15;
+  position: fixed;
+  right: max(10px, env(safe-area-inset-right));
+  bottom: max(10px, calc(env(safe-area-inset-bottom) + 4px));
+  z-index: 34; /* above the touch layer (22) and the follow marker (21):
+     in FOLLOW mode this button is the ONLY chrome on screen */
   font-size: 10.5px; color: rgba(255,255,255,0.9);
   text-shadow: 0 1px 2px rgba(0,0,0,0.7);
-  max-width: 46vw; text-align: right;
+  max-width: min(520px, calc(100vw - 20px)); text-align: right;
+  pointer-events: none; /* the container never eats a world tap… */
 }
-#help-toggle { cursor: pointer; font-weight: 800; text-decoration: underline; }
+/* …only the toggle (and the open panel) take touches. FOLLOW
+   iteration 2: the ? is a real settings button now — a 60 px gold
+   disc you cannot miss, miss-tap, or lose under a thumb. */
+#help #help-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 60px; height: 60px; border-radius: 50%;
+  background: #ffd23f; color: #20180a;
+  border: 3px solid rgba(16, 14, 4, 0.85);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.5), inset 0 -3px 0 rgba(0,0,0,0.22);
+  font-size: 27px; font-weight: 900; line-height: 1;
+  cursor: pointer; pointer-events: auto; user-select: none;
+  -webkit-user-select: none; touch-action: manipulation;
+  text-shadow: none; text-decoration: none; vertical-align: bottom;
+}
+#help #help-toggle:active { transform: translateY(2px); }
+/* The expanded help is a readable panel (it's the only teacher the
+   gesture vocabulary has): dark card, real type, above everything
+   but the stamps/overlay/loading layers. */
+#help #help-full:not([hidden]) {
+  display: block; pointer-events: auto;
+  margin: 0 0 10px auto; max-width: min(500px, calc(100vw - 20px));
+  background: rgba(10, 14, 8, 0.94); color: #eef7e6;
+  border: 2px solid rgba(255, 210, 63, 0.85); border-radius: 12px;
+  padding: 10px 12px; text-align: left;
+  font-size: 12.5px; line-height: 1.55; text-shadow: none;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+  max-height: calc(100dvh - 110px); overflow-y: auto;
+}
 
 /* --- touch controls ---------------------------------------------------- */
 #touch {
@@ -221,6 +288,40 @@ body { font-family: system-ui, sans-serif; }
    On foot the same zone is the walk stick again, so this applies
    only with body.tilt-driving (set from main.ts on transitions). */
 body.tilt-driving #stick-zone { pointer-events: none; }
+/* Follow scheme (the default): the hint line mirrors the drag hint;
+   the target marker is a fixed pin positioned by main.ts (left/top
+   in client px from the frame camera), styled like the game's gold
+   anchor ring — a pulsing double ring with a solid heart. In
+   follow mode NO control clusters render at all — the whole
+   #ctl-right is display:none (body.follow-mode is set by
+   applyScheme in main.ts); gestures carry every action. */
+#follow-hint {
+  position: absolute; left: 50%; bottom: 108px; transform: translateX(-50%);
+  font: 700 12px system-ui, sans-serif; color: rgba(255,255,255,0.85);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8); white-space: nowrap; pointer-events: none;
+}
+#follow-target {
+  position: fixed; left: 0; top: 0; width: 46px; height: 46px; z-index: 21;
+  margin: -23px 0 0 -23px; pointer-events: none;
+}
+#follow-target[hidden] { display: none; }
+#follow-target .ft-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 3px solid rgba(255, 210, 63, 0.95);
+  box-shadow: 0 0 0 2px rgba(20, 16, 4, 0.45), inset 0 0 0 2px rgba(20, 16, 4, 0.3);
+  animation: ft-pulse 1.1s ease-out infinite;
+}
+#follow-target .ft-dot {
+  position: absolute; left: 50%; top: 50%; width: 9px; height: 9px;
+  margin: -4.5px 0 0 -4.5px; border-radius: 50%;
+  background: #ffd23f; box-shadow: 0 0 0 2px rgba(20, 16, 4, 0.55);
+}
+@keyframes ft-pulse {
+  0% { transform: scale(0.72); opacity: 0.95; }
+  70% { transform: scale(1.05); opacity: 0.75; }
+  100% { transform: scale(1.12); opacity: 0.55; }
+}
+body.follow-mode #ctl-right { display: none !important; }
 /* Gear line: weapon/ammo/armour/card, under the top bar. */
 #hud-gear {
   position: fixed; top: 34px; right: 10px; z-index: 20;
@@ -352,7 +453,6 @@ body.tilt-driving #stick-zone { pointer-events: none; }
   /* Pager moves up: the stick lives bottom-left now. */
   #pager { bottom: auto; top: 58px; }
   #credit { display: none; }
-  #help { bottom: 8px; }
 }
 @media (max-width: 560px) {
   /* The one-line help crowds the corner on narrow screens (its text

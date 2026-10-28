@@ -183,17 +183,22 @@ describe('drive metrics — GTA 1 feel targets', () => {
     ].join('\n'),
   );
 
-  it('standard car: top speed ≈110–120 km/h, 0–100 in ~4–6 s', () => {
-    expect(m.standard.topKmh).toBeGreaterThanOrEqual(108);
-    expect(m.standard.topKmh).toBeLessThanOrEqual(122);
-    expect(m.standard.t100).toBeGreaterThanOrEqual(3.8);
-    expect(m.standard.t100).toBeLessThanOrEqual(6.2);
+  // Iteration 3 pace (Follow PR, Daniel's direction): these bands
+  // SUPERSEDE the v0.21 targets (top 110–120, 0–100 ~4–6 s →
+  // measured 113 / 5.57). Standard now targets ~130–140 km/h and
+  // 0–100 toward ~4.5 s; see tools/drive-metrics.md addendum.
+  it('standard car: top speed ≈130–140 km/h, 0–100 in ~4.5 s', () => {
+    expect(m.standard.topKmh).toBeGreaterThanOrEqual(128);
+    expect(m.standard.topKmh).toBeLessThanOrEqual(142);
+    expect(m.standard.t100).toBeGreaterThanOrEqual(4.0);
+    expect(m.standard.t100).toBeLessThanOrEqual(5.0);
   });
 
   it('fast and police classes are quicker than standard', () => {
     expect(m.fast.topKmh).toBeGreaterThan(m.standard.topKmh + 10);
     expect(m.fast.t100).toBeLessThan(m.standard.t100);
     expect(m.police.topKmh).toBeGreaterThan(m.standard.topKmh + 5);
+    expect(m.police.t100).toBeLessThan(m.standard.t100);
   });
 
   it('full lock at 50 km/h slips ≥8° without spinning; radius grows ~2.5–4× by 100 km/h', () => {
@@ -253,7 +258,7 @@ function wallWorld(): WorldModel {
     polygon, heightM: 10, center: { x: 13, z: 0 },
     minX: 10, maxX: 16, minZ: -40, maxZ: 40,
   };
-  return { buildings: [b], roads: [], water: [], bounds: { minX: -1e3, maxX: 1e3, minZ: -1e3, maxZ: 1e3 } };
+  return { buildings: [b], roads: [], water: [], bridges: [], barriers: [], colliders: [b], bounds: { minX: -1e3, maxX: 1e3, minZ: -1e3, maxZ: 1e3 } };
 }
 
 function runWorld(world: WorldModel, car: CarState, input: CarInput, seconds: number, onStep?: (c: CarState, t: number) => void): CarState {

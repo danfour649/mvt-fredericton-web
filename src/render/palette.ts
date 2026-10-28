@@ -24,28 +24,40 @@ export const WALL_COLORS = [
 
 /**
  * Roof texture variant per building: 0..2 → grain roofs (roof1..3),
- * 3 → the window-grid roof (roofgrid, textures.ts) — the refs'
- * signature gridded mass, for mid/large buildings (footprint area or
- * height). Small buildings keep the quiet grain roofs.
+ * 3 → the window-grid texture (roofgrid, textures.ts). Iteration 4:
+ * GTA 1's roofs are comparatively PLAIN and its window grids live
+ * on the WALLS (render/oblique.ts) — the grid survives on roofs
+ * only as the glass skylight mass of the very largest footprints
+ * (the footage has exactly one such roof). Everything else: grain.
  */
 export function roofVariant(buildingIndex: number, heightM: number, areaM2 = 0): 0 | 1 | 2 | 3 {
-  if (areaM2 >= 260 || heightM >= 14) return 3;
+  if (areaM2 >= 700) return 3;
   return ((buildingIndex * 5 + Math.floor(heightM)) % 3) as 0 | 1 | 2;
 }
 
 /** Ground base colour under the grass texture (and MapLibre bg). */
-export const GROUND_BASE = '#2e4a24';
+export const GROUND_BASE = '#527a2e';
 /** PMTiles context buildings (outside the game extract). */
 export const CONTEXT_BUILDING = '#7e7768';
 /** Road casing / edge (the dark outline under kerb + asphalt). */
-export const ROAD_CASING = '#22242a';
-/** Kerb line between casing and asphalt. */
-export const ROAD_KERB = '#ddd5c0';
-/** Asphalt fallback / centre-line surround tone. */
-export const ROAD_ASPHALT = '#343945';
+export const ROAD_CASING = '#23233a';
+/** Kerb line between casing and asphalt: the footage's pale edge
+ *  lines run along both kerbs of every road. */
+export const ROAD_KERB = '#d7d9d2';
+/** Asphalt fallback / centre-line surround tone (violet-blue,
+ *  matching the asphalt texture's base since iteration 4). */
+export const ROAD_ASPHALT = '#4a4e76';
+/** Wheel-track polish band along each lane's line of travel —
+ *  the footage's lighter violet arcs, strongest through corners. */
+export const ROAD_POLISH = '#a3a5c9';
 /** GTA-style dashed centre line: chunky saturated yellow. */
 export const CENTRE_LINE = '#f0c41c';
 /** Water bank: pale outer line along the shoreline (both adapters). */
 export const WATER_BANK = '#d9e9f2';
 /** Water edge: the darker shoreline stroke right at the waterline. */
 export const WATER_EDGE = '#17486e';
+/** Bridge guardrail beam (iteration 5): galvanized light steel —
+ *  reads as a bright strip along both deck edges. */
+export const RAIL_BEAM = '#d8dde2';
+/** Guardrail posts + the beam's shadow line: dark steel. */
+export const RAIL_POST = '#4c5158';

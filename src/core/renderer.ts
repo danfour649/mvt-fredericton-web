@@ -88,9 +88,9 @@ export interface RenderFrame {
   /** Camera centre, core metres (already smoothed by the core). */
   camera: Vec2;
   /** Metres visible across the viewport WIDTH (v0.23: the camera is
-   *  framed GTA-1-style by width — ~30 m on foot since v0.24, up to
-   *  ~130 m at top speed — so horizontal framing is identical on any
-   *  aspect ratio).
+   *  framed GTA-1-style by width — ~30 m on foot since v0.24, 50 m at
+   *  a driving crawl up to 85 m at top speed since iteration 4 — so
+   *  horizontal framing is identical on any aspect ratio).
    *  Adapters translate this to a MapLibre zoom / canvas scale using
    *  their own viewport size. */
   viewWidthM: number;

@@ -24,7 +24,11 @@
  * - v0.28: the Saint John River joins the game data (core world.water,
  *   NBHN hydrography) — bold blue fill-pattern + pale bank + dark
  *   waterline, under the pavement; palette re-saturated toward the
- *   GTA 1 refs, window-grid roofs for mid/large buildings.
+ *   GTA 1 refs. Iteration 4: buildings are OBLIQUE boxes (shared
+ *   render/oblique.ts) — roofs offset screen-north, window grids
+ *   on the exposed south WALLS, grain roofs (grid = skylight glass
+ *   on giant slabs only); violet asphalt with wheel-track polish
+ *   bands, pale sage slab pavement, acid grass, bigger trees.
  *
  * Static sources: 'nbtiles' PMTiles (full-city context) + game
  * GeoJSON sources derived from the core world at init. This adapter
@@ -43,9 +47,10 @@ import { carSprite, personSprite, drawSprite, drawAnchorRing, walkFrame, hairFor
 import { drawScorches, drawEffects, drawPickup } from '../effects';
 import { SkidTracks, ribbonPolygon, expandedPolygon } from '../groundwork';
 import { segmentRoof, shadeHex, polygonArea } from '../segment';
-import { generateAllTextures, type TextureKind, type TextureImage } from '../textures';
-import { WALL_COLORS, roofVariant, GROUND_BASE, CONTEXT_BUILDING, ROAD_CASING, ROAD_KERB, CENTRE_LINE, WATER_BANK, WATER_EDGE } from '../palette';
+import { generateAllTextures, generateWallTexture, hexToRgb, type TextureKind, type TextureImage } from '../textures';
+import { WALL_COLORS, roofVariant, GROUND_BASE, CONTEXT_BUILDING, ROAD_CASING, ROAD_KERB, ROAD_POLISH, CENTRE_LINE, WATER_BANK, WATER_EDGE, RAIL_BEAM, RAIL_POST } from '../palette';
 import { shadowRing, roofClutter, crosswalkStripes, scatterTrees, TREE_FILLS } from '../dressing';
+import { extrudeM, offsetRing } from '../oblique';
 import { zoomForViewWidth } from '../cameraMath';
 
 const TILES_URL = '/fredericton.pmtiles';
@@ -71,6 +76,69 @@ function widthStops(factor: number): unknown {
     18, ['*', ['get', 'widthM'], 4.82 * factor],
     22, ['*', ['get', 'widthM'], 77.15 * factor],
   ];
+}
+
+/** Fixed-metre line width (no widthM property involved). */
+function fixedWidthStops(metres: number): unknown {
+  return [
+    'interpolate', ['exponential', 2], ['zoom'],
+    18, metres * 4.82,
+    22, metres * 77.15,
+  ];
+}
+
+/** Registered GL image name for a wall colour's window-grid texture. */
+function wallTexName(colorIdx: number): string {
+  return `tex-wall-${colorIdx}`;
+}
+
+/**
+ * Iteration 4: wheel-track polish bands (the footage's lighter
+ * violet arcs). One GL line layer per band: 'line-offset' places it
+ * on a lane centre (±factor × road width), the fixed ~1.7 m width
+ * comes from fixedWidthStops. 2-lane roads carry their centres at
+ * ±¼ width; 3+ lane roads at ±⅛ and ±⅜.
+ */
+function polishLayers(): any[] {
+  const mk = (id: string, sign: 1 | -1, factor: number, filter: unknown): unknown => ({
+    id,
+    type: 'line',
+    source: 'game-roads',
+    filter,
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': ROAD_POLISH,
+      'line-opacity': 0.20,
+      'line-width': fixedWidthStops(1.7),
+      'line-offset': [
+        'interpolate', ['exponential', 2], ['zoom'],
+        18, ['*', ['get', 'widthM'], 4.82 * factor * sign],
+        22, ['*', ['get', 'widthM'], 77.15 * factor * sign],
+      ],
+    },
+  });
+  const two = ['==', ['get', 'lanes'], 2];
+  const multi = ['>=', ['get', 'lanes'], 3];
+  return [
+    mk('roads-polish-2a', 1, 0.25, two),
+    mk('roads-polish-2b', -1, 0.25, two),
+    mk('roads-polish-ma', 1, 0.125, multi),
+    mk('roads-polish-mb', -1, 0.125, multi),
+    mk('roads-polish-mc', 1, 0.375, multi),
+    mk('roads-polish-md', -1, 0.375, multi),
+  ];
+}
+
+/** Iteration 4: one fill-pattern layer per wall colour (GL patterns
+ *  are layer-level, so the wall grid needs a layer per colour). */
+function wallLayers(): any[] {
+  return WALL_COLORS.map((_, i) => ({
+    id: `walls-${i}`,
+    type: 'fill',
+    source: 'game-walls',
+    filter: ['==', ['get', 'wall'], i],
+    paint: { 'fill-pattern': wallTexName(i) },
+  }));
 }
 
 let protocolRegistered = false;
@@ -149,6 +217,9 @@ export class MapLibreRenderer implements Renderer {
           'game-ground': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-water': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-buildings': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+          'game-walls': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+          'game-parapets': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+          'game-rooflines': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-outlines': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-pavement': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-shadows': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
@@ -157,6 +228,7 @@ export class MapLibreRenderer implements Renderer {
           'game-crosswalks': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-trees': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
           'game-roads': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+          'game-rails': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
         },
         layers: [
           { id: 'bg', type: 'background', paint: { 'background-color': GROUND_BASE } },
@@ -223,6 +295,9 @@ export class MapLibreRenderer implements Renderer {
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: { 'line-pattern': TEX_NAMES.asphalt, 'line-width': widthStops(0.84) as never },
           },
+          // Iteration 4: wheel-track polish bands on the lane
+          // centres (built by polishLayers() — one layer per band).
+          ...polishLayers(),
           {
             id: 'roads-centre', type: 'line', source: 'game-roads',
             layout: { 'line-cap': 'butt', 'line-join': 'round' },
@@ -232,6 +307,20 @@ export class MapLibreRenderer implements Renderer {
               'line-width': ['interpolate', ['linear'], ['zoom'], 19, 1.6, 22, 4.6],
               'line-dasharray': [2.4, 2.2],
             },
+          },
+          {
+            // Iteration 5: bridge guardrails over the road stack —
+            // dark posts, light steel beam along both deck edges,
+            // from the same derived geometry that collides.
+            id: 'rails-posts', type: 'fill', source: 'game-rails',
+            filter: ['==', ['get', 'kind'], 'post'],
+            paint: { 'fill-color': RAIL_POST, 'fill-opacity': 0.95 },
+          },
+          {
+            id: 'rails-beam', type: 'line', source: 'game-rails',
+            filter: ['==', ['get', 'kind'], 'beam'],
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: { 'line-color': RAIL_BEAM, 'line-width': fixedWidthStops(0.38) as never },
           },
           {
             id: 'crosswalks', type: 'fill', source: 'game-crosswalks',
@@ -248,8 +337,17 @@ export class MapLibreRenderer implements Renderer {
             paint: { 'fill-color': ['get', 'fill'] as never, 'fill-opacity': 0.95 },
           },
           {
-            // Fill = the parapet/wall band colour (per building).
+            // Iteration 4 (oblique boxes): the footprint itself is
+            // the WALL's base tone — the window-grid band layers sit
+            // on it, the offset parapet/roof stack above that.
             id: 'buildings-fill', type: 'fill', source: 'game-buildings',
+            paint: { 'fill-color': ['get', 'fill'] as never, 'fill-opacity': 1 },
+          },
+          // The exposed south walls: window grid per wall colour.
+          ...wallLayers(),
+          {
+            // Parapet pieces on the OFFSET (roof) plane.
+            id: 'parapets-fill', type: 'fill', source: 'game-parapets',
             paint: { 'fill-color': ['get', 'fill'] as never, 'fill-opacity': 1 },
           },
           {
@@ -268,7 +366,8 @@ export class MapLibreRenderer implements Renderer {
             paint: { 'fill-pattern': TEX_NAMES.roof3 },
           },
           {
-            // v0.28: window-grid roofs for mid/large buildings.
+            // Iteration 4: the grid texture survives on roofs only
+            // as skylight glass for giant footprints (variant 3).
             id: 'roofs-3', type: 'fill', source: 'game-roofs',
             filter: ['==', ['get', 'var'], 3],
             paint: { 'fill-pattern': TEX_NAMES.roofgrid },
@@ -288,13 +387,20 @@ export class MapLibreRenderer implements Renderer {
             paint: { 'line-color': 'rgba(242,236,222,0.7)', 'line-width': 1.1 },
           },
           {
+            // The offset silhouette: the roofline where the roof
+            // plane meets the top of the wall.
+            id: 'rooflines', type: 'line', source: 'game-rooflines',
+            paint: { 'line-color': 'rgba(29,23,18,0.85)', 'line-width': 1.2 },
+          },
+          {
             id: 'clutter', type: 'fill', source: 'game-clutter',
             paint: { 'fill-color': ['get', 'fill'] as never, 'fill-opacity': 0.95 },
           },
           {
             // Segment seams: toned outline around each piece of a
-            // segmented giant; the true outer outline draws over it.
-            id: 'buildings-seams', type: 'line', source: 'game-buildings',
+            // segmented giant (on the roof plane now); the true
+            // outer outline draws over it.
+            id: 'buildings-seams', type: 'line', source: 'game-parapets',
             filter: ['==', ['get', 'segmented'], 1],
             paint: { 'line-color': ['get', 'seam'] as never, 'line-width': 0.7 },
           },
@@ -379,22 +485,59 @@ export class MapLibreRenderer implements Renderer {
       },
     }));
 
+    // Iteration 4: register the per-colour wall-grid images (the
+    // grids live on the walls now — one texture per wall colour).
+    WALL_COLORS.forEach((c, i) => {
+      if (!this.map.hasImage(wallTexName(i))) {
+        const t = generateWallTexture(hexToRgb(c));
+        this.map.addImage(wallTexName(i), { width: t.size, height: t.size, data: new Uint8Array(t.data) });
+      }
+    });
+
     const buildings: Feature[] = [];
+    const walls: Feature[] = [];
+    const parapets: Feature[] = [];
+    const rooflines: Feature[] = [];
     const outlines: Feature[] = [];
     const roofs: Feature[] = [];
     const shadows: Feature[] = [];
     const clutter: Feature[] = [];
-    world.buildings.forEach((b, i) => {
+    // Painter order within each source: north → south, so nearer
+    // oblique masses overlap farther ones where their roofs reach.
+    const order = world.buildings
+      .map((_, i) => i)
+      .sort((a, b2) => world.buildings[a].center.z - world.buildings[b2].center.z);
+    for (const i of order) {
+      const b = world.buildings[i];
       const colorIdx = (i * 7 + Math.floor(b.heightM)) % WALL_COLORS.length;
       const base = WALL_COLORS[colorIdx];
       const variant = roofVariant(i, b.heightM, Math.abs(polygonArea(b.polygon)));
+      const ex = extrudeM(b);
+      const roofRing = offsetRing(b.polygon, ex);
       outlines.push(polyFeature(b.polygon, {}));
       shadows.push(polyFeature(shadowRing(b.polygon), {}));
+      rooflines.push(polyFeature(roofRing, {}));
+      // The footprint: the wall's base tone.
+      buildings.push(polyFeature(b.polygon, { fill: shadeHex(base, -0.08) }));
+      // The wall band: footprint with the offset footprint as a
+      // hole — what remains is the exposed south wall.
+      walls.push({
+        type: 'Feature',
+        properties: { wall: colorIdx },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [...b.polygon.map(ll), ll(b.polygon[0])],
+            [...roofRing.map(ll), ll(roofRing[0])],
+          ],
+        },
+      });
       // v0.22: giant roofs segment into GTA-scale pieces (segment.ts);
       // normal buildings come back as one piece, shade 0 = unchanged.
+      // Iteration 4: the pieces ride the OFFSET (roof) plane.
       for (const piece of segmentRoof(b.polygon, i)) {
-        buildings.push(
-          polyFeature(piece.ring, {
+        parapets.push(
+          polyFeature(offsetRing(piece.ring, ex), {
             fill: shadeHex(base, piece.shade),
             seam: shadeHex(base, piece.shade - 0.22),
             segmented: piece.segmented ? 1 : 0,
@@ -403,21 +546,23 @@ export class MapLibreRenderer implements Renderer {
         // Inset "roof" per piece (parapet band = wall colour showing
         // between piece edge and roof), textured + shade-stepped.
         if (piece.area > 42) {
-          const inset = piece.ring.map((p) => ({
-            x: piece.center.x + (p.x - piece.center.x) * 0.84,
-            z: piece.center.z + (p.z - piece.center.z) * 0.84,
+          const cOff = { x: piece.center.x, z: piece.center.z - ex };
+          const inset = offsetRing(piece.ring, ex).map((p) => ({
+            x: cOff.x + (p.x - cOff.x) * 0.84,
+            z: cOff.z + (p.z - cOff.z) * 0.84,
           }));
           roofs.push(polyFeature(inset, { var: variant, shade: piece.shade }));
-          // v0.23: deterministic rooftop clutter on the inset roof.
+          // v0.23: deterministic rooftop clutter on the inset roof
+          // (iteration 4: riding the roof plane with everything else).
           for (const item of roofClutter(piece, i)) {
-            clutter.push(polyFeature(item.ring, { fill: item.fill }));
+            clutter.push(polyFeature(offsetRing(item.ring, ex), { fill: item.fill }));
           }
         }
       }
-    });
+    }
     const roads: Feature[] = world.roads.map((r) => ({
       type: 'Feature',
-      properties: { name: r.name, widthM: r.widthM },
+      properties: { name: r.name, widthM: r.widthM, lanes: r.lanes },
       geometry: { type: 'LineString', coordinates: r.path.map(ll) },
     }));
     // Pavement ribbons under roads (sidewalk margin) + aprons under
@@ -432,6 +577,29 @@ export class MapLibreRenderer implements Renderer {
     }
     // Crosswalks at junctions (v0.23, routing graph positions).
     const crosswalks: Feature[] = crosswalkStripes(buildRoadGraph(world)).map((s) => polyFeature(s, {}));
+    // Bridge guardrails (iteration 5): beam lines + post squares,
+    // from world.bridges — the same geometry the collision path
+    // uses, so the drawn rail is the rail that holds.
+    const rails: Feature[] = [];
+    for (const br of world.bridges) {
+      for (const line of br.railLines) {
+        rails.push({
+          type: 'Feature',
+          properties: { kind: 'beam' },
+          geometry: { type: 'LineString', coordinates: line.map(ll) },
+        });
+      }
+      for (const p of br.posts) {
+        const h = 0.19;
+        rails.push(polyFeature(
+          [
+            { x: p.x - h, z: p.z - h }, { x: p.x + h, z: p.z - h },
+            { x: p.x + h, z: p.z + h }, { x: p.x - h, z: p.z + h },
+          ],
+          { kind: 'post' },
+        ));
+      }
+    }
     // Street trees + their shadows (v0.23).
     const trees: Feature[] = [];
     for (const t of scatterTrees(world)) {
@@ -450,12 +618,16 @@ export class MapLibreRenderer implements Renderer {
     set('game-pavement', pavement);
     set('game-shadows', shadows);
     set('game-buildings', buildings);
+    set('game-walls', walls);
+    set('game-parapets', parapets);
+    set('game-rooflines', rooflines);
     set('game-outlines', outlines);
     set('game-roofs', roofs);
     set('game-clutter', clutter);
     set('game-crosswalks', crosswalks);
     set('game-trees', trees);
     set('game-roads', roads);
+    set('game-rails', rails);
     this.ready = true;
     if (this.pending) {
       this.sync(this.pending);
@@ -472,7 +644,11 @@ export class MapLibreRenderer implements Renderer {
   private ppmAt(p: Vec2): number {
     const a = this.projectPx(p);
     const b = this.projectPx({ x: p.x + 4, z: p.z });
-    return Math.max(0.2, Math.hypot(b.x - a.x, b.y - a.y) / 4);
+    // Floor is 0.05, not 0.2: at the boot cinematic's space altitude
+    // the true scale is ~0.15–0.25 px/m, and a 0.2 floor would draw
+    // sprites up to a third too big through the descent. Gameplay
+    // scales (3–13 px/m) never come near either floor.
+    return Math.max(0.05, Math.hypot(b.x - a.x, b.y - a.y) / 4);
   }
 
   sync(frame: RenderFrame): void {
@@ -481,9 +657,13 @@ export class MapLibreRenderer implements Renderer {
       return;
     }
     // Camera: core view WIDTH (metres) → MapLibre zoom at this
-    // viewport size (render/cameraMath.ts, unit-tested).
+    // viewport size (render/cameraMath.ts, unit-tested). The floor
+    // is 11, not the old 17: gameplay framing never goes below
+    // ~17.3 anyway, and the boot cinematic starts at "space"
+    // altitude (the whole extract, ~2–4 km across, zoom ≈ 12–13)
+    // — the game's own GeoJSON layers draw the city at any zoom.
     const widthPx = this.map.getCanvas().clientWidth || 1280;
-    const zoom = Math.max(17, Math.min(22.4, zoomForViewWidth(frame.viewWidthM, widthPx, LAT0)));
+    const zoom = Math.max(11, Math.min(22.4, zoomForViewWidth(frame.viewWidthM, widthPx, LAT0)));
     const center = ll(frame.camera);
     const cur = this.map.getCenter();
     if (Math.abs(cur.lng - center[0]) > 1e-7 || Math.abs(cur.lat - center[1]) > 1e-7 || Math.abs(this.map.getZoom() - zoom) > 0.01) {

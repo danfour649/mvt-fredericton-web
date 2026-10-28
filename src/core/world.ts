@@ -51,10 +51,48 @@ export interface WaterBody {
   maxZ: number;
 }
 
+/**
+ * A bridge span (FOLLOW iteration 5): a maximal run of one road
+ * lying over open water, extended a few metres onto each bank.
+ * Derived generically at load — any road-over-water geometry in
+ * the dataset becomes a railed deck, no hand-authored bridge list.
+ * In the real extract this is the Westmorland Street Bridge
+ * complex (main span + its ramps).
+ */
+export interface BridgeSpan {
+  road: Road;
+  roadName: string;
+  /** Deck centreline, bank to bank (core metres). */
+  centerline: Vec2[];
+  /** Centreline length, m. */
+  lengthM: number;
+  widthM: number;
+  /** The two rail ribbons as collision polygons (Building-shaped
+   *  entries also land in WorldModel.barriers). */
+  rails: Vec2[][];
+  /** Rail centre-lines (what the renderers draw the beam along). */
+  railLines: Vec2[][];
+  /** Post positions along both rails (renderer dressing). */
+  posts: Vec2[];
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
 export interface WorldModel {
   buildings: Building[];
   roads: Road[];
   water: WaterBody[];
+  /** Iteration 5: derived bridge spans over the water. */
+  bridges: BridgeSpan[];
+  /** Iteration 5: guardrail ribbons as Building-shaped static
+   *  obstacles (the renderers never see these — they draw rails
+   *  from `bridges`; only the collision path does). */
+  barriers: Building[];
+  /** Everything the collision path tests against: buildings +
+   *  barriers, precomputed so physics never allocates per substep. */
+  colliders: Building[];
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
 }
 
@@ -179,7 +217,224 @@ export function loadWorld(doc: unknown): WorldModel {
       maxZ: Math.max(...buildings.map((b) => b.maxZ)),
     };
   }
-  return { buildings, roads, water, bounds };
+  // Iteration 5: bridge decks + guardrails, derived from the
+  // roads × water geometry just parsed (see deriveBridges).
+  const partial: WorldModel = {
+    buildings, roads, water,
+    bridges: [], barriers: [], colliders: buildings, bounds,
+  };
+  const { bridges, barriers } = deriveBridges(partial);
+  partial.bridges = bridges;
+  partial.barriers = barriers;
+  partial.colliders = barriers.length ? [...buildings, ...barriers] : buildings;
+  return partial;
+}
+
+// --- bridge guardrails (FOLLOW iteration 5) --------------------------------
+// Daniel, phone-testing the preview: "almost impossible to cross
+// the bridge" — the decks were open, so any slide (and the follow
+// controller's corner-cutting line) put the car in the river. The
+// fix is physical, not a driving aid: derive every deck from the
+// data and stand a rail along both edges, colliding exactly like a
+// building wall.
+
+/** Shortest over-water run that counts as a deck, m. Shorter dips
+ *  (a path vertex kissing the shoreline polygon) get no rails. */
+export const BRIDGE_MIN_RUN_M = 8;
+/** Rails continue this far past the waterline onto each bank, m —
+ *  a car already sliding as it reaches the deck meets the rail
+ *  before the edge, not at it. */
+export const BRIDGE_APPROACH_M = 4;
+/** Rail centre-line sits this far inside the deck edge, m. */
+export const RAIL_INSET_M = 0.45;
+/** Rail ribbon thickness, m. */
+export const RAIL_THICKNESS_M = 0.4;
+/** Post spacing along the rails, m (renderer dressing). */
+export const RAIL_POST_EVERY_M = 4;
+
+/** Per-point normals along a polyline (averaged segment direction). */
+function pathNormals(path: Vec2[]): Vec2[] {
+  const normals: Vec2[] = [];
+  for (let i = 0; i < path.length; i++) {
+    const a = path[Math.max(0, i - 1)];
+    const b = path[Math.min(path.length - 1, i + 1)];
+    let dx = b.x - a.x;
+    let dz = b.z - a.z;
+    const len = Math.hypot(dx, dz) || 1;
+    dx /= len; dz /= len;
+    normals.push({ x: -dz, z: dx });
+  }
+  return normals;
+}
+
+/** A polyline offset sideways by `d` metres (either sign). */
+function offsetPathLocal(path: Vec2[], d: number): Vec2[] {
+  const normals = pathNormals(path);
+  return path.map((p, i) => ({ x: p.x + normals[i].x * d, z: p.z + normals[i].z * d }));
+}
+
+/** Ribbon polygon around a polyline: ±halfW on both sides. */
+function ribbonLocal(path: Vec2[], halfW: number): Vec2[] {
+  if (path.length < 2) return [];
+  const left = offsetPathLocal(path, halfW);
+  const right = offsetPathLocal(path, -halfW);
+  return [...left, ...right.reverse()];
+}
+
+/** Distance from a point to a road's centreline path (m). */
+function roadPointDist(road: Road, p: Vec2): number {
+  let best = Infinity;
+  for (let i = 0; i < road.path.length - 1; i++) {
+    const a = road.path[i];
+    const b = road.path[i + 1];
+    const abx = b.x - a.x;
+    const abz = b.z - a.z;
+    const len2 = abx * abx + abz * abz;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.z - a.z) * abz) / len2)) : 0;
+    const d = Math.hypot(p.x - (a.x + abx * t), p.z - (a.z + abz * t));
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+type RoadBB = Map<Road, { minX: number; maxX: number; minZ: number; maxZ: number }>;
+
+function roadBBoxes(roads: Road[]): RoadBB {
+  const out: RoadBB = new Map();
+  for (const r of roads) {
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const q of r.path) {
+      minX = Math.min(minX, q.x); maxX = Math.max(maxX, q.x);
+      minZ = Math.min(minZ, q.z); maxZ = Math.max(maxZ, q.z);
+    }
+    out.set(r, { minX, maxX, minZ, maxZ });
+  }
+  return out;
+}
+
+/**
+ * True when `p` lies inside the carriageway of any road other
+ * than `self` (bbox-rejected per road, so derivation stays fast
+ * on the full extract). A 0.3 m margin keeps rails clear of the
+ * neighbouring asphalt edge, not just its centre half-width.
+ */
+function insideOtherCarriageway(world: WorldModel, bb: RoadBB, self: Road, p: Vec2): boolean {
+  for (const r of world.roads) {
+    if (r === self) continue;
+    const half = r.widthM / 2 + 0.3;
+    const b = bb.get(r)!;
+    if (p.x < b.minX - half || p.x > b.maxX + half || p.z < b.minZ - half || p.z > b.maxZ + half) continue;
+    if (roadPointDist(r, p) <= half) return true;
+  }
+  return false;
+}
+
+/**
+ * Every bridge deck in the world: for each road, sample its length
+ * at 1 m and collect the maximal over-water runs of at least
+ * BRIDGE_MIN_RUN_M. Each run, extended onto the banks, becomes a
+ * span with a rail ribbon on each side. Deterministic for a given
+ * world; empty when the world has no water or no crossings.
+ */
+export function deriveBridges(world: WorldModel): { bridges: BridgeSpan[]; barriers: Building[] } {
+  const bridges: BridgeSpan[] = [];
+  const barriers: Building[] = [];
+  if (!world.water.length) return { bridges, barriers };
+  const bb = roadBBoxes(world.roads);
+  for (const road of world.roads) {
+    // Over-water runs along this road (distAlong intervals).
+    const runs: Array<[number, number]> = [];
+    let runStart = -1;
+    const steps = Math.floor(road.lengthM);
+    for (let d = 0; d <= steps; d++) {
+      const inW = pointInWater(world, pointAlongRoad(road, d).pos);
+      if (inW && runStart < 0) runStart = d;
+      if (!inW && runStart >= 0) {
+        runs.push([runStart, d]);
+        runStart = -1;
+      }
+    }
+    if (runStart >= 0) runs.push([runStart, steps]);
+    for (const [d0, d1] of runs) {
+      if (d1 - d0 < BRIDGE_MIN_RUN_M) continue;
+      const a = Math.max(0, d0 - BRIDGE_APPROACH_M);
+      const b = Math.min(road.lengthM, d1 + BRIDGE_APPROACH_M);
+      // Centreline: the road's own vertices inside the span, plus
+      // interpolated points so no leg exceeds ~2 m (rail ribbons
+      // hug curves instead of chord-cutting them).
+      const centerline: Vec2[] = [];
+      const SAMPLE = 2;
+      const n = Math.max(1, Math.ceil((b - a) / SAMPLE));
+      for (let i = 0; i <= n; i++) {
+        centerline.push(pointAlongRoad(road, a + ((b - a) * i) / n).pos);
+      }
+      const railOff = road.widthM / 2 - RAIL_INSET_M;
+      const rails: Vec2[][] = [];
+      const railLines: Vec2[][] = [];
+      const posts: Vec2[] = [];
+      for (const side of [1, -1] as const) {
+        const line = offsetPathLocal(centerline, side * railOff);
+        // Trim: a rail point that falls inside ANOTHER road's
+        // carriageway cannot stand — junction mouths stay open
+        // and braided ramps never wall each other off (the first
+        // routed bridge crossing wedged a car exactly there).
+        // Kept points form runs; each run becomes its own ribbon.
+        const kept = line.map((p) => !insideOtherCarriageway(world, bb, road, p));
+        let runStart = -1;
+        const flush = (endExclusive: number): void => {
+          if (runStart < 0) return;
+          const runPts = line.slice(runStart, endExclusive);
+          runStart = -1;
+          if (runPts.length < 2) return;
+          railLines.push(runPts);
+          rails.push(ribbonLocal(runPts, RAIL_THICKNESS_M / 2));
+          // Posts every ~RAIL_POST_EVERY_M along the run (the
+          // centreline is sampled at ~2 m, so step in indices).
+          const stepIdx = Math.max(1, Math.round(RAIL_POST_EVERY_M / 2));
+          for (let i = 1; i < runPts.length - 1; i += stepIdx) posts.push(runPts[i]);
+        };
+        kept.forEach((k, i) => {
+          if (k && runStart < 0) runStart = i;
+          if (!k) flush(i);
+        });
+        flush(line.length);
+      }
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const p of centerline) {
+        minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+        minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+      }
+      const span: BridgeSpan = {
+        road,
+        roadName: road.name,
+        centerline,
+        lengthM: b - a,
+        widthM: road.widthM,
+        rails,
+        railLines,
+        posts,
+        minX, maxX, minZ, maxZ,
+      };
+      bridges.push(span);
+      rails.forEach((poly, k) => {
+        let bMinX = Infinity, bMaxX = -Infinity, bMinZ = Infinity, bMaxZ = -Infinity;
+        let cx = 0, cz = 0;
+        for (const p of poly) {
+          bMinX = Math.min(bMinX, p.x); bMaxX = Math.max(bMaxX, p.x);
+          bMinZ = Math.min(bMinZ, p.z); bMaxZ = Math.max(bMaxZ, p.z);
+          cx += p.x; cz += p.z;
+        }
+        barriers.push({
+          polygon: poly,
+          heightM: 1.1,
+          center: { x: cx / poly.length, z: cz / poly.length },
+          minX: bMinX, maxX: bMaxX, minZ: bMinZ, maxZ: bMaxZ,
+        });
+        void k;
+      });
+    }
+  }
+  return { bridges, barriers };
 }
 
 /** Is `p` on open water? (outer ring, minus holes/islands) */

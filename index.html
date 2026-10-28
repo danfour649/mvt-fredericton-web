@@ -94,7 +94,7 @@
           <div class="load-bar"><div class="load-fill" id="load-bar-fill"></div></div>
           <div class="load-tip">
             <div class="head">▚ TIP</div>
-            <div class="body" id="load-tip">Hold <b>BRK</b> at a stop to <b>REVERSE</b> — the speedo shows <b>R</b> while you back up.</div>
+            <div class="body" id="load-tip"><b>FOLLOW</b> controls: <b>tap where you want to go</b> — the car drives itself there. Tap <b>behind</b> the car to reverse, <b>double-tap</b> to get out.</div>
           </div>
           <div class="load-footer"><span>MVTFREDERICTON.CA</span><span class="r">$250,000 CLEARS THE DISTRICT</span></div>
         </div>
@@ -106,9 +106,11 @@
       // boot hasn't dismissed this overlay in 20 s, dismiss it here.
       (function () {
         var tips = [
+          '<b>FOLLOW</b> controls: <b>tap where you want to go</b> — the car drives itself there. Tap <b>behind</b> the car to reverse, <b>double-tap</b> to get out.',
           'Hold <b>BRK</b> at a stop to <b>REVERSE</b> — the speedo shows <b>R</b> while you back up.',
           '<b>Queen St Respray</b> clears your wanted level — <b>$500 a star</b>.',
-          'The Saint John River is <b>deep water</b> — on foot or in a car, you drown. The Westmorland bridge is a road: it holds.',
+          'The Saint John River is <b>deep water</b> — on foot or in a car, you drown. The Westmorland bridge has <b>guardrails</b> now: the deck holds.',
+          '<b>Pinch out</b> to the whole-city map, <b>tap a far corner</b>, and the car routes itself there by road — then dives back to street level when it arrives.',
           'A car at zero health <b>catches fire, then explodes</b>. Bail out — or park it next to something expensive.',
           'Crates hide <b>pistols, machine guns, armour</b> — and rarer things. A <b>jail card</b> makes your next bust free.',
           'Wanted heat barely cools while a cop can <b>see you</b>. Break line of sight, then wait it out.',
@@ -150,12 +152,25 @@
     <!-- Input readout (v0.27 diagnostics; toggled in the ? overlay). -->
     <div id="input-readout" hidden></div>
 
-    <!-- Pager: only visible when there's a brief or an objective. -->
+    <!-- Vehicle-name banner (iteration 4, GTA 1 style): the blue
+         top-centre bar that names the car as you get in. -->
+    <div id="car-banner" hidden></div>
+
+    <!-- Objective edge arrow (iteration 4, GTA 1 style): points
+         toward the active goal while it's off-screen. -->
+    <div id="obj-arrow" hidden>➤</div>
+
+    <!-- Pager: only visible when there's a brief or an objective.
+         Iteration 4: the footage's bottom line carries a small icon
+         chip at its left — the blue info square. -->
     <div id="pager" hidden>
-      <div class="pager-head">📟 PAGER</div>
-      <p id="hud-brief"></p>
-      <p id="hud-objective"></p>
-      <p id="hud-timer" hidden></p>
+      <div class="pager-chip" aria-hidden="true">i</div>
+      <div class="pager-main">
+        <div class="pager-head">📟 PAGER</div>
+        <p id="hud-brief"></p>
+        <p id="hud-objective"></p>
+        <p id="hud-timer" hidden></p>
+      </div>
     </div>
 
     <!-- Transient centre toast. -->
@@ -176,8 +191,10 @@
       </div>
     </div>
 
-    <!-- Touch controls (shown on coarse pointers only). Three schemes,
-         switchable in the ? overlay; default "stick". -->
+    <!-- Touch controls (shown on coarse pointers only). Schemes
+         switchable in the ? overlay; default FOLLOW (gesture-only,
+         no clusters at all — the #ctl-right below is display:none
+         under body.follow-mode). -->
     <div id="touch">
       <!-- Stick scheme: dynamic-origin analog stick, left side. v0.29:
            the stick renders as a STEERING WHEEL that rotates with the
@@ -210,7 +227,7 @@
            in a car: GAS, BRK, DRIFT, E(exit); on foot: FIRE, WPN,
            E(interact). main.ts toggles the groups on car transitions;
            tools/layout-audit.mjs proves the geometry mechanically. -->
-      <div id="ctl-right" class="scheme-el" data-schemes="stick drag tilt">
+      <div id="ctl-right" class="scheme-el" data-schemes="stick drag tilt follow">
         <div class="state-group" data-state-group="car">
           <div class="ctl-row">
             <button id="btn-drift" type="button" class="round" aria-label="handbrake">DRIFT</button>
@@ -231,6 +248,13 @@
           </div>
         </div>
       </div>
+      <!-- Follow scheme (the default): no zone of its own and NO
+           on-screen controls at all — taps are captured at window
+           level in main.ts (guarded off buttons and chrome),
+           because the whole screen is the input. This is just the
+           hint line. #ctl-right above stays in the DOM for the
+           other schemes; CSS kills it under body.follow-mode. -->
+      <div id="follow-hint" class="scheme-el" data-schemes="follow" hidden>👆 tap to go · tap a car to get in · pinch out for the big map</div>
       <!-- Buttons scheme: the legacy binary layout, with the same
            v0.31 contextual rule via data-state on each button. -->
       <div id="ctl-buttons" class="scheme-el" data-schemes="buttons" hidden>
@@ -256,11 +280,16 @@
       </div>
     </div>
 
+    <!-- Follow target marker (preview): a DOM pin projected from
+         the frame camera by main.ts each frame — the tapped point
+         the car is driving to. Never intercepts touches. -->
+    <div id="follow-target" hidden><div class="ft-ring"></div><div class="ft-dot"></div></div>
+
     <div id="credit">
-      MVT Fredericton Web v0.31 · <span id="renderer-name">…</span> · buildings, roads &amp; water © GeoNB (OGL-NB) · mission coords © OpenStreetMap contributors (ODbL)
+      MVT Fredericton Web v0.32 · <span id="renderer-name">…</span> · buildings, roads &amp; water © GeoNB (OGL-NB) · mission coords © OpenStreetMap contributors (ODbL)
     </div>
-    <div id="help" title="Controls">WASD drive/walk · S reverse · E interact · Space handbrake · on foot: Space/F FIRE, Q weapon · <span id="help-toggle">?</span>
-      <span id="help-full" hidden> — steal cars, answer payphones ☎, watch the stars, respray on Queen St kills the heat. R restarts a finished run.
+    <div id="help" title="Controls">
+      <span id="help-full" hidden>Steal cars, answer payphones ☎, watch the stars, respray on Queen St kills the heat. R restarts a finished run.
         WEAPONS (v0.30): on foot, hold Space/F (touch FIRE, gamepad RT) to shoot where you face — crates around downtown hold pistols, machine guns and worse; Q / WPN cycles what you own. The river DROWNS you — bridges are roads and hold. A car at zero health burns, then explodes: bail with E. Wanted heat now cools slowly and not at all while a cop can see you; at 4 stars expect roadblocks and return fire. Sell stolen cars at the CHOP SHOP $ marker; skull crates start Kill Frenzies.
         <span class="ctl-settings">
           Touch controls:
@@ -268,10 +297,11 @@
           <button type="button" data-set-scheme="drag">Drag-steer</button>
           <button type="button" data-set-scheme="buttons">Buttons</button>
           <button type="button" data-set-scheme="tilt">Tilt</button>
+          <button type="button" data-set-scheme="follow">Follow</button>
           <label><input type="checkbox" id="haptics-toggle" checked /> Haptics</label>
           <label><input type="checkbox" id="audio-toggle" checked /> Sound</label>
           <label><input type="checkbox" id="readout-toggle" /> Input readout</label>
-          <span class="ctl-note">REVERSE: hold BRK at a stop — it brakes first, then backs up (keyboard S, stick pulled down, gamepad LT). The speedo shows R and the car lights its white reverse lamps while you're backing up. Stick: thumb anywhere left = the steering wheel; push up/down for gas/brake. Drag-steer: hold and drag, the car steers toward your thumb and drives itself — BRK still reverses. Haptics use the Vibration API — Android/Chrome only; iOS Safari has none. Gamepad: left stick steers, RT/LT are the pedals in a car and RT is FIRE on foot, A = E, X = handbrake, Y = switch weapon.</span>
+          <span class="ctl-note">FOLLOW (the default) has NO buttons on screen — everything is a tap. ON FOOT: tap the ground to walk there · tap a CAR to walk over and get in (already next to it? you hop straight in) · tap a ☎ PAYPHONE to walk over and answer it · tap a PERSON or a COP to shoot them — hold your finger down to keep firing, and you face what you tapped. With a gun out, tapping a car from far off shoots it instead; up close it still gets you in (with fists out a car tap always means get in). IN A CAR: tap where you want to go and the car drives there and stops on the gold marker — hold and drag to move the point under your finger, tap the car itself to stop where you are, tap BEHIND the car close in and it reverses in (farther behind and it loops around). DOUBLE-TAP in a car: at speed it's the handbrake; at a standstill it gets you out. ZOOM (iteration 5): PINCH two fingers (or the mouse wheel) to pull the camera from street level all the way out to the whole city — the camera keeps following the car at whatever zoom you leave it at. While you're zoomed out, TAP a far corner of the map and the car routes itself there BY ROAD (junction to junction, over the bridge) at full speed; when it arrives the camera dives back down to street level for you. Pinch back in to street level any time to hand the framing back to the speed camera. The bridge decks have GUARDRAILS now: lean on them, they hold — the river only gets you off a bank, never off a deck. One gap, stated plainly: weapon SWITCHING has no gesture yet — crates equip what you pick up, and Q / the WPN button in other schemes / gamepad Y still cycle. The other schemes keep their buttons: REVERSE there is hold BRK at a stop — it brakes first, then backs up (keyboard S, stick pulled down, gamepad LT); the speedo shows R and the car lights its white reverse lamps while you're backing up. Stick: thumb anywhere left = the steering wheel; push up/down for gas/brake. Drag-steer: hold and drag, the car steers toward your thumb and drives itself — BRK still reverses. Haptics use the Vibration API — Android/Chrome only; iOS Safari has none. Gamepad: left stick steers, RT/LT are the pedals in a car and RT is FIRE on foot, A = E, X = handbrake, Y = switch weapon.</span>
         </span>
         <span class="ctl-settings" id="tilt-settings">
           Tilt steering:
@@ -283,6 +313,7 @@
           <span class="ctl-note">TILT (v0.31): roll the phone like a steering wheel to steer — the on-screen wheel mirrors your tilt. Hold the phone how you'll play, then Calibrate: that pose becomes "straight". GAS/BRK stay on screen; on foot you still walk with the stick. iOS asks permission to use motion sensors when you tap Tilt.</span>
         </span>
       </span>
+      WASD drive/walk · S reverse · E interact · Space handbrake · on foot: Space/F FIRE, Q weapon · <span id="help-toggle">?</span>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

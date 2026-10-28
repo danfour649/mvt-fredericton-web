@@ -93,3 +93,49 @@ weapons, fire, pickups, wanted teeth), not to it. One interaction
 worth recording: a BURNING driven car's input is zeroed by the game
 layer (the engine is dead; the car rolls out on momentum through the
 unchanged physics) — bail with E before the fuse ends.
+
+## Follow-PR iteration 3 addendum — the speed pass (2026-10-27)
+
+Daniel, phone-testing the FOLLOW preview: "that actually works
+pretty well so far, car need to go faster, and it needs to be even
+more gta1." He authorised a physics change for this one. The Kerr
+tyre model is untouched — only the class pace params in
+`CAR_CLASSES` moved, and mostly via the topSpeed caps: the linear
+engine taper reaches much further, so the car keeps pulling at
+city speeds instead of running out of breath near 100 km/h. These
+figures supersede the v0.21 table above (which stands as the
+historical record of the model rebuild).
+
+| Metric | Before (v0.21 tune) | Iteration 3 |
+|---|---|---|
+| Top speed, standard | 113 km/h | **137 km/h** |
+| 0–100 km/h, standard | 5.57 s | **4.50 s** |
+| Top speed, fast class | 143 km/h | **157 km/h** |
+| 0–100 km/h, fast class | 3.40 s | **3.28 s** |
+| Top speed, police class | 134 km/h | **151 km/h** |
+| 0–100 km/h, police class | 4.17 s | **4.03 s** |
+| Turn @50 / @100, handbrake, coast, brake, pivot | as tabled above | unchanged bands (turn-100 radius 21 m → 23 m; pivot 77°/7.9 m → 72°/7.3 m) |
+
+Class params (engineForce N / topSpeed m/s): standard
+13600/33.5 → 12200/42.5; fast 14200/44 → 13500/50; police
+14800/40.5 → 13500/47.5. Engine forces went DOWN while the cars
+got faster — the old tune's wall was the taper, not the launch.
+The audio layer's per-class top-speed map tracks the new figures
+(137/157/151) so engine pitch still redlines at the real top.
+
+FOLLOW controller, same change: the fixed 11.5 m/s cruise cap is
+gone — cruise IS the class top speed, held until the braking
+curve (v = √(2·a·d), a = 9 m/s², under the ~11.6 m/s² the brakes
+can really do) plus a shallow terminal governor say otherwise.
+100 m standing dash, fixed rig (followDrive.test.ts):
+
+| | Before | After |
+|---|---|---|
+| Time to arrival | 11.22 s | **6.55 s** |
+| Peak speed | 41 km/h | **93 km/h** |
+| Rest error at the point | 1.32 m | **0.09 m** |
+
+Settle rests across the standard geometries: forward taps
+~0.1 m (was ~1.3 m), reverse taps 1.43–1.44 m (reverse law
+unchanged), far-behind forward loop 0.08 m. The asserted settle
+bar tightened 3 m → 2.5 m accordingly.

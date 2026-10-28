@@ -10,8 +10,12 @@
  */
 import './style.css';
 import { loadWorld } from './core/world';
-import { Game } from './core/game';
-import type { Renderer } from './core/renderer';
+import { Game, DRIVE_HINT, type CarEntity } from './core/game';
+import { CAR_CLASSES } from './core/physics';
+import type { Renderer, RenderFrame, RenderMarker } from './core/renderer';
+import { dist, type Vec2 } from './core/geo';
+import type { Ped } from './core/peds';
+import type { CopCar } from './core/cops';
 import type { StorageAdapter } from './core/save';
 import { MapLibreRenderer } from './render/maplibre/MapLibreRenderer';
 import { CanvasRenderer } from './render/canvas/CanvasRenderer';
@@ -24,6 +28,32 @@ import {
   TILT_DEFAULT_SENSITIVITY,
   type TiltEnableResult,
 } from './platform/tilt';
+import {
+  resolveInitialScheme,
+  SCHEME_MIGRATION_KEY,
+  SCHEME_STORAGE_KEY,
+  type Scheme,
+} from './platform/scheme';
+import {
+  followCarInput,
+  followWalkInput,
+  screenToWorld,
+  worldToScreen,
+  isDoubleTap,
+  nearestScreenHit,
+  carTapIntent,
+  planFollowPoints,
+  RouteFollower,
+  FOLLOW_STOP_TAP_M,
+  FOLLOW_CAR_ENTER_M,
+  FOLLOW_DRIFT_PULSE_MS,
+  FOLLOW_EXIT_MAX_SPEED_MPS,
+  type TapStamp,
+} from './platform/followDrive';
+
+/** First-drive hint for the FOLLOW scheme: gestures, not pedals. */
+const FOLLOW_DRIVE_HINT =
+  'Tap the street to drive there · tap behind the car to reverse · double-tap: stopped = get out · moving = handbrake';
 
 const localStorageAdapter: StorageAdapter = {
   read: (key) => {
@@ -132,10 +162,19 @@ async function boot(): Promise<void> {
       try { window.localStorage.setItem(k, v); } catch { /* ignore */ }
     },
   };
-  type Scheme = 'stick' | 'drag' | 'buttons' | 'tilt';
-  let scheme: Scheme = (['stick', 'drag', 'buttons', 'tilt'].includes(store.get('mvt-input-scheme') ?? '')
-    ? store.get('mvt-input-scheme')
-    : 'stick') as Scheme;
+  // FOLLOW is the default now (iteration 2) — and because the
+  // choice is persisted, a one-time versioned migration moves
+  // existing players onto it; after that their settings pick
+  // sticks. See platform/scheme.ts.
+  const initialScheme = resolveInitialScheme(
+    store.get(SCHEME_STORAGE_KEY),
+    store.get(SCHEME_MIGRATION_KEY) !== null,
+  );
+  let scheme: Scheme = initialScheme.scheme;
+  if (initialScheme.migrate) {
+    store.set(SCHEME_STORAGE_KEY, scheme);
+    store.set(SCHEME_MIGRATION_KEY, '1');
+  }
   // Tilt steering (v0.31): gamma-roll steering as a peer scheme —
   // see platform/tilt.ts and docs/CONTROLS-RESEARCH.md. The sensor
   // is created idle; it only listens while the tilt scheme is live.
@@ -176,6 +215,27 @@ async function boot(): Promise<void> {
     audio.tick();
     game.pressInteract();
   };
+
+  // Boot cinematic: ANY input skips the descent (capture phase, so
+  // the skip lands before the same tap can do anything else). The
+  // skipping tap is marked and the follow handler ignores it — a
+  // tap that ends the movie must not also plant a drive target.
+  // The cinematic itself is armed when the loading overlay
+  // dismisses (see the frame loop's boot block).
+  const introSkippedEvents = new WeakSet<object>();
+  window.addEventListener(
+    'pointerdown',
+    (e) => {
+      if (game.introRunning) {
+        game.skipIntro();
+        introSkippedEvents.add(e);
+      }
+    },
+    { capture: true, passive: true },
+  );
+  window.addEventListener('keydown', () => {
+    if (game.introRunning) game.skipIntro();
+  });
 
   const keys = new Set<string>();
   window.addEventListener('keydown', (e) => {
@@ -340,6 +400,362 @@ async function boot(): Promise<void> {
   dragZone.addEventListener('pointercancel', dragEnd);
   dragZone.addEventListener('lostpointercapture', dragEnd);
 
+  // Follow scheme: tap-to-drive, and (iteration 2) the ONLY control
+  // surface — no clusters render in this scheme, so taps carry every
+  // action: walk/drive targets, car entry, payphones, shooting, the
+  // handbrake and the exit, all disambiguated by WHAT was tapped and
+  // the car's speed (platform/followDrive.ts holds the pure rules).
+  // Taps are captured at the WINDOW level — the whole screen is the
+  // input surface, so a zone div would just fight the chrome
+  // stacking (drag-zone's full-screen layer is the cautionary tale).
+  // Guards: the press must not start on a button or inside the
+  // help/overlay/loading chrome (the same closest('button') rule the
+  // stick uses, widened to the containers that own taps). #map has
+  // touch-action:none and the MapLibre map is interactive:false, so
+  // pointer events stream cleanly off the canvas.
+  type FollowTarget =
+    | { kind: 'point'; pos: Vec2 }
+    | { kind: 'car'; car: CarEntity }
+    | { kind: 'phone'; pos: Vec2 };
+  let followTarget: FollowTarget | null = null;
+  /** Iteration 5: the active route plan for the target (road-graph
+   *  waypoints for a far pick, a single point for a near one). */
+  let followRoute: RouteFollower | null = null;
+  /** Set the frame a ROUTED target is arrived at; the frame loop
+   *  turns it into the dive back to street framing. */
+  let followArrivedRouted = false;
+  let followPointerId = -1;
+  /** Double-tap bookkeeping (additive: the tap still lands first). */
+  let lastFollowTap: TapStamp | null = null;
+  /** Handbrake pulse expiry (performance.now ms) from a double-tap. */
+  let followDriftUntil = 0;
+  /** Held-tap shooting: the entity under the finger, tracked live. */
+  let followFire: { pos: () => Vec2; live: () => boolean } | null = null;
+  let followFireDown = false;
+  /** A tap too fast to span a frame still fires: latch the trigger
+   *  for a few frames after the press. */
+  let followFireUntil = 0;
+  /** Last rendered frame's camera — taps convert through it. One
+   *  frame stale by construction; irrelevant at tap timescales. */
+  let lastFollowCam: { camera: Vec2; viewWidthM: number } | null = null;
+  const followTargetEl = el('follow-target');
+
+  // --- iteration 5: pinch / wheel map zoom --------------------------------
+  // The camera is the game's; these gestures only name a desired
+  // view WIDTH. The core clamps it (≥18 m) and chases it in log
+  // space (game.ts updateCamera) — the same machinery the boot
+  // cinematic descends with. Pinching back in to street level
+  // hands framing back to the speed-based camera (override
+  // clears); pinching out runs to the whole-map framing the intro
+  // starts from. While zoomed out, a tap is a map pick: the
+  // follow target lands across town and routes there by road.
+  /** The player's chosen view width (the live override), or null. */
+  let desiredZoomM: number | null = null;
+  /** Arrival dive: after a routed trip ends wide, ease the zoom
+   *  override back to street framing over ~2 s. Any pinch, wheel
+   *  or fresh tap cancels it (the player's zoom wins). */
+  let zoomReturn: { fromView: number; t: number } | null = null;
+  const zoomPointers = new Map<number, { x: number; y: number }>();
+  let pinchState: { startDist: number; startView: number } | null = null;
+
+  function zoomSurfaceOk(e: PointerEvent | WheelEvent): boolean {
+    const t = e.target as HTMLElement | null;
+    if (!t || typeof t.closest !== 'function') return false;
+    if (t.closest('button, input, select, textarea, label, a')) return false;
+    if (t.closest('#help, #overlay, #loading')) return false;
+    return true;
+  }
+  function applyDesiredZoom(v: number): void {
+    zoomReturn = null; // the player's zoom always wins
+    const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+    const maxV = game.wholeMapFraming(aspect)?.view ?? 2600;
+    const clamped = Math.max(24, Math.min(maxV, v));
+    if (clamped <= game.streetViewM + 2) {
+      desiredZoomM = null;
+      game.setZoomView(null);
+    } else {
+      desiredZoomM = clamped;
+      game.setZoomView(clamped);
+    }
+  }
+  window.addEventListener('pointerdown', (e) => {
+    if (game.introRunning || !zoomSurfaceOk(e)) return;
+    zoomPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (zoomPointers.size === 2) {
+      const [a, b] = [...zoomPointers.values()];
+      pinchState = {
+        startDist: Math.max(8, Math.hypot(a.x - b.x, a.y - b.y)),
+        startView: desiredZoomM ?? lastFollowCam?.viewWidthM ?? game.streetViewM,
+      };
+      zoomReturn = null;
+      // The second finger makes this a pinch, not a tap: the
+      // first finger's tap already landed on its pointerdown
+      // (targets are never delayed), but its HOLD ends here — no
+      // more drag-retargeting, no held trigger, until it lifts.
+      if (followPointerId !== -1) {
+        followFireDown = false;
+        followPointerId = -1;
+      }
+    }
+  });
+  window.addEventListener('pointermove', (e) => {
+    const p = zoomPointers.get(e.pointerId);
+    if (!p) return;
+    p.x = e.clientX;
+    p.y = e.clientY;
+    if (pinchState && zoomPointers.size === 2) {
+      const [a, b] = [...zoomPointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      // Fingers apart = zoom in (narrower view); together = out.
+      if (d > 4) applyDesiredZoom(pinchState.startView * (pinchState.startDist / d));
+    }
+  });
+  const zoomPointerEnd = (e: PointerEvent): void => {
+    zoomPointers.delete(e.pointerId);
+    if (zoomPointers.size < 2) pinchState = null;
+  };
+  window.addEventListener('pointerup', zoomPointerEnd);
+  window.addEventListener('pointercancel', zoomPointerEnd);
+  window.addEventListener(
+    'wheel',
+    (e) => {
+      if (game.introRunning || !zoomSurfaceOk(e)) return;
+      e.preventDefault();
+      const base = desiredZoomM ?? lastFollowCam?.viewWidthM ?? game.streetViewM;
+      applyDesiredZoom(base * Math.exp(e.deltaY * 0.0016));
+    },
+    { passive: false },
+  );
+  function followTargetPos(): Vec2 | null {
+    if (!followTarget) return null;
+    return followTarget.kind === 'car' ? followTarget.car.pos : followTarget.pos;
+  }
+  /**
+   * Iteration 5: make sure a route plan exists for the live
+   * target, (re)built from `anchor` (the car or the walker) when
+   * the target is new or has drifted >6 m from the plan's final
+   * point (a dragged pick, a car that rolled). Waypoint skip radii
+   * differ by context: a car at speed blows through junction
+   * centres; a walker threads them.
+   */
+  function ensureFollowRoute(anchor: Vec2, onFoot: boolean): void {
+    const target = followTargetPos();
+    if (!target) {
+      followRoute = null;
+      return;
+    }
+    if (followRoute && dist(followRoute.finalPos, target) <= 6) return;
+    const plan = planFollowPoints(game.roadGraph, world, anchor, target);
+    followRoute = new RouteFollower(plan.points, {
+      routed: plan.routed,
+      replan: (from) => planFollowPoints(game.roadGraph, world, from, target).points,
+      ...(onFoot
+        ? { skipMinM: 2.5, skipPerSpeedM: 0.3, skipMaxM: 5 }
+        : { skipMinM: 7, skipPerSpeedM: 0.35, skipMaxM: 16 }),
+    });
+  }
+  (window as unknown as { __mvtFollow?: () => unknown }).__mvtFollow = () => ({
+    scheme,
+    intent: followTarget?.kind ?? null,
+    target: followTargetPos(),
+    firing: !!followFire,
+    routed: followRoute?.routed ?? false,
+    waypoints: followRoute?.points.length ?? 0,
+    wpIndex: followRoute?.idx ?? 0,
+    zoomViewM: desiredZoomM,
+  });
+  function followTapAllowed(e: PointerEvent): boolean {
+    if (scheme !== 'follow' || !e.isPrimary || e.button > 0) return false;
+    // During the boot cinematic a tap is a SKIP, never a target.
+    if (game.introRunning) return false;
+    const t = e.target as HTMLElement | null;
+    if (!t || typeof t.closest !== 'function') return false;
+    if (t.closest('button, input, select, textarea, label, a')) return false;
+    if (t.closest('#help, #overlay, #loading')) return false;
+    return true;
+  }
+  function followPointAt(clientX: number, clientY: number): void {
+    if (!lastFollowCam) return;
+    zoomReturn = null; // a fresh pick outranks the arrival dive
+    const w = screenToWorld(
+      clientX, clientY, window.innerWidth, window.innerHeight,
+      lastFollowCam.camera, lastFollowCam.viewWidthM,
+    );
+    // Tapping the car (or yourself, on foot) means STOP — clear the
+    // target instead of parking it on your own roof.
+    const anchor = game.drivenCar ? game.drivenCar.pos : game.playerPos;
+    followTarget =
+      Math.hypot(w.x - anchor.x, w.z - anchor.z) <= FOLLOW_STOP_TAP_M
+        ? null
+        : { kind: 'point', pos: w };
+  }
+  /** What lives under a tap, if anything (screen-space, generous). */
+  type FollowHit =
+    | { kind: 'ped'; x: number; y: number; r: number; ped: Ped }
+    | { kind: 'cop'; x: number; y: number; r: number; cop: CopCar }
+    | { kind: 'car'; x: number; y: number; r: number; car: CarEntity }
+    | { kind: 'phone'; x: number; y: number; r: number; pos: Vec2 };
+  function pickFollowHit(clientX: number, clientY: number): FollowHit | null {
+    if (!lastFollowCam) return null;
+    const { camera, viewWidthM } = lastFollowCam;
+    const pxPerM = window.innerWidth / Math.max(1, viewWidthM);
+    const hits: FollowHit[] = [];
+    const at = (pos: Vec2) =>
+      worldToScreen(pos, window.innerWidth, window.innerHeight, camera, viewWidthM);
+    for (const ped of game.peds) {
+      if (ped.state === 'down') continue;
+      const s = at(ped.pos);
+      hits.push({ kind: 'ped', x: s.x, y: s.y, r: 38, ped });
+    }
+    for (const cop of game.cops) {
+      if (cop.health <= 0) continue;
+      const s = at(cop.pos);
+      hits.push({ kind: 'cop', x: s.x, y: s.y, r: 56, cop });
+    }
+    for (const car of game.cars) {
+      if (car.wrecked) continue;
+      const s = at(car.pos);
+      hits.push({ kind: 'car', x: s.x, y: s.y, r: Math.max(48, 2.9 * pxPerM), car });
+    }
+    // Payphones (and an active mission's interact point) are tap
+    // targets too: walk over, answer on arrival.
+    const step = game.missions.currentStep;
+    if (game.missions.active && step?.kind === 'interact' && step.pos) {
+      const s = at(step.pos);
+      hits.push({ kind: 'phone', x: s.x, y: s.y, r: 46, pos: step.pos });
+    } else if (!game.missions.active) {
+      for (const m of game.missions.available()) {
+        const s = at(m.startPos);
+        hits.push({ kind: 'phone', x: s.x, y: s.y, r: 46, pos: m.startPos });
+      }
+    }
+    return nearestScreenHit(hits, clientX, clientY);
+  }
+  function startFollowFire(ref: { pos: () => Vec2; live: () => boolean }): void {
+    followFire = ref;
+    followFireDown = true;
+    followFireUntil = performance.now() + 130;
+    followTarget = null; // shooting replaces any walk order
+    followRoute = null;
+    haptics.tick();
+  }
+  /** One follow tap, fully interpreted. */
+  function handleFollowTap(clientX: number, clientY: number): void {
+    zoomReturn = null; // a fresh pick outranks the arrival dive
+    const now = performance.now();
+    const dbl = isDoubleTap(lastFollowTap, now, clientX, clientY);
+    lastFollowTap = { tMs: now, x: clientX, y: clientY };
+    if (game.drivenCar) {
+      // Double-tap is the action key in a car: at a standstill it's
+      // the door handle, at speed it's the handbrake. The tap ALSO
+      // still names a destination (additive — never delayed).
+      if (dbl && game.phase === 'play') {
+        if (Math.abs(game.drivenCar.speed) <= FOLLOW_EXIT_MAX_SPEED_MPS) {
+          followTarget = null;
+          lastFollowTap = null;
+          interact();
+          return; // this tap was the exit, not a destination
+        }
+        followDriftUntil = now + FOLLOW_DRIFT_PULSE_MS;
+        haptics.tick();
+      }
+      followPointAt(clientX, clientY);
+      return;
+    }
+    // On foot: entities first, bare ground second.
+    const hit = pickFollowHit(clientX, clientY);
+    if (hit?.kind === 'ped') {
+      const ped = hit.ped;
+      startFollowFire({ pos: () => ped.pos, live: () => ped.state !== 'down' });
+      return;
+    }
+    if (hit?.kind === 'cop') {
+      const cop = hit.cop;
+      startFollowFire({ pos: () => cop.pos, live: () => cop.health > 0 });
+      return;
+    }
+    if (hit?.kind === 'car') {
+      const car = hit.car;
+      const intent = carTapIntent(
+        game.loadout.def.id !== 'fists',
+        dist(game.playerPos, car.pos),
+      );
+      if (intent === 'enter-now') {
+        followTarget = null;
+        lastFollowTap = null;
+        interact();
+        return;
+      }
+      if (intent === 'fire') {
+        startFollowFire({ pos: () => car.pos, live: () => !car.wrecked });
+        return;
+      }
+      followTarget = { kind: 'car', car };
+      return;
+    }
+    if (hit?.kind === 'phone') {
+      followTarget = { kind: 'phone', pos: hit.pos };
+      return;
+    }
+    followPointAt(clientX, clientY);
+  }
+  window.addEventListener('pointerdown', (e) => {
+    if (introSkippedEvents.has(e)) return; // this tap only skipped the intro
+    if (followPointerId !== -1 || !followTapAllowed(e)) return;
+    followPointerId = e.pointerId;
+    handleFollowTap(e.clientX, e.clientY);
+  });
+  window.addEventListener('pointermove', (e) => {
+    // Hold/drag: the target rides under the finger until release;
+    // the LAST point stays as the destination (finger-follow).
+    // While a fire tap is held the finger is a trigger, not a
+    // steering wheel — dragging never retargets a shot.
+    if (e.pointerId !== followPointerId || scheme !== 'follow' || followFire) return;
+    followPointAt(e.clientX, e.clientY);
+  });
+  const followTapEnd = (e: PointerEvent): void => {
+    if (e.pointerId === followPointerId) {
+      followPointerId = -1;
+      followFireDown = false;
+    }
+  };
+  window.addEventListener('pointerup', followTapEnd);
+  window.addEventListener('pointercancel', followTapEnd);
+  /** Is the trigger live this frame? (Held, or inside the tap latch.) */
+  function followFireActive(): boolean {
+    if (!followFire) return false;
+    if (!followFire.live()) {
+      followFire = null;
+      followFireDown = false;
+      return false;
+    }
+    if (followFireDown) return true;
+    if (performance.now() < followFireUntil) return true;
+    followFire = null; // released and the tap latch has run out
+    return false;
+  }
+  /** Project the target marker into the corner of the screen it
+   *  currently sits in; hidden when there's no target, when another
+   *  scheme owns input, or when the point is off-screen. */
+  function updateFollowMarker(): void {
+    const targetPos = followTargetPos();
+    if (scheme !== 'follow' || !targetPos || !lastFollowCam) {
+      followTargetEl.hidden = true;
+      return;
+    }
+    const s = worldToScreen(
+      targetPos, window.innerWidth, window.innerHeight,
+      lastFollowCam.camera, lastFollowCam.viewWidthM,
+    );
+    if (s.x < -30 || s.y < -30 || s.x > window.innerWidth + 30 || s.y > window.innerHeight + 30) {
+      followTargetEl.hidden = true;
+      return;
+    }
+    followTargetEl.hidden = false;
+    followTargetEl.style.left = `${s.x}px`;
+    followTargetEl.style.top = `${s.y}px`;
+  }
+
   // Hold-buttons (pedals / DRIFT / E) with a visible pressed state.
   const pedal = { gas: false, brk: false };
   let driftTouch = false;
@@ -412,6 +828,11 @@ async function boot(): Promise<void> {
       const list = (elm.dataset.schemes ?? '').split(' ');
       elm.hidden = !list.includes(scheme);
     });
+    // Follow is gesture-only: NO control clusters render at all
+    // while it's the scheme (body class drives the CSS kill).
+    document.body.classList.toggle('follow-mode', scheme === 'follow');
+    // The first-drive hint teaches the live scheme's vocabulary.
+    game.driveHintText = scheme === 'follow' ? FOLLOW_DRIVE_HINT : DRIVE_HINT;
     document.querySelectorAll<HTMLButtonElement>('[data-set-scheme]').forEach((b) => {
       b.classList.toggle('on', b.dataset.setScheme === scheme);
     });
@@ -447,14 +868,14 @@ async function boot(): Promise<void> {
     if (next !== 'tilt') {
       tiltSensor.stop();
       scheme = next;
-      store.set('mvt-input-scheme', scheme);
+      store.set(SCHEME_STORAGE_KEY, scheme);
       applyScheme();
       return;
     }
     const res: TiltEnableResult = await tiltSensor.enable();
     if (res === 'ok') {
       scheme = 'tilt';
-      store.set('mvt-input-scheme', scheme);
+      store.set(SCHEME_STORAGE_KEY, scheme);
       applyScheme();
       chromeToast('🌀 Tilt steering on — the pose you hold is "straight" (Calibrate tilt re-zeros it)');
     } else {
@@ -591,8 +1012,15 @@ async function boot(): Promise<void> {
     return null;
   }
 
+  /** Iteration 5: wall-clock dt for the route follower's stuck
+   *  bookkeeping (gatherInputs is called once per frame). */
+  let lastGatherMs = performance.now();
+
   /** Merge keyboard + touch scheme + gamepad into the core inputs. */
   function gatherInputs(): void {
+    const nowMs = performance.now();
+    const gatherDtS = Math.min(0.1, Math.max(0, (nowMs - lastGatherMs) / 1000));
+    lastGatherMs = nowMs;
     const pad = pollPad();
     const maxAbs = (...vals: number[]): number =>
       vals.reduce((a, b) => (Math.abs(b) > Math.abs(a) ? b : a), 0);
@@ -606,7 +1034,8 @@ async function boot(): Promise<void> {
         pedal.gas ? 1 : pedal.brk ? -1 : 0,
         (pad?.throttle ?? 0) - (pad?.brake ?? 0),
       );
-      let handbrake = keys.has('Space') || driftTouch || !!pad?.handbrake;
+      let handbrake =
+        keys.has('Space') || driftTouch || !!pad?.handbrake || performance.now() < followDriftUntil;
       if (scheme === 'stick' && stick.active) {
         steer = maxAbs(steer, stick.dx);
         throttle = maxAbs(throttle, -stick.dy);
@@ -637,6 +1066,49 @@ async function boot(): Promise<void> {
         // shared pedal cluster above (pedal.gas/brk, driftTouch).
         steer = maxAbs(steer, tiltSensor.steer(tiltCfg()));
       }
+      if (scheme === 'follow') {
+        // Follow: the pursuit controller owns steer AND throttle
+        // while a target lives (no pedals exist in this scheme);
+        // keyboard/pad still merge by maxAbs, so a held S or LT
+        // can outvote it. Arrival clears the target — after that
+        // the car is simply parked until the next tap.
+        // Iteration 5: the target is pursued through its ROUTE —
+        // road waypoints for a far (map-pick) target, the point
+        // itself for a near one. Intermediate waypoints are
+        // pass-throughs (no braking curve, no reverse); only the
+        // final point gets the full arrive/reverse treatment.
+        const targetPos = followTargetPos();
+        if (targetPos) {
+          const car = game.drivenCar;
+          ensureFollowRoute(car.pos, false);
+          const step = followRoute?.update(car.pos, Math.abs(car.speed), gatherDtS) ?? null;
+          if (!step) {
+            // The route gave up (stuck past re-plan + skip): stop
+            // here rather than grind against the world forever.
+            followTarget = null;
+            followRoute = null;
+          } else {
+            const out = followCarInput(
+              {
+                pos: car.pos, heading: car.heading, speed: car.speed,
+                topSpeedMps: CAR_CLASSES[car.classId ?? 'standard'].topSpeed,
+              },
+              step.aim,
+              { allowReverse: step.isFinal, through: !step.isFinal, cornerMps: step.cornerMps },
+            );
+            if (step.isFinal && out.mode === 'arrived') {
+              if (followRoute?.routed) followArrivedRouted = true;
+              followTarget = null;
+              followRoute = null;
+            } else {
+              steer = maxAbs(steer, out.steer);
+              throttle = maxAbs(throttle, out.throttle);
+            }
+          }
+        } else {
+          followRoute = null;
+        }
+      }
       // v0.27: steer response curve (|s|^0.7) — endpoints 0/±1 are
       // exact, so keyboard full-lock and the drive metrics don't
       // move; the mid-range a thumb actually reaches is amplified.
@@ -663,11 +1135,69 @@ async function boot(): Promise<void> {
           mz = (vy / len) * m;
         }
       }
+      // Follow gestures on foot: a held tap on an entity is the
+      // trigger (it owns the facing and suppresses walking); a
+      // car/phone target walks there and interacts on arrival;
+      // a point target just walks.
+      const followFiring = scheme === 'follow' && followFireActive();
+      if (scheme === 'follow') {
+        if (followFiring && followFire) {
+          const tp = followFire.pos();
+          game.playerHeading = Math.atan2(
+            tp.z - game.playerPos.z,
+            tp.x - game.playerPos.x,
+          );
+        } else if (followTarget) {
+          const targetPos = followTargetPos();
+          if (targetPos) {
+            // Iteration 5: walk the route like the car drives it —
+            // intermediate waypoints at full pace, the final point
+            // with the usual arrive/interact semantics.
+            ensureFollowRoute(game.playerPos, true);
+            const speedMag = Math.hypot(game.playerVel.x, game.playerVel.z);
+            const step = followRoute?.update(game.playerPos, speedMag, gatherDtS) ?? null;
+            if (!step) {
+              followTarget = null;
+              followRoute = null;
+            } else if (!step.isFinal) {
+              const d = dist(game.playerPos, step.aim);
+              if (d > 1e-6) {
+                mx = maxAbs(mx, (step.aim.x - game.playerPos.x) / d);
+                mz = maxAbs(mz, (step.aim.z - game.playerPos.z) / d);
+              }
+            } else {
+              let arrived = false;
+              if (
+                followTarget.kind === 'car' &&
+                dist(game.playerPos, targetPos) <= FOLLOW_CAR_ENTER_M
+              ) {
+                arrived = true; // close enough — the door's right there
+              } else {
+                const w = followWalkInput(game.playerPos, targetPos);
+                if (w.arrived) arrived = true;
+                else {
+                  mx = maxAbs(mx, w.move.x);
+                  mz = maxAbs(mz, w.move.z);
+                }
+              }
+              if (arrived) {
+                const kind = followTarget.kind;
+                if (followRoute?.routed) followArrivedRouted = true;
+                followTarget = null;
+                followRoute = null;
+                if (kind === 'car' || kind === 'phone') interact();
+              }
+            }
+          }
+        }
+      }
       game.moveInput = { x: mx, z: mz };
       game.carInput = { throttle: 0, steer: 0 };
       // v0.30: FIRE on foot — Space/F keys, the touch FIRE button,
       // or the gamepad trigger. (In a car Space stays handbrake.)
-      game.fireHeld = keys.has('Space') || keys.has('KeyF') || fireTouch || !!pad?.fire;
+      // Follow adds the tap trigger.
+      game.fireHeld =
+        keys.has('Space') || keys.has('KeyF') || fireTouch || !!pad?.fire || followFiring;
     }
   }
 
@@ -694,6 +1224,9 @@ async function boot(): Promise<void> {
   const hudTimer = el('hud-timer');
   const hudToast = el('hud-toast');
   const hudGear = el('hud-gear');
+  const carBanner = el('car-banner');
+  const objArrow = el('obj-arrow');
+  let carBannerUntil = 0;
   const stamp = el('stamp');
   const overlay = el('overlay');
   const overlayTitle = el('overlay-title');
@@ -731,6 +1264,69 @@ async function boot(): Promise<void> {
     }, 18);
   }
 
+  // --- iteration 4 HUD: car banner + objective edge arrow -------------------
+
+  /** GTA 1 names the car on entry. Body type beats class beats generic. */
+  function carDisplayName(body: string | undefined, carClass: string | null): string {
+    if (carClass === 'police') return 'Police Cruiser';
+    switch (body) {
+      case 'taxi': return 'Taxi';
+      case 'van': return 'Van';
+      case 'pickup': return 'Pickup';
+    }
+    if (carClass === 'fast') return 'Sports';
+    return 'Saloon';
+  }
+
+  /**
+   * The footage's ever-present goal arrow: while the active target
+   * (mission objective → EXIT → job car → chop shop on a live
+   * vehicle job → nearest payphone when idle) is OFF-screen, a
+   * chevron rides the screen edge pointing at it. On-screen targets
+   * keep their in-world markers and the arrow hides. Kill Frenzies
+   * have no single target point, so they get no arrow.
+   */
+  function updateObjectiveArrow(f: RenderFrame, vehJob: boolean): void {
+    const prio: Array<RenderMarker['kind']> = ['objective', 'exit', 'vehicle'];
+    let target: RenderMarker | undefined;
+    for (const k of prio) {
+      target = f.markers.find((m) => m.kind === k);
+      if (target) break;
+    }
+    if (!target && vehJob) target = f.markers.find((m) => m.kind === 'chopshop');
+    if (!target) {
+      // Idle: the goal chain starts at a payphone — aim at the
+      // nearest one, like the footage's always-on arrow.
+      let best = Infinity;
+      for (const m of f.markers) {
+        if (m.kind !== 'payphone') continue;
+        const d = Math.hypot(m.pos.x - f.camera.x, m.pos.z - f.camera.z);
+        if (d < best) { best = d; target = m; }
+      }
+    }
+    if (!target) {
+      objArrow.hidden = true;
+      return;
+    }
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const ppm = vw / f.viewWidthM;
+    const dx = (target.pos.x - f.camera.x) * ppm;
+    const dy = (target.pos.z - f.camera.z) * ppm;
+    const sx = vw / 2 + dx;
+    const sy = vh / 2 + dy;
+    if (sx > -12 && sx < vw + 12 && sy > -12 && sy < vh + 12) {
+      objArrow.hidden = true; // on-screen: the in-world marker speaks
+      return;
+    }
+    const inset = 30;
+    objArrow.hidden = false;
+    objArrow.dataset.kind = target.kind;
+    objArrow.style.left = `${Math.max(inset, Math.min(vw - inset, sx))}px`;
+    objArrow.style.top = `${Math.max(inset, Math.min(vh - inset, sy))}px`;
+    objArrow.style.transform = `translate(-50%, -50%) rotate(${Math.atan2(dy, dx)}rad)`;
+  }
+
   // --- loop ---------------------------------------------------------------
   let bootedFlag = false;
   let last = performance.now();
@@ -747,7 +1343,41 @@ async function boot(): Promise<void> {
 
     gatherInputs();
     game.update(dt);
-    renderer.sync(game.buildFrame());
+    const frameState: RenderFrame = game.buildFrame();
+    renderer.sync(frameState);
+    // Follow (preview): taps convert through the frame camera, and
+    // the target marker is projected from it every frame.
+    lastFollowCam = { camera: frameState.camera, viewWidthM: frameState.viewWidthM };
+    updateFollowMarker();
+
+    // Iteration 5: a routed trip that ends while the player is
+    // still zoomed out dives back to street framing (~2 s, the
+    // intro's ease-out-over-log-zoom profile) so the arrival reads
+    // as a landing, not a teleport of attention. A pinch, wheel or
+    // fresh tap cancels it instantly (applyDesiredZoom / the tap
+    // handlers clear zoomReturn).
+    if (followArrivedRouted) {
+      followArrivedRouted = false;
+      if (desiredZoomM !== null && frameState.viewWidthM > 200) {
+        zoomReturn = { fromView: frameState.viewWidthM, t: 0 };
+      }
+    }
+    if (zoomReturn) {
+      zoomReturn.t += dt / 2;
+      const p = Math.min(1, zoomReturn.t);
+      const e = 1 - Math.pow(1 - p, 3);
+      const street = game.streetViewM;
+      const v = Math.exp(
+        Math.log(zoomReturn.fromView) + (Math.log(street) - Math.log(zoomReturn.fromView)) * e,
+      );
+      if (p >= 1) {
+        zoomReturn = null;
+        desiredZoomM = null;
+        game.setZoomView(null);
+      } else {
+        game.setZoomView(v);
+      }
+    }
 
     // v0.30: the first rendered frame dismisses the loading screen
     // (after a minimum display so the lockup reads as a splash).
@@ -762,6 +1392,12 @@ async function boot(): Promise<void> {
           l.classList.add('done');
           window.setTimeout(() => l.remove(), 500);
         }
+        // The overlay is going: start the descent from orbit. The
+        // camera snaps to the whole-map framing under the fade and
+        // glides down onto the spawn over the next ~4 s (any input
+        // skips it — see skipIntro above; the demo scenario and
+        // restarts never arm it).
+        game.beginIntro(window.innerWidth / Math.max(1, window.innerHeight));
       }, wait);
     }
 
@@ -770,9 +1406,30 @@ async function boot(): Promise<void> {
     if (!prevInCar && hud.inCar) {
       haptics.enterCar();
       audio.enterCar();
+      // Iteration 4 (GTA 1): the blue banner names the car as you
+      // get in — brief, top-centre, gone in ~2 s.
+      const driven = frameState.entities.find((e) => e.kind === 'car-driven');
+      carBanner.textContent = carDisplayName(driven?.bodyType, hud.carClass);
+      carBanner.hidden = false;
+      carBannerUntil = performance.now() + 2100;
     }
+    if (!carBanner.hidden && performance.now() > carBannerUntil) carBanner.hidden = true;
+    updateObjectiveArrow(frameState, hud.vehJob);
     if (prevInCar && !hud.inCar && hud.phase === 'play') audio.exitCar();
-    if (prevInCar !== hud.inCar) syncChromeState();
+    if (prevInCar !== hud.inCar) {
+      syncChromeState();
+      // Follow: a target belongs to the context it was tapped in —
+      // entering or leaving a car starts fresh, so a stale point
+      // can't drag the player (or the new car) across the map.
+      // Gesture state resets with it: a tap sequence from the old
+      // context must never read as a double-tap in the new one
+      // (tap-to-enter, then a quick drive tap, is NOT an exit).
+      followTarget = null;
+      followRoute = null;
+      followFire = null;
+      followFireDown = false;
+      lastFollowTap = null;
+    }
     prevInCar = hud.inCar;
     // v0.31: the wheel mirrors the tilt while tilt-driving.
     if (scheme === 'tilt' && hud.inCar) tiltWheelVisual();
@@ -789,6 +1446,15 @@ async function boot(): Promise<void> {
     if (hud.phase !== prevPhase) {
       if (hud.phase === 'district-done') audio.districtComplete();
       else if (hud.phase === 'gameover') audio.wasted();
+      // Follow: BUSTED/WASTED teleport the player to spawn — a
+      // target set across town must not auto-walk the fresh spawn.
+      if (hud.phase !== 'play') {
+        followTarget = null;
+        followRoute = null;
+        followFire = null;
+        followFireDown = false;
+        lastFollowTap = null;
+      }
       prevPhase = hud.phase;
     }
     if (hud.toast !== prevToast) {
@@ -930,9 +1596,28 @@ async function boot(): Promise<void> {
         scheme === 'tilt'
           ? ` · TILT ${tiltSensor.snapshot().gamma?.toFixed(0) ?? '—'}°→${tiltSensor.steer(tiltCfg()).toFixed(2)}`
           : '';
+      let followBit = '';
+      if (scheme === 'follow') {
+        const tp = followRoute?.currentAim ?? followTargetPos();
+        if (followFire) followBit = ' · FOLLOW firing';
+        else if (!tp) followBit = ' · FOLLOW no target';
+        else if (car) {
+          const o = followCarInput(
+            {
+              pos: car.pos, heading: car.heading, speed: car.speed,
+              topSpeedMps: CAR_CLASSES[car.classId ?? 'standard'].topSpeed,
+            },
+            tp,
+          );
+          followBit = ` · FOLLOW ${o.mode} ${o.distM.toFixed(1)}m${followRoute?.routed ? ` · route ${followRoute.idx + 1}/${followRoute.points.length}` : ''}`;
+        } else {
+          const w = followWalkInput(game.playerPos, tp);
+          followBit = ` · FOLLOW ${followTarget?.kind ?? 'point'} ${w.distM.toFixed(1)}m`;
+        }
+      }
       readout.textContent = car
-        ? `STEER ${game.carInput.steer.toFixed(2)} · THR ${game.carInput.throttle.toFixed(2)} · WHEEL ${((car.steer * 180) / Math.PI).toFixed(1)}° · ${hud.speedKmh} km/h${tiltBit}`
-        : `MOVE ${game.moveInput.x.toFixed(2)} / ${game.moveInput.z.toFixed(2)} · on foot · stick ${stick.active ? `${stick.dx.toFixed(2)},${stick.dy.toFixed(2)}` : '—'}${tiltBit}`;
+        ? `STEER ${game.carInput.steer.toFixed(2)} · THR ${game.carInput.throttle.toFixed(2)} · WHEEL ${((car.steer * 180) / Math.PI).toFixed(1)}° · ${hud.speedKmh} km/h${tiltBit}${followBit}`
+        : `MOVE ${game.moveInput.x.toFixed(2)} / ${game.moveInput.z.toFixed(2)} · on foot · stick ${stick.active ? `${stick.dx.toFixed(2)},${stick.dy.toFixed(2)}` : '—'}${tiltBit}${followBit}`;
     }
     requestAnimationFrame(frame);
   }

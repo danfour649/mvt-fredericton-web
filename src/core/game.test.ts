@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Game, GOAL_SCORE, RESPRAY_COST_PER_STAR, BUBBLE_R, DRIVE_HINT } from './game';
+import { Game, GOAL_SCORE, RESPRAY_COST_PER_STAR, BUBBLE_R, DRIVE_HINT, INTRO_DURATION_S } from './game';
 import { Wallet, BUSTED_FINE } from './wallet';
 import { loadWorld } from './world';
 import { unproject, dist } from './geo';
@@ -145,12 +145,13 @@ describe('district goal', () => {
     expect(g2.goalState).toBe('done');
   });
 
-  it('cop spawns scale with stars and cap at 4 pursuit (+2 roadblock at 4★+)', () => {
+  it('cop spawns scale with stars and cap at 4 pursuit (+2 roadblock at 3★+)', () => {
     const g = newGame();
     g.wanted.heat = 5;
     for (let i = 0; i < 40; i++) g.update(0.1);
     expect(g.cops.length).toBeGreaterThan(0);
-    // v0.30: the PURSUIT cap is still 4; a roadblock pair may add 2.
+    // v0.30: the PURSUIT cap is still 4; a roadblock pair may add 2
+    // (iteration 3: roadblocks start at 3★, pursuit cap unchanged).
     expect(g.cops.filter((c) => !c.roadblock).length).toBeLessThanOrEqual(4);
     expect(g.cops.length).toBeLessThanOrEqual(6);
   });
@@ -399,5 +400,187 @@ describe('v0.29 — first-drive hint, reversing signal, walk cycle', () => {
       expect(typeof p.walkPhase).toBe('number');
       expect(p.speedMps).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('FOLLOW iteration 2 — boot cinematic (intro camera)', () => {
+  /** toyWorld's roads + two building blocks ~1.6 km apart, so the
+   *  world has FINITE bounds (buildings define them) for the
+   *  whole-map framing to descend from. */
+  function introWorld() {
+    const line = (z: number) => ({
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: [-600, 0, 600].map((x) => {
+          const ll = unproject(x, z);
+          return [ll.lng, ll.lat];
+        }),
+      },
+      properties: {
+        Number_Of_Lanes: 2,
+        Formatted_Street_Name: 'TEST Street',
+        Speed_Restrictions_Both: 50,
+        Dir_of_Traffic_Flow: 'Both Directions',
+      },
+    });
+    const square = (cx: number, cz: number, half: number) => {
+      const ring = [
+        [cx - half, cz - half], [cx + half, cz - half], [cx + half, cz + half],
+        [cx - half, cz + half], [cx - half, cz - half],
+      ].map(([x, z]) => {
+        const ll = unproject(x, z);
+        return [ll.lng, ll.lat];
+      });
+      return {
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [ring] },
+        properties: { min_g_elev: 0, max_b_elev: 12 },
+      };
+    };
+    return loadWorld({
+      buildings: { features: [square(-800, -500, 20), square(800, 500, 20)] },
+      roads: { features: [line(SPAWN_POS.z), line(SPAWN_POS.z + 120), line(SPAWN_POS.z - 120)] },
+    });
+  }
+
+  it('starts over the whole map (thousands of metres across, centred)', () => {
+    const g = new Game(introWorld(), new MemoryStorage());
+    g.beginIntro(390 / 844); // a portrait phone
+    expect(g.introRunning).toBe(true);
+    const f = g.buildFrame();
+    // Extract is ~1640 m wide; with the 6% margin the start view
+    // must cover it — and cover the height on a portrait viewport.
+    expect(f.viewWidthM).toBeGreaterThan(1600);
+    expect(Math.abs(f.camera.x)).toBeLessThan(5); // bounds centre ≈ origin
+    expect(Math.abs(f.camera.z)).toBeLessThan(5);
+  });
+
+  it('descends monotonically and lands EXACTLY on the gameplay framing', () => {
+    const g = new Game(introWorld(), new MemoryStorage());
+    g.beginIntro(390 / 844);
+    let lastView = Infinity;
+    let steps = 0;
+    const maxSteps = Math.ceil(INTRO_DURATION_S / 0.05) + 40;
+    while (g.introRunning && steps < maxSteps) {
+      g.update(0.05);
+      steps++;
+      const v = g.buildFrame().viewWidthM;
+      // Descending with no bounce (epsilon: the landing snap can
+      // round a hair above the last exponential sample).
+      expect(v).toBeLessThanOrEqual(lastView + 1e-9);
+      lastView = v;
+    }
+    expect(g.introRunning).toBe(false);
+    expect(steps).toBeLessThanOrEqual(Math.ceil(INTRO_DURATION_S / 0.05) + 2);
+    const landed = g.buildFrame();
+    expect(landed.viewWidthM).toBeCloseTo(30, 3); // the on-foot width
+    expect(dist(landed.camera, g.playerPos)).toBeLessThan(0.05);
+    // The normal camera takes over with no jump: it stays there.
+    for (let i = 0; i < 30; i++) g.update(0.05);
+    const after = g.buildFrame();
+    expect(after.viewWidthM).toBeCloseTo(30, 0);
+    expect(dist(after.camera, g.playerPos)).toBeLessThan(1);
+  });
+
+  it('locks driving input while it runs (the player cannot walk off)', () => {
+    const g = new Game(introWorld(), new MemoryStorage());
+    g.beginIntro(390 / 844);
+    g.moveInput = { x: 1, z: 0 };
+    for (let i = 0; i < 40; i++) g.update(0.05); // 2 s in, still descending
+    expect(g.introRunning).toBe(true);
+    expect(g.playerPos).toEqual(SPAWN_POS);
+  });
+
+  it('skipIntro lands instantly on the gameplay framing', () => {
+    const g = new Game(introWorld(), new MemoryStorage());
+    g.beginIntro(390 / 844);
+    for (let i = 0; i < 20; i++) g.update(0.05);
+    // 1 s in: the ease-out log descent is FAST at altitude by
+    // design — from ~1740 m it's already down to ~180 m, but still
+    // far above street framing, i.e. genuinely mid-descent.
+    const mid = g.buildFrame().viewWidthM;
+    expect(mid).toBeGreaterThan(100);
+    expect(mid).toBeLessThan(400);
+    g.skipIntro();
+    expect(g.introRunning).toBe(false);
+    const f = g.buildFrame();
+    expect(f.viewWidthM).toBeCloseTo(30, 3);
+    expect(dist(f.camera, g.playerPos)).toBeLessThan(0.05);
+  });
+
+  it('never arms over the demo scenario (screenshots keep settled framing)', () => {
+    const g = new Game(introWorld(), new MemoryStorage());
+    g.applyDemoScenario();
+    g.beginIntro(390 / 844);
+    expect(g.introRunning).toBe(false);
+  });
+
+  it('arms against the REAL downtown extract at whole-city scale', () => {
+    const g = new Game(loadWorld(JSON.parse(downtownRaw)), new MemoryStorage());
+    g.beginIntro(390 / 844);
+    expect(g.introRunning).toBe(true);
+    // GeoNB bbox ≈ 1.87 km × 1.67 km (plus the river's reach).
+    expect(g.buildFrame().viewWidthM).toBeGreaterThan(1700);
+  });
+});
+
+describe('FOLLOW iteration 2 — first-drive hint text is the scheme\u2019s', () => {
+  it('a platform-set driveHintText is what the first entry shows', () => {
+    const g = newGame();
+    g.driveHintText = 'TAP TO DRIVE';
+    const car = g.cars.find((c) => c.kind === 'parked')!;
+    g.playerPos = { ...car.pos };
+    g.pressInteract();
+    expect(g.drivenCar).toBe(car);
+    let saw = false;
+    for (let i = 0; i < 400 && !saw; i++) {
+      g.wanted.heat = 0;
+      g.cops = [];
+      g.update(0.05);
+      if (g.hud().toast === 'TAP TO DRIVE') saw = true;
+    }
+    expect(saw).toBe(true);
+  });
+});
+
+describe('FOLLOW iteration 5 — player zoom (pinch / wheel)', () => {
+  it('setZoomView eases the frame view to the chosen width in log space, monotonically', () => {
+    const g = newGame();
+    expect(g.playerZoomViewM).toBeNull();
+    expect(g.buildFrame().viewWidthM).toBeCloseTo(g.streetViewM, 3);
+    g.setZoomView(900);
+    expect(g.playerZoomViewM).toBe(900);
+    let last = -Infinity;
+    for (let i = 0; i < 60; i++) {
+      g.update(0.05);
+      const v = g.buildFrame().viewWidthM;
+      expect(v).toBeGreaterThanOrEqual(last - 1e-9);
+      last = v;
+    }
+    expect(last).toBeGreaterThan(850);
+    expect(last).toBeLessThan(950);
+  });
+
+  it('clearing the zoom returns the camera to street framing', () => {
+    const g = newGame();
+    g.setZoomView(1200);
+    for (let i = 0; i < 60; i++) g.update(0.05);
+    expect(g.buildFrame().viewWidthM).toBeGreaterThan(1000);
+    g.setZoomView(null);
+    expect(g.playerZoomViewM).toBeNull();
+    for (let i = 0; i < 60; i++) g.update(0.05);
+    expect(g.buildFrame().viewWidthM).toBeCloseTo(g.streetViewM, 0);
+  });
+
+  it('wholeMapFraming agrees with the intro start view (one machinery)', () => {
+    const world = loadWorld(JSON.parse(downtownRaw));
+    const g = new Game(world, new MemoryStorage());
+    const framing = g.wholeMapFraming(390 / 844);
+    expect(framing).not.toBeNull();
+    g.beginIntro(390 / 844);
+    expect(g.buildFrame().viewWidthM).toBeCloseTo(framing!.view, 3);
+    expect(Math.abs(g.buildFrame().camera.x - framing!.pos.x)).toBeLessThan(0.05);
+    expect(Math.abs(g.buildFrame().camera.z - framing!.pos.z)).toBeLessThan(0.05);
   });
 });

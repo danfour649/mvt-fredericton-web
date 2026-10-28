@@ -106,6 +106,9 @@ export interface HudState {
   carClass: string | null;
   /** v0.30: active Kill Frenzy readout, null when none. */
   frenzy: { label: string; have: number; need: number; secsLeft: number } | null;
+  /** Iteration 4: a vehicle job is live (marked car → chop shop) —
+   *  the HUD's edge arrow aims at the chop shop while it's on. */
+  vehJob: boolean;
   /** v0.30: monotonic event counters — main.ts diffs these to fire
    *  one-shot audio (the established state-diff seam). */
   shotsFired: number;
@@ -138,6 +141,14 @@ export const FRENZY_CONSOLATION = 100;
 /** v0.29: shown once, on the first car entry ever (persisted). */
 export const DRIVE_HINT = 'Drive: steer ◀ ▶ · GAS / BRK pedals · hold BRK at a stop to REVERSE';
 
+/**
+ * FOLLOW iteration 2: the boot cinematic — camera starts at "space"
+ * altitude (the whole extract in frame) and descends onto the spawn,
+ * fast at altitude and progressively slower near the street. The
+ * duration lives here so the tests and the platform layer agree.
+ */
+export const INTRO_DURATION_S = 4.2;
+
 /** District goal: reach this score, then get to the exit. */
 export const GOAL_SCORE = 250000;
 /**
@@ -154,13 +165,16 @@ export const START_LIVES = 5;
  * metres from the player, counts are the floors we recycle toward.
  */
 export const BUBBLE_R = 220;
-export const TRAFFIC_TARGET = 10;
+/** Iteration 3 mayhem dial (Follow PR): 10 → 14 traffic in the bubble. */
+export const TRAFFIC_TARGET = 14;
 export const PARKED_NEAR_R = 150;
 export const PARKED_TARGET = 4;
 /** v0.25: pedestrians bubble too — peds beyond PED_BUBBLE_R are
- *  re-anchored near the player until PED_TARGET are within range. */
+ *  re-anchored near the player until PED_TARGET are within range.
+ *  Iteration 3 mayhem dial: the floor rises 12 → 16 (of the 20-ped
+ *  pool) — the sidewalks should feel populated, not sprinkled. */
 export const PED_BUBBLE_R = 260;
-export const PED_TARGET = 12;
+export const PED_TARGET = 16;
 const PED_SCORE = 100;
 const THEFT_SCORE = 500;
 /** v0.30 crime economy (audit #9): GTA 1 paid for violence directly —
@@ -263,6 +277,13 @@ export class Game {
   /** v0.29: persisted — the first-drive hint shows exactly once. */
   private seenDriveHint = false;
   private driveHintPending = false;
+  /**
+   * The first-drive hint TEXT. The core default teaches the pedals;
+   * the platform layer swaps in a gesture vocabulary when the
+   * FOLLOW scheme is live (no pedals exist there). Set at boot and
+   * on scheme changes; the once-ever persistence is unaffected.
+   */
+  driveHintText: string = DRIVE_HINT;
   /** v0.29: metres walked (drives the walk-cycle phase, distance-based). */
   private playerWalkM = 0;
 
@@ -348,6 +369,17 @@ export class Game {
   // on-foot width tightened to 30 m in v0.24).
   private camPos: Vec2 = { ...SPAWN_POS };
   private camViewM = 30;
+
+  // Boot cinematic (FOLLOW iteration 2): beginIntro() arms it when
+  // the loading overlay dismisses; updateCamera() then interpolates
+  // centre + view width from the whole-map framing down to the
+  // normal gameplay framing, and update() locks driving input while
+  // it runs. Any input skips it (the platform calls skipIntro()).
+  private introActive = false;
+  private introT = 0;
+  private introFrom: { pos: Vec2; view: number } = { pos: { ...SPAWN_POS }, view: 30 };
+  /** The demo scenario wants its settled framing — no cinematic. */
+  private introSuppressed = false;
 
   // v0.24 population bubble (see ARCHITECTURE.md): traffic and parked
   // cars are recycled around the player so the street is never empty.
@@ -552,8 +584,13 @@ export class Game {
       const road = wide[i];
       tryParked(road, road.lengthM * (0.25 + 0.5 * rng()));
     }
-    const longest = [...this.world.roads].sort((a, b) => b.lengthM - a.lengthM).slice(0, 14);
-    for (let i = 0; i < longest.length && t < 12; i += 2) {
+    const longest = [...this.world.roads].sort((a, b) => b.lengthM - a.lengthM).slice(0, 22);
+    // Iteration 3: the wide-fill pool cap rises 12 → 18 (and the
+    // longest-roads window widens so the loop can actually reach
+    // it) so the raised bubble target (14) always has far cars to
+    // recycle FROM. The pool stays a fixed spawn-time count — the
+    // bubble recycles within it, nothing grows at runtime.
+    for (let i = 0; i < longest.length && t < 18; i += 2) {
       addTraffic(longest[i], longest[i].lengthM * (0.2 + 0.6 * rng()));
     }
   }
@@ -999,8 +1036,12 @@ export class Game {
     // it's free (it queues behind the car-theft toast on entry).
     if (this.driveHintPending && this.toast === '') {
       this.driveHintPending = false;
-      this.showToast(DRIVE_HINT);
+      this.showToast(this.driveHintText);
     }
+    // The cinematic belongs to the living spawn: if the run leaves
+    // 'play' mid-descent (a bus finds the stationary player), the
+    // normal camera rules take over immediately.
+    if (this.introActive && this.phase !== 'play') this.introActive = false;
     this.briefTtl = Math.max(0, this.briefTtl - dt);
     if (this.briefTtl === 0) this.brief = '';
     this.crashCooldown = Math.max(0, this.crashCooldown - dt);
@@ -1057,6 +1098,21 @@ export class Game {
       : Infinity;
     if (nearestCop > COP_EYES_M) this.wanted.update(dt);
 
+    // Boot cinematic: driving input is locked while it runs (the
+    // world stays alive — traffic rolls, peds stroll — but the
+    // player's own inputs read as zero until the camera lands or
+    // the player skips). Stash + zero + restore around the systems
+    // that consume inputs, so nothing latches.
+    const introLock = this.introActive;
+    const savedCarInput = this.carInput;
+    const savedMoveInput = this.moveInput;
+    const savedFireHeld = this.fireHeld;
+    if (introLock) {
+      this.carInput = { throttle: 0, steer: 0 };
+      this.moveInput = { x: 0, z: 0 };
+      this.fireHeld = false;
+    }
+
     if (this.drivenCar) this.updateDriving(dt);
     else this.updateOnFoot(dt);
 
@@ -1073,6 +1129,12 @@ export class Game {
     this.updateRespray();
     this.updateExit();
     this.updateCamera(dt);
+
+    if (introLock) {
+      this.carInput = savedCarInput;
+      this.moveInput = savedMoveInput;
+      this.fireHeld = savedFireHeld;
+    }
 
     // Health trickles back when nothing has hurt you lately.
     if (this.healthRegenDelay === 0 && this.playerHealth > 0 && this.playerHealth < 100) {
@@ -1500,7 +1562,9 @@ export class Game {
     const desired = stars > 0 ? Math.min(stars, 4) : 0;
     // Spawn up to the desired pressure, at a road point ~120-170 m out.
     if (pursuitCount < desired && this.copSpawnCooldown <= 0) {
-      this.copSpawnCooldown = 1.5;
+      // Iteration 3 mayhem dial: reinforcements arrive faster —
+      // spawn cadence 1.5 s → 0.9 s.
+      this.copSpawnCooldown = 0.9;
       const angle = this.time * 1.7 + this.cops.length * 2.1;
       const probe = {
         x: this.playerPos.x + Math.cos(angle) * 150,
@@ -1511,11 +1575,13 @@ export class Game {
         this.cops.push(spawnCop(near.pos, near.heading));
       }
     }
-    // v0.30 roadblocks (audit #5): at 4+ stars a pair of cop cars
-    // parks ACROSS a road ahead of the player's heading. They hold
-    // position (and shoot, below) until the heat drops or the
-    // player leaves them far behind.
-    if (stars >= 4 && !this.cops.some((c) => c.roadblock) && this.roadblockCd <= 0) {
+    // v0.30 roadblocks (audit #5): a pair of cop cars parks ACROSS
+    // a road ahead of the player's heading. They hold position
+    // (and shoot, below) until the heat drops or the player
+    // leaves them far behind. Iteration 3 mayhem dial: the
+    // threshold drops 4★ → 3★ — roadblocks are a mid-heat event
+    // now, not an endgame one.
+    if (stars >= 3 && !this.cops.some((c) => c.roadblock) && this.roadblockCd <= 0) {
       const speed = Math.hypot(this.playerVel.x, this.playerVel.z);
       const dirVec = speed > 2
         ? { x: this.playerVel.x / speed, z: this.playerVel.z / speed }
@@ -1545,7 +1611,7 @@ export class Game {
       const d = dist(cop.pos, this.playerPos);
       // Roadblocks abandon their post when the heat drops or the
       // player is long gone.
-      if (cop.roadblock && (stars < 4 || d > 170)) continue;
+      if (cop.roadblock && (stars < 3 || d > 170)) continue;
       // A burning cop car sits and burns (updateBurning owns it).
       if (cop.burning) {
         survivors.push(cop);
@@ -2083,40 +2149,182 @@ export class Game {
     this.showToast('A saffron procession is crossing downtown…');
   }
 
-  private updateCamera(dt: number): void {
+  /** FOLLOW iteration 5: the player's own zoom (pinch / wheel) —
+   *  a desired view WIDTH in metres that replaces the speed-based
+   *  framing while set. The platform owns the gesture state and
+   *  the arrival return; the core owns the clamp and the chase. */
+  private zoomViewM: number | null = null;
+
+  /** Set (or clear, with null) the player's zoom override. */
+  setZoomView(viewM: number | null): void {
+    this.zoomViewM = viewM === null ? null : Math.max(18, viewM);
+  }
+
+  get playerZoomViewM(): number | null {
+    return this.zoomViewM;
+  }
+
+  /** The framing the normal speed-based camera wants right now —
+   *  what the zoom override hands back to when it clears. */
+  get streetViewM(): number {
+    return this.dynamicCameraTarget().view;
+  }
+
+  /**
+   * The whole-map framing for a viewport aspect: centre + view
+   * width covering the full extract (buildings ∪ river), or null
+   * when the world has no finite bounds (toy worlds — there is no
+   * "whole map" to show). Shared by the boot cinematic (which
+   * starts here) and the player's zoom-out (which ends here).
+   */
+  wholeMapFraming(viewportAspect: number): { pos: Vec2; view: number } | null {
+    let { minX, maxX, minZ, maxZ } = this.world.bounds;
+    for (const w of this.world.water) {
+      minX = Math.min(minX, w.minX);
+      maxX = Math.max(maxX, w.maxX);
+      minZ = Math.min(minZ, w.minZ);
+      maxZ = Math.max(maxZ, w.maxZ);
+    }
+    if (![minX, maxX, minZ, maxZ].every(Number.isFinite)) return null;
+    const wM = Math.max(1, maxX - minX);
+    const hM = Math.max(1, maxZ - minZ);
+    const aspect = Math.max(0.2, Math.min(4, viewportAspect));
+    // Visible height = viewWidth / aspect, so the width must cover
+    // the extract's height × aspect as well as its own width.
+    return {
+      pos: { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 },
+      view: Math.max(wM, hM * aspect) * 1.06,
+    };
+  }
+
+  /** The framing the camera is steering toward this frame: the
+   *  player's zoom when one is set, else the speed-based framing.
+   *  The centre is the gameplay anchor either way — zoomed out,
+   *  the camera still follows the car across the map. */
+  private cameraTarget(): { pos: Vec2; view: number } {
+    const t = this.dynamicCameraTarget();
+    if (this.zoomViewM === null) return t;
+    return { pos: t.pos, view: this.zoomViewM };
+  }
+
+  /** The framing the normal camera is steering toward this frame. */
+  private dynamicCameraTarget(): { pos: Vec2; view: number } {
     // Lookahead BY THE VELOCITY VECTOR (v0.21): the camera leans into
     // the direction of travel — including the lateral component when
     // the car slides — so a drift reads before it bites.
-    const targetPos = {
+    const pos = {
       x: this.playerPos.x + this.playerVel.x * 0.45,
       z: this.playerPos.z + this.playerVel.z * 0.45,
     };
-    const kp = 1 - Math.exp(-6.5 * dt);
-    this.camPos = {
-      x: this.camPos.x + (targetPos.x - this.camPos.x) * kp,
-      z: this.camPos.z + (targetPos.z - this.camPos.z) * kp,
-    };
     const speedRatio = this.drivenCar
-      ? Math.min(1, Math.abs(this.drivenCar.speed) / 31)
+      ? Math.min(1, Math.abs(this.drivenCar.speed) / 38)
       : Math.min(1, Math.hypot(this.playerVel.x, this.playerVel.z) / 8);
     // Zoom-out-with-speed (the GTA 1 signature), retargeted in v0.23
-    // to GTA-1 framing: values are now metres across the viewport
-    // WIDTH. GTA 1 shows ~35–50 m across with a car ≈15 % of the
-    // frame width; we sit at 30 m on foot (v0.24 — at 50 m the player
-    // read as a dot on an empty street) and pull out to at most
-    // 130 m at top speed (the extra reach is driving lookahead —
-    // at 31 m/s a 50 m frame is under a second of road).
-    const targetView = this.drivenCar ? 54 + speedRatio * 76 : 30;
+    // to GTA-1 framing: values are metres across the viewport WIDTH.
+    // Iteration 4 (Daniel's gameplay footage as the spec): the
+    // footage's cruise frame is ≈55–65 m wide with the car at
+    // ~15–17 % of frame width — v0.23's 130 m top-speed frame made
+    // the car ~3–4 % and read slow and small. Now: 30 m on foot
+    // (v0.24), 50 m at a driving crawl, max 85 m at top speed
+    // (38 m/s standard since iteration 3) — the car is ~5 % of the
+    // frame LENGTHWISE in landscape and much bigger across the
+    // portrait width Daniel actually plays in, and the road ahead
+    // still holds >2 s of travel at full pace.
+    const view = this.drivenCar ? 50 + speedRatio * 35 : 30;
+    return { pos, view };
+  }
+
+  /** True while the boot cinematic owns the camera. */
+  get introRunning(): boolean {
+    return this.introActive;
+  }
+
+  /**
+   * Arm the boot cinematic (called by the platform when the loading
+   * overlay dismisses). The descent starts over the whole extract —
+   * buildings ∪ river bounds, centred, wide enough that BOTH axes
+   * fit the viewport — and lands on the live gameplay framing.
+   * `viewportAspect` is viewport width / height (portrait phone
+   * ≈ 0.46, landscape desktop ≈ 1.9). No-op for the demo scenario
+   * (screenshots want the settled framing) and once a run has
+   * started moving (restarts never replay it).
+   */
+  beginIntro(viewportAspect: number): void {
+    if (this.introSuppressed || this.introActive) return;
+    // A world with no buildings has unbounded bounds (the toy test
+    // worlds) — there is no "whole map" to descend from, so don't.
+    const framing = this.wholeMapFraming(viewportAspect);
+    if (!framing) return;
+    this.introFrom = framing;
+    this.introT = 0;
+    this.introActive = true;
+    this.camPos = { ...this.introFrom.pos };
+    this.camViewM = framing.view;
+  }
+
+  /** Any input ends the cinematic NOW: the camera snaps to exactly
+   *  the framing the normal camera targets, so play continues from
+   *  the landing state with no jump. */
+  skipIntro(): void {
+    if (!this.introActive) return;
+    this.introActive = false;
+    const t = this.cameraTarget();
+    this.camPos = { ...t.pos };
+    this.camViewM = t.view;
+  }
+
+  private updateCamera(dt: number): void {
+    const target = this.cameraTarget();
+    if (this.introActive) {
+      // Ease-out cubic on BOTH the centre and the LOG of the view
+      // width: the descent covers ground (and orders of magnitude
+      // of zoom) fast at altitude, then creeps the last stretch
+      // into the car placement — exponential-smooth, no bounce.
+      this.introT += dt;
+      const p = Math.min(1, this.introT / INTRO_DURATION_S);
+      const e = 1 - Math.pow(1 - p, 3);
+      this.camPos = {
+        x: this.introFrom.pos.x + (target.pos.x - this.introFrom.pos.x) * e,
+        z: this.introFrom.pos.z + (target.pos.z - this.introFrom.pos.z) * e,
+      };
+      this.camViewM = Math.exp(
+        Math.log(this.introFrom.view) + (Math.log(target.view) - Math.log(this.introFrom.view)) * e,
+      );
+      if (p >= 1) {
+        // Land EXACTLY on the gameplay framing; the smoothing below
+        // takes over next frame from its own target — no jump cut.
+        this.introActive = false;
+        this.camPos = { ...target.pos };
+        this.camViewM = target.view;
+      }
+      return;
+    }
+    const kp = 1 - Math.exp(-6.5 * dt);
+    this.camPos = {
+      x: this.camPos.x + (target.pos.x - this.camPos.x) * kp,
+      z: this.camPos.z + (target.pos.z - this.camPos.z) * kp,
+    };
     // v0.21: GTA's zoom tracks speed aggressively — rate 3.6/s reaches
     // the target view in ~0.3 s (was 2.2/s, a visible ~0.5 s+ lag).
+    // Iteration 5: the chase runs in LOG space, like the intro's
+    // descent — across the street framing's small range it behaves
+    // exactly as before, but a pinch from 85 m to the 2 km map (or
+    // the arrival dive back) now eases through the orders of
+    // magnitude instead of sprinting linearly then crawling.
     const kv = 1 - Math.exp(-3.6 * dt);
-    this.camViewM += (targetView - this.camViewM) * kv;
+    this.camViewM = Math.exp(
+      Math.log(this.camViewM) + (Math.log(target.view) - Math.log(this.camViewM)) * kv,
+    );
   }
 
   // --- demo / test hooks -----------------------------------------------------
 
   /** Deterministic live-gameplay state for screenshots (?scenario=demo). */
   applyDemoScenario(): void {
+    // Screenshots frame the settled scene — the boot cinematic
+    // must never run over the demo state.
+    this.introSuppressed = true;
+    this.introActive = false;
     this.wallet.set(42500);
     this.wallet.multiplier = 3;
     const errand = this.missions.available().find((m) => m.id === 'queen_street_errand');
@@ -2145,7 +2353,7 @@ export class Game {
       this.cops.push(cop);
     }
     this.camPos = { ...this.playerPos };
-    this.camViewM = 76; // ≈ the settled width at the demo's 9 m/s roll
+    this.camViewM = 58; // ≈ the settled width at the demo's 9 m/s roll
   }
 
   private drainBriefForDemo(): void {
@@ -2224,6 +2432,7 @@ export class Game {
             secsLeft: Math.ceil(this.frenzy.tLeft),
           }
         : null,
+      vehJob: !!this.vehJob,
       shotsFired: this.shotsFired,
       explosions: this.explosionsCount,
       splashes: this.splashesCount,

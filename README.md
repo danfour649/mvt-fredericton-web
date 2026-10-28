@@ -127,10 +127,11 @@ v0.22 rendered a *map*: flat colour at satellite distance. v0.23 is a
 ground-up visual pass against actual GTA 1 frames (`gta1-ref/` study
 frames: a traffic street, a downtown canyon):
 
-- **Camera.** Framing is now by view **width**: ~50 m across on foot
-  (GTA 1 shows ~35–50 m; a car is ~9 % of frame width at rest),
-  pulling out with speed to at most ~130 m at top speed — the extra
-  reach is driving lookahead. Zoom responsiveness is unchanged.
+- **Camera.** Framing is now by view **width**: 30 m across on foot,
+  50 m at a driving crawl, pulling out with speed to at most 85 m at
+  top speed (iteration 4 retune against GTA 1 gameplay footage —
+  the earlier 130 m frame shrank the car to ~3 % of frame width and
+  read slow). Zoom responsiveness is unchanged.
 - **Texture everywhere.** Procedural, seeded, tileable textures
   generated once at load (`src/render/textures.ts`): grainy dark
   asphalt, GTA's big 1.5 m sidewalk slabs, three tar/gravel roof

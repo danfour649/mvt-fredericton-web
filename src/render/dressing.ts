@@ -169,11 +169,14 @@ export interface TreeSpot {
   variant: 0 | 1 | 2;
 }
 
-export const TREE_FILLS = ['#33512a', '#3d5c2f', '#2c4526'];
+/** Iteration 4: bigger, blobbier canopies — mid greens that read
+ *  DARK against the footage's acid lawns (they were tuned for the
+ *  old deep-green grass and vanished into it). */
+export const TREE_FILLS = ['#2e7d1e', '#359121', '#276b19'];
 
 function blobRing(c: Vec2, r: number, rng: () => number): Vec2[] {
   const ring: Vec2[] = [];
-  const n = 10;
+  const n = 12;
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;
     const rr = r * (0.82 + rng() * 0.36);
@@ -247,8 +250,8 @@ export function scatterTrees(world: WorldModel, target = 240): TreeSpot[] {
           if (onRoad) break;
         }
         if (onRoad) continue;
-        if (trees.some((t) => Math.hypot(t.pos.x - cand.x, t.pos.z - cand.z) < 5.5)) continue;
-        const r = 1.5 + rng() * 0.9;
+        if (trees.some((t) => Math.hypot(t.pos.x - cand.x, t.pos.z - cand.z) < 7)) continue;
+        const r = 2.2 + rng() * 1.3;
         const ring = blobRing(cand, r, rng);
         trees.push({
           pos: cand,

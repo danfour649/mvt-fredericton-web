@@ -12,8 +12,8 @@
  * Pure data: built once from the WorldModel, no DOM, deterministic for
  * a given world.
  */
-import type { Vec2 } from './geo';
-import type { Road, WorldModel } from './world';
+import { dist, type Vec2 } from './geo';
+import { nearestRoadPoint, pointAlongRoad, type Road, type WorldModel } from './world';
 
 export interface JunctionEdge {
   road: Road;
@@ -119,4 +119,235 @@ export function pickNextEdge(
   }
   if (bestScore > 0.35 && rng() < 0.7) return best;
   return options[Math.floor(rng() * options.length)];
+}
+
+// --- pathfinding (FOLLOW iteration 5) --------------------------------------
+// The junction graph above was built for traffic circulation; the
+// follow scheme's map pick needs point-to-point routes over it:
+// tap a far bank and the car should drive the ROADS there, not
+// pure-pursue a straight line through the buildings in between.
+//
+// findRoute returns pursuit waypoints: along the start road to a
+// graph node, across the node graph by Dijkstra (road lengths as
+// costs), down the target road, ending EXACTLY at `to`. Two
+// robustness additions over the raw graph, kept local to routing
+// so traffic's circulation behaviour is untouched:
+//  - the partial first/last legs run along the nearest roads
+//    themselves (a car mid-block starts by driving its own street,
+//    not by cutting toward a distant endpoint), and
+//  - nodes whose positions sit within LINK_M of each other are
+//    treated as connected ("link" edges): GeoNB joins can land a
+//    few metres apart in different snap cells, and a route that
+//    dies at a 3 m data gap helps nobody.
+
+/** Node-proximity link distance for routing, m. */
+export const ROUTE_LINK_M = 12;
+
+/** distAlong of the point on a road closest to `p` (m). */
+function closestAlong(road: Road, p: Vec2): number {
+  let best = Infinity;
+  let bestAlong = 0;
+  let acc = 0;
+  for (let i = 0; i < road.segLens.length; i++) {
+    const a = road.path[i];
+    const b = road.path[i + 1];
+    const abx = b.x - a.x;
+    const abz = b.z - a.z;
+    const len2 = abx * abx + abz * abz;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.z - a.z) * abz) / len2)) : 0;
+    const d = Math.hypot(p.x - (a.x + abx * t), p.z - (a.z + abz * t));
+    if (d < best) {
+      best = d;
+      bestAlong = acc + road.segLens[i] * t;
+    }
+    acc += road.segLens[i];
+  }
+  return bestAlong;
+}
+
+/** Points along a road between two distAlong values (either
+ *  direction), including the road's own vertices in between and
+ *  subdividing so no leg exceeds ~20 m. */
+function subPath(road: Road, a0: number, a1: number): Vec2[] {
+  const dir = a1 >= a0 ? 1 : -1;
+  const alongs = new Set<number>();
+  const n = Math.max(1, Math.ceil(Math.abs(a1 - a0) / 20));
+  for (let i = 0; i <= n; i++) alongs.add(a0 + ((a1 - a0) * i) / n);
+  let acc = 0;
+  const vertexAlongs = [0];
+  for (const l of road.segLens) {
+    acc += l;
+    vertexAlongs.push(acc);
+  }
+  for (const va of vertexAlongs) {
+    if ((va - a0) * dir > 0.5 && (a1 - va) * dir > 0.5) alongs.add(va);
+  }
+  return [...alongs]
+    .sort((x, y) => (x - y) * dir)
+    .map((a) => pointAlongRoad(road, a).pos);
+}
+
+/** Index of the graph node nearest to `p` (Euclidean), -1 if none. */
+export function nearestGraphNode(graph: RoadGraph, p: Vec2): number {
+  let best = -1;
+  let bestD = Infinity;
+  graph.nodes.forEach((n, i) => {
+    const d = dist(n.pos, p);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  });
+  return best;
+}
+
+interface Adj {
+  to: number;
+  cost: number;
+  /** The road traversed, or null for a proximity link. */
+  road: Road | null;
+  /** True when traversal runs the road start → end. */
+  forward: boolean;
+}
+
+function buildAdjacency(graph: RoadGraph): Adj[][] {
+  const adj: Adj[][] = graph.nodes.map(() => []);
+  graph.nodes.forEach((node, ni) => {
+    for (const e of node.edges) {
+      const ri = graph.roadIndex.get(e.road);
+      if (ri === undefined) continue;
+      const other = e.atStart ? graph.endNode[ri] : graph.startNode[ri];
+      if (other < 0 || other === ni) continue;
+      adj[ni].push({ to: other, cost: e.road.lengthM, road: e.road, forward: e.atStart });
+    }
+  });
+  // Proximity links between distinct nodes (see header).
+  for (let i = 0; i < graph.nodes.length; i++) {
+    for (let j = i + 1; j < graph.nodes.length; j++) {
+      const d = dist(graph.nodes[i].pos, graph.nodes[j].pos);
+      if (d > 0.01 && d <= ROUTE_LINK_M) {
+        adj[i].push({ to: j, cost: d, road: null, forward: true });
+        adj[j].push({ to: i, cost: d, road: null, forward: true });
+      }
+    }
+  }
+  return adj;
+}
+
+/**
+ * Route from `from` to `to` over the road graph (see header).
+ * Returns pursuit waypoints ending exactly at `to`, or null when
+ * no road route exists (different components, a road with no
+ * graph nodes, an empty world). Pure and deterministic.
+ */
+export function findRoute(graph: RoadGraph, world: WorldModel, from: Vec2, to: Vec2): Vec2[] | null {
+  if (!graph.nodes.length || !world.roads.length) return null;
+  const fromSnap = nearestRoadPoint(world, from);
+  const toSnap = nearestRoadPoint(world, to);
+  if (!fromSnap || !toSnap) return null;
+  const fromRoad = fromSnap.road;
+  const toRoad = toSnap.road;
+  const fromAlong = closestAlong(fromRoad, from);
+  const toAlong = closestAlong(toRoad, to);
+
+  const assemble = (pts: Vec2[]): Vec2[] => {
+    const out: Vec2[] = [];
+    for (const p of pts) {
+      if (!out.length || dist(out[out.length - 1], p) > 1.5) out.push(p);
+    }
+    // The exact target always closes the route.
+    if (!out.length || dist(out[out.length - 1], to) > 0.01) out.push({ ...to });
+    return out;
+  };
+
+  if (fromRoad === toRoad) {
+    return assemble(subPath(fromRoad, fromAlong, toAlong));
+  }
+
+  const fromRi = graph.roadIndex.get(fromRoad);
+  const toRi = graph.roadIndex.get(toRoad);
+  if (fromRi === undefined || toRi === undefined) return null;
+  // Start nodes: BOTH endpoints of the from-road are Dijkstra
+  // sources, seeded with the along-road distance to reach them —
+  // the nearest endpoint is not always the right way out (a ramp's
+  // near end can lead back downtown while its far end is the
+  // bridge). Target node: whichever to-road endpoint minimises
+  // (graph distance + along-road remainder), decided after the
+  // Dijkstra pass below.
+  const startAlongEnd = new Map<number, number>();
+  if (graph.startNode[fromRi] >= 0) startAlongEnd.set(graph.startNode[fromRi], 0);
+  if (graph.endNode[fromRi] >= 0) startAlongEnd.set(graph.endNode[fromRi], fromRoad.lengthM);
+  if (!startAlongEnd.size) return null;
+  const endCandidates: Array<{ node: number; alongEnd: number }> = [];
+  if (graph.startNode[toRi] >= 0) endCandidates.push({ node: graph.startNode[toRi], alongEnd: 0 });
+  if (graph.endNode[toRi] >= 0) endCandidates.push({ node: graph.endNode[toRi], alongEnd: toRoad.lengthM });
+  if (!endCandidates.length) return null;
+
+  // Dijkstra from the start nodes over roads + proximity links.
+  const adj = buildAdjacency(graph);
+  const N = graph.nodes.length;
+  const distTo = new Array<number>(N).fill(Infinity);
+  const prev = new Array<{ from: number; adj: Adj } | null>(N).fill(null);
+  const done = new Array<boolean>(N).fill(false);
+  for (const [node, alongEnd] of startAlongEnd) {
+    distTo[node] = Math.abs(alongEnd - fromAlong);
+  }
+  for (let iter = 0; iter < N; iter++) {
+    let u = -1;
+    let best = Infinity;
+    for (let i = 0; i < N; i++) {
+      if (!done[i] && distTo[i] < best) {
+        best = distTo[i];
+        u = i;
+      }
+    }
+    if (u < 0) break;
+    done[u] = true;
+    for (const a of adj[u]) {
+      const nd = distTo[u] + a.cost;
+      if (nd < distTo[a.to]) {
+        distTo[a.to] = nd;
+        prev[a.to] = { from: u, adj: a };
+      }
+    }
+  }
+
+  let endNode = -1;
+  let endAlongEnd = 0;
+  let bestTotal = Infinity;
+  for (const c of endCandidates) {
+    const total = distTo[c.node] + Math.abs(c.alongEnd - toAlong);
+    if (total < bestTotal) {
+      bestTotal = total;
+      endNode = c.node;
+      endAlongEnd = c.alongEnd;
+    }
+  }
+  if (endNode < 0 || !Number.isFinite(bestTotal)) return null;
+
+  // Reconstruct the node path start → end. The walk ends at a
+  // source node (prev === null) — whichever from-road endpoint
+  // the winning path actually left by.
+  const chain: Adj[] = [];
+  let cur = endNode;
+  while (prev[cur]) {
+    chain.push(prev[cur]!.adj);
+    cur = prev[cur]!.from;
+  }
+  if (!startAlongEnd.has(cur)) return null; // unreachable after all
+  chain.reverse();
+
+  const pts: Vec2[] = [];
+  pts.push(...subPath(fromRoad, fromAlong, startAlongEnd.get(cur)!));
+  for (const a of chain) {
+    if (a.road) {
+      pts.push(
+        ...subPath(a.road, a.forward ? 0 : a.road.lengthM, a.forward ? a.road.lengthM : 0),
+      );
+    } else {
+      pts.push({ ...graph.nodes[a.to].pos });
+    }
+  }
+  pts.push(...subPath(toRoad, endAlongEnd, toAlong));
+  return assemble(pts);
 }

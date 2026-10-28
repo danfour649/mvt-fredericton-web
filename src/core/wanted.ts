@@ -7,11 +7,14 @@
  * GAME only calls update() while no cop has eyes on the player (a
  * cop within sight range pauses decay entirely) — hiding has to
  * actually break contact now, not just wait out a 20 s melt.
+ * Iteration 3 mayhem dial: decay slows again, 60 s → 90 s per star
+ * — heat is stickier; shaking a wanted level is a drive, not a
+ * pause.
  */
 export class Wanted {
   /** 0..5 continuous heat. */
   heat = 0;
-  private decayPerSec = 1 / 60; // v0.30: one star per 60 s of staying clean AND unseen
+  private decayPerSec = 1 / 90; // iteration 3: one star per 90 s of staying clean AND unseen
 
   get stars(): number {
     // All heat sources add whole stars, so display rounds: a fresh

@@ -332,11 +332,13 @@ describe('v0.30 pickups', () => {
 });
 
 describe('v0.30 wanted teeth', () => {
-  it('decay runs at one star per 60 s while unseen', () => {
+  it('decay runs at one star per 90 s while unseen', () => {
+    // Iteration 3 dial: was one star per 60 s (v0.30) — the same
+    // half-star drop now takes 45 game-seconds instead of 30.
     const g = new Game(toyWorld(), new MemoryStorage());
     g.wanted.heat = 3;
-    // NB: Game.update clamps dt to 0.05 — 600 × 0.05 = 30 game-seconds.
-    for (let i = 0; i < 600; i++) {
+    // NB: Game.update clamps dt to 0.05 — 900 × 0.05 = 45 game-seconds.
+    for (let i = 0; i < 900; i++) {
       g.update(0.05);
       g.cops = []; // hold the police out of this measurement entirely
     }
@@ -355,7 +357,9 @@ describe('v0.30 wanted teeth', () => {
     expect(g.wanted.heat).toBeCloseTo(3, 5);
   });
 
-  it('at 4 stars a roadblock pair sets up ahead of the player', () => {
+  it('at 3 stars a roadblock pair sets up ahead of the player', () => {
+    // Iteration 3 dial: the roadblock threshold dropped 4★ → 3★,
+    // so this scenario now runs at heat 3 (was 4 under v0.30).
     const g = new Game(toyWorld(), new MemoryStorage());
     const car = g.cars.filter((c) => c.kind === 'parked')
       .find((c) => Math.cos(c.heading) < -0.99) ?? g.cars.find((c) => c.kind === 'parked')!;
@@ -365,7 +369,7 @@ describe('v0.30 wanted teeth', () => {
     g.playerPos = { ...car.pos };
     g.carInput = { throttle: 1, steer: 0 };
     for (let i = 0; i < 40 && !g.cops.some((c) => c.roadblock); i++) {
-      g.wanted.heat = 4;
+      g.wanted.heat = 3;
       g.update(0.1);
     }
     expect(g.cops.some((c) => c.roadblock)).toBe(true);
