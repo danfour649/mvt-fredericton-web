@@ -53,7 +53,10 @@ describe('generateTexture', () => {
     }
   });
 
-  it('keeps grit ranges: dark asphalt, pale pavement, mid roofs, dark grass', () => {
+  it('keeps grit ranges: violet asphalt, pale sage pavement, mid roofs, acid grass', () => {
+    // Iteration 4 (footage spec): asphalt went violet-blue, pavement
+    // pale greenish-grey, grass BRIGHT acid — the old "dark grass"
+    // range is deliberately replaced, not relaxed by stealth.
     expect(channelStats(generateTexture('asphalt').data).mean).toBeLessThan(85);
     expect(channelStats(generateTexture('pavement').data).mean).toBeGreaterThan(130);
     for (const k of ['roof1', 'roof2', 'roof3'] as const) {
@@ -62,8 +65,8 @@ describe('generateTexture', () => {
       expect(m).toBeLessThan(140);
     }
     const g = channelStats(generateTexture('grass').data);
-    expect(g.mean).toBeGreaterThan(45);
-    expect(g.mean).toBeLessThan(110);
+    expect(g.mean).toBeGreaterThan(80);
+    expect(g.mean).toBeLessThan(120);
   });
 
   it('pavement slab grid tiles: seams land on both tile edges', () => {

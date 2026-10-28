@@ -17,7 +17,14 @@
  *
  * v0.28: the Saint John River (core world.water) drawn between the
  * grass and the pavement, bold blue with bank lines; palette
- * re-saturated and window-grid roofs, same as Route A.
+ * re-saturated, same as Route A.
+ *
+ * Iteration 4: buildings drawn as OBLIQUE boxes (shared
+ * render/oblique.ts) — footprint = wall base, window-grid pattern
+ * clipped to the exposed south wall band, parapet + grain roofs on
+ * the north-offset roof plane, painter-sorted north → south;
+ * violet asphalt with per-lane wheel-track polish bands, pale sage
+ * slab pavement, acid grass — identical read to Route A.
  */
 import type { Vec2 } from '../../core/geo';
 import type { WorldModel } from '../../core/world';
@@ -25,10 +32,11 @@ import { buildRoadGraph } from '../../core/routing';
 import type { Renderer, RenderFrame } from '../../core/renderer';
 import { carSprite, personSprite, drawSprite, drawAnchorRing, walkFrame, hairFor, PLAYER_HAIR } from '../sprites';
 import { drawScorches, drawEffects, drawPickup } from '../effects';
-import { SkidTracks, expandedPolygon } from '../groundwork';
+import { SkidTracks, expandedPolygon, offsetPath, laneCentreOffsets } from '../groundwork';
 import { segmentRoof, shadeHex, polygonArea, type RoofPiece } from '../segment';
-import { generateAllTextures, textureToCanvas, type TextureImage, type TextureKind } from '../textures';
-import { WALL_COLORS, roofVariant, ROAD_CASING, ROAD_KERB, CENTRE_LINE, WATER_BANK, WATER_EDGE } from '../palette';
+import { generateAllTextures, generateWallTexture, hexToRgb, textureToCanvas, type TextureImage, type TextureKind, type WallTexture } from '../textures';
+import { WALL_COLORS, roofVariant, ROAD_CASING, ROAD_KERB, ROAD_POLISH, CENTRE_LINE, WATER_BANK, WATER_EDGE } from '../palette';
+import { extrudeM, offsetRing } from '../oblique';
 import { shadowRing, roofClutter, crosswalkStripes, scatterTrees, TREE_FILLS, type ClutterItem, type TreeSpot } from '../dressing';
 
 const MARKER_BG: Record<string, string> = {
@@ -55,6 +63,12 @@ export class CanvasRenderer implements Renderer {
   private trees: TreeSpot[] = [];
   private textures: Record<TextureKind, TextureImage> | null = null;
   private patterns = new Map<TextureKind, CanvasPattern>();
+  /** Iteration 4: building indices in painter order (north → south)
+   *  for the oblique boxes, and one wall-grid pattern per wall
+   *  colour (the grids live on the walls now). */
+  private buildingOrder: number[] = [];
+  private wallTexes: WallTexture[] = [];
+  private wallPatterns: CanvasPattern[] = [];
   private skids = new SkidTracks();
 
   constructor(container: HTMLElement) {
@@ -76,33 +90,53 @@ export class CanvasRenderer implements Renderer {
     );
     this.crosswalks = crosswalkStripes(buildRoadGraph(world));
     this.trees = scatterTrees(world);
+    this.buildingOrder = world.buildings
+      .map((_, i) => i)
+      .sort((a, b2) => world.buildings[a].center.z - world.buildings[b2].center.z);
     this.textures = generateAllTextures();
     for (const kind of Object.keys(this.textures) as TextureKind[]) {
       const pat = this.ctx.createPattern(textureToCanvas(this.textures[kind]), 'repeat');
       if (pat) this.patterns.set(kind, pat);
     }
+    // Wall grids, one per wall colour, framed in that colour.
+    this.wallTexes = WALL_COLORS.map((c) => generateWallTexture(hexToRgb(c)));
+    this.wallPatterns = this.wallTexes.map((t) => {
+      const pat = this.ctx.createPattern(textureToCanvas(t), 'repeat');
+      return pat as CanvasPattern;
+    });
   }
 
   /**
    * Point a texture's pattern at true world scale for this frame:
    * the pattern matrix scales authored px → screen px at the current
-   * zoom and phase-anchors tiling to the world origin, so a 1.5 m
-   * pavement slab is 1.5 m at every zoom and never swims.
+   * zoom and phase-anchors tiling to the world origin, so a 2 m
+   * pavement slab is 2 m at every zoom and never swims.
    */
+  private aimPattern(pat: CanvasPattern, nominalPpm: number, scale: number, cam: Vec2, w: number, h: number): void {
+    if (typeof pat.setTransform !== 'function') return;
+    const s = scale / nominalPpm;
+    const e = w / 2 - cam.x * scale;
+    const f = h / 2 - cam.z * scale;
+    try {
+      pat.setTransform(new DOMMatrix([s, 0, 0, s, e, f]));
+    } catch {
+      /* older engines: unscaled pattern still renders */
+    }
+  }
+
   private pattern(kind: TextureKind, scale: number, cam: Vec2, w: number, h: number): CanvasPattern | string {
     const pat = this.patterns.get(kind);
     const tex = this.textures?.[kind];
     if (!pat || !tex) return '#888';
-    if (typeof pat.setTransform === 'function') {
-      const s = scale / tex.nominalPpm;
-      const e = w / 2 - cam.x * scale;
-      const f = h / 2 - cam.z * scale;
-      try {
-        pat.setTransform(new DOMMatrix([s, 0, 0, s, e, f]));
-      } catch {
-        /* older engines: unscaled pattern still renders */
-      }
-    }
+    this.aimPattern(pat, tex.nominalPpm, scale, cam, w, h);
+    return pat;
+  }
+
+  private wallPattern(colorIdx: number, scale: number, cam: Vec2, w: number, h: number): CanvasPattern | string {
+    const pat = this.wallPatterns[colorIdx];
+    const tex = this.wallTexes[colorIdx];
+    if (!pat || !tex) return '#888';
+    this.aimPattern(pat, tex.nominalPpm, scale, cam, w, h);
     return pat;
   }
 
@@ -123,10 +157,13 @@ export class CanvasRenderer implements Renderer {
     const viewM = { x: frame.viewWidthM / 2 + 60, z: h / scale / 2 + 60 };
     const near = (x: number, z: number) =>
       Math.abs(x - frame.camera.x) < viewM.x && Math.abs(z - frame.camera.z) < viewM.z;
-    const trace = (ring: Vec2[]): void => {
-      ctx.beginPath();
+    const tracePath = (ring: Vec2[]): void => {
       ring.forEach((p, j) => (j === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
       ctx.closePath();
+    };
+    const trace = (ring: Vec2[]): void => {
+      ctx.beginPath();
+      tracePath(ring);
     };
 
     // Ground: mottled grass texture (world-scaled).
@@ -180,11 +217,29 @@ export class CanvasRenderer implements Renderer {
       ctx.stroke();
     }
 
-    // Roads: dark casing, light kerb, textured asphalt, yellow dash.
+    // Roads: dark casing, pale kerb edge lines, textured asphalt,
+    // wheel-track polish bands along each lane's line of travel
+    // (iteration 4 — the footage's lighter violet arcs), yellow dash.
     const asphalt = this.pattern('asphalt', scale, frame.camera, w, h);
-    for (const pass of [0, 1, 2, 3] as const) {
+    for (const pass of [0, 1, 2, 3, 4] as const) {
       for (const r of this.world.roads) {
         if (!near(r.path[0].x, r.path[0].z) && !near(r.path[r.path.length - 1].x, r.path[r.path.length - 1].z)) continue;
+        if (pass === 3) {
+          // Polish: one subtle band per lane centre, offset from the
+          // centreline — through a corner the bands arc with the road.
+          if (r.lanes < 2) continue;
+          ctx.strokeStyle = ROAD_POLISH;
+          ctx.globalAlpha = 0.20;
+          ctx.lineWidth = Math.max(0.8, 1.7 * scale);
+          for (const off of laneCentreOffsets(r.widthM, r.lanes)) {
+            const pts = offsetPath(r.path, off);
+            ctx.beginPath();
+            pts.forEach((p, i) => (i === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+          continue;
+        }
         ctx.beginPath();
         r.path.forEach((p, i) => (i === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
         if (pass === 0) {
@@ -239,37 +294,76 @@ export class CanvasRenderer implements Renderer {
       ctx.fill();
     }
 
-    // Buildings: parapet band (wall colour) → textured inset roof with
-    // shade step + rim → clutter → true outline over the top. v0.22
-    // segmentation pieces throughout.
-    this.world.buildings.forEach((b, i) => {
-      if (!near(b.center.x, b.center.z)) return;
+    // Buildings as OBLIQUE BOXES (iteration 4 — the footage's
+    // signature look), painted north → south so nearer masses
+    // overlap farther ones correctly:
+    //  1. footprint filled with the wall tone (the wall's base);
+    //  2. the WALL: window-grid pattern clipped to the band the
+    //     north-offset roof leaves uncovered on the footprint's
+    //     south side (footprint minus offset footprint, even-odd);
+    //  3. parapet pieces ON the offset (roof) plane;
+    //  4. textured inset roofs on that plane (grain now — the grid
+    //     moved to the walls; skylight glass only on giant slabs);
+    //  5. clutter riding the roof plane, roofline + footprint lines.
+    // Collision never sees any of this — footprints are untouched.
+    for (const i of this.buildingOrder) {
+      const b = this.world.buildings[i];
+      if (!near(b.center.x, b.center.z)) continue;
       const idx = (i * 7 + Math.floor(b.heightM)) % WALL_COLORS.length;
       const base = WALL_COLORS[idx];
+      const ex = extrudeM(b);
+      const roofRing = offsetRing(b.polygon, ex);
       const roofKind = ROOF_KINDS[roofVariant(i, b.heightM, Math.abs(polygonArea(b.polygon)))];
       const pieces = this.pieces[i];
-      for (const piece of pieces) {
-        trace(piece.ring);
-        ctx.fillStyle = shadeHex(base, piece.shade);
+
+      trace(b.polygon);
+      ctx.fillStyle = shadeHex(base, -0.08);
+      ctx.fill();
+
+      // The wall band. A real clip (not a drawn ring): pattern fills
+      // a screen rect over the building's extent, the clip keeps
+      // only footprint-minus-roof — the exposed south wall.
+      ctx.save();
+      ctx.beginPath();
+      tracePath(b.polygon);
+      tracePath(roofRing);
+      ctx.clip('evenodd');
+      ctx.fillStyle = this.wallPattern(idx, scale, frame.camera, w, h);
+      ctx.fillRect(
+        sx(b.minX) - 2,
+        sy(b.minZ) - 2,
+        (b.maxX - b.minX) * scale + 4,
+        (b.maxZ - b.minZ) * scale + 4,
+      );
+      ctx.restore();
+
+      const roofPieces = pieces.map((piece) => ({
+        piece,
+        ring: offsetRing(piece.ring, ex),
+        center: { x: piece.center.x, z: piece.center.z - ex },
+      }));
+      for (const rp of roofPieces) {
+        trace(rp.ring);
+        ctx.fillStyle = shadeHex(base, rp.piece.shade);
         ctx.fill();
-        if (piece.segmented) {
-          ctx.strokeStyle = shadeHex(base, piece.shade - 0.22);
+        if (rp.piece.segmented) {
+          ctx.strokeStyle = shadeHex(base, rp.piece.shade - 0.22);
           ctx.lineWidth = 1;
           ctx.stroke();
         }
       }
-      for (const piece of pieces) {
-        if (piece.area <= 42) continue;
-        const inset = piece.ring.map((p) => ({
-          x: piece.center.x + (p.x - piece.center.x) * 0.84,
-          z: piece.center.z + (p.z - piece.center.z) * 0.84,
+      for (const rp of roofPieces) {
+        if (rp.piece.area <= 42) continue;
+        const inset = rp.ring.map((p) => ({
+          x: rp.center.x + (p.x - rp.center.x) * 0.84,
+          z: rp.center.z + (p.z - rp.center.z) * 0.84,
         }));
         trace(inset);
         ctx.fillStyle = this.pattern(roofKind, scale, frame.camera, w, h);
         ctx.fill();
-        if (piece.shade !== 0) {
+        if (rp.piece.shade !== 0) {
           ctx.fillStyle =
-            piece.shade > 0 ? `rgba(255,255,255,${piece.shade})` : `rgba(0,0,0,${-piece.shade})`;
+            rp.piece.shade > 0 ? `rgba(255,255,255,${rp.piece.shade})` : `rgba(0,0,0,${-rp.piece.shade})`;
           ctx.fill();
         }
         ctx.strokeStyle = 'rgba(242,236,222,0.7)';
@@ -278,17 +372,22 @@ export class CanvasRenderer implements Renderer {
       }
       ctx.fillStyle = '#000'; // reset before clutter fills set their own
       for (const item of this.clutter[i]) {
-        trace(item.ring);
+        trace(offsetRing(item.ring, ex));
         ctx.fillStyle = item.fill;
         ctx.globalAlpha = 0.95;
         ctx.fill();
         ctx.globalAlpha = 1;
       }
+      // Roofline (the offset silhouette) + the true footprint line.
+      trace(roofRing);
+      ctx.strokeStyle = 'rgba(29,23,18,0.85)';
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
       trace(b.polygon);
       ctx.strokeStyle = '#1d1712';
       ctx.lineWidth = 1.6;
       ctx.stroke();
-    });
+    }
 
     const t = frame.timeSec;
     const lightPhase = (Math.floor(t * 2.6) % 2) as 0 | 1;

@@ -106,6 +106,9 @@ export interface HudState {
   carClass: string | null;
   /** v0.30: active Kill Frenzy readout, null when none. */
   frenzy: { label: string; have: number; need: number; secsLeft: number } | null;
+  /** Iteration 4: a vehicle job is live (marked car → chop shop) —
+   *  the HUD's edge arrow aims at the chop shop while it's on. */
+  vehJob: boolean;
   /** v0.30: monotonic event counters — main.ts diffs these to fire
    *  one-shot audio (the established state-diff seam). */
   shotsFired: number;
@@ -2156,16 +2159,20 @@ export class Game {
       z: this.playerPos.z + this.playerVel.z * 0.45,
     };
     const speedRatio = this.drivenCar
-      ? Math.min(1, Math.abs(this.drivenCar.speed) / 31)
+      ? Math.min(1, Math.abs(this.drivenCar.speed) / 38)
       : Math.min(1, Math.hypot(this.playerVel.x, this.playerVel.z) / 8);
     // Zoom-out-with-speed (the GTA 1 signature), retargeted in v0.23
-    // to GTA-1 framing: values are now metres across the viewport
-    // WIDTH. GTA 1 shows ~35–50 m across with a car ≈15 % of the
-    // frame width; we sit at 30 m on foot (v0.24 — at 50 m the player
-    // read as a dot on an empty street) and pull out to at most
-    // 130 m at top speed (the extra reach is driving lookahead —
-    // at 31 m/s a 50 m frame is under a second of road).
-    const view = this.drivenCar ? 54 + speedRatio * 76 : 30;
+    // to GTA-1 framing: values are metres across the viewport WIDTH.
+    // Iteration 4 (Daniel's gameplay footage as the spec): the
+    // footage's cruise frame is ≈55–65 m wide with the car at
+    // ~15–17 % of frame width — v0.23's 130 m top-speed frame made
+    // the car ~3–4 % and read slow and small. Now: 30 m on foot
+    // (v0.24), 50 m at a driving crawl, max 85 m at top speed
+    // (38 m/s standard since iteration 3) — the car is ~5 % of the
+    // frame LENGTHWISE in landscape and much bigger across the
+    // portrait width Daniel actually plays in, and the road ahead
+    // still holds >2 s of travel at full pace.
+    const view = this.drivenCar ? 50 + speedRatio * 35 : 30;
     return { pos, view };
   }
 
@@ -2296,7 +2303,7 @@ export class Game {
       this.cops.push(cop);
     }
     this.camPos = { ...this.playerPos };
-    this.camViewM = 76; // ≈ the settled width at the demo's 9 m/s roll
+    this.camViewM = 58; // ≈ the settled width at the demo's 9 m/s roll
   }
 
   private drainBriefForDemo(): void {
@@ -2375,6 +2382,7 @@ export class Game {
             secsLeft: Math.ceil(this.frenzy.tLeft),
           }
         : null,
+      vehJob: !!this.vehJob,
       shotsFired: this.shotsFired,
       explosions: this.explosionsCount,
       splashes: this.splashesCount,

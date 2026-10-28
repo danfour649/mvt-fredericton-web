@@ -16,23 +16,44 @@ import type { RenderEntity } from '../core/renderer';
 export const PAVEMENT_RIBBON = '#b3afa4';
 export const PAVEMENT_APRON = '#a39e92';
 
-/** Polygon offset OUT from a polyline by halfW on both sides (ribbon). */
-export function ribbonPolygon(path: Vec2[], halfW: number): Vec2[] {
-  const n = path.length;
-  if (n < 2) return [];
+/** Per-point normals along a polyline (averaged segment direction). */
+function pathNormals(path: Vec2[]): Vec2[] {
   const normals: Vec2[] = [];
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < path.length; i++) {
     const a = path[Math.max(0, i - 1)];
-    const b = path[Math.min(n - 1, i + 1)];
+    const b = path[Math.min(path.length - 1, i + 1)];
     let dx = b.x - a.x;
     let dz = b.z - a.z;
     const len = Math.hypot(dx, dz) || 1;
     dx /= len; dz /= len;
     normals.push({ x: -dz, z: dx });
   }
-  const left = path.map((p, i) => ({ x: p.x + normals[i].x * halfW, z: p.z + normals[i].z * halfW }));
-  const right = path.map((p, i) => ({ x: p.x - normals[i].x * halfW, z: p.z - normals[i].z * halfW }));
+  return normals;
+}
+
+/** A polyline offset sideways by `d` metres (either sign). */
+export function offsetPath(path: Vec2[], d: number): Vec2[] {
+  const normals = pathNormals(path);
+  return path.map((p, i) => ({ x: p.x + normals[i].x * d, z: p.z + normals[i].z * d }));
+}
+
+/** Polygon offset OUT from a polyline by halfW on both sides (ribbon). */
+export function ribbonPolygon(path: Vec2[], halfW: number): Vec2[] {
+  if (path.length < 2) return [];
+  const left = offsetPath(path, halfW);
+  const right = offsetPath(path, -halfW);
   return [...left, ...right.reverse()];
+}
+
+/**
+ * Lateral offsets (m from the centreline) of each lane's centre —
+ * where the wheel-track polish bands run (iteration 4).
+ */
+export function laneCentreOffsets(widthM: number, lanes: number): number[] {
+  const out: number[] = [];
+  const n = Math.max(1, Math.floor(lanes));
+  for (let i = 0; i < n; i++) out.push(widthM * ((i + 0.5) / n - 0.5));
+  return out;
 }
 
 /** Polygon pushed out from its centroid by `margin` metres per vertex. */

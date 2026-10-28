@@ -76,19 +76,23 @@ function valueNoise(px: number, py: number, size: number, cells: number, seed: n
 type RGB = [number, number, number];
 
 const SPECS: Record<TextureKind, { size: number; tileM: number; base: RGB }> = {
-  // v0.28 art pass: GTA 1 is BOLD — deep blue-grey slate roads…
-  asphalt: { size: 128, tileM: 4, base: [52, 58, 72] },
-  // …warm light stone slabs (tile = 3 m = 2×2 slabs of 1.5 m, gta1-c).
-  pavement: { size: 128, tileM: 3, base: [188, 177, 152] },
+  // Iteration-4 pass (Daniel's GTA 1 gameplay footage is the spec):
+  // the asphalt reads VIOLET-blue in the footage, not slate grey.
+  asphalt: { size: 128, tileM: 4, base: [74, 79, 118] },
+  // …pale GREENISH-grey slabs with dark grout (footage: the dominant
+  // ground texture). Tile = 4 m = 2×2 slabs of 2 m.
+  pavement: { size: 128, tileM: 4, base: [193, 199, 172] },
   // Roof grain variants: warm gravel, slate gravel, brown gravel.
   roof1: { size: 128, tileM: 6, base: [112, 92, 76] },
   roof2: { size: 128, tileM: 6, base: [86, 90, 98] },
   roof3: { size: 128, tileM: 6, base: [120, 98, 80] },
-  // Window-grid roof (the refs' signature — gta1-c's gridded mass).
-  // Drawn structurally in generateTexture; base is the mortar tone.
+  // Window-grid texture — since iteration 4 this belongs on WALLS
+  // (see generateWallTexture); as a roof it survives only as the
+  // glass skylight mass of the very largest footprints.
   roofgrid: { size: 128, tileM: 9, base: [146, 130, 110] },
-  // Deep green, recessive — the city sits ON it, not in it.
-  grass: { size: 128, tileM: 8, base: [50, 82, 36] },
+  // Bright ACID green with noise (the footage's lawns) — flipped
+  // from v0.28's deep recessive green.
+  grass: { size: 128, tileM: 8, base: [102, 163, 42] },
   // Bold flat GTA blue — lighter than asphalt, unmistakably water.
   water: { size: 128, tileM: 10, base: [36, 106, 176] },
 };
@@ -111,12 +115,123 @@ function shadePx(out: Uint8ClampedArray, i: number, base: RGB, f: number): void 
   out[i + 3] = 255;
 }
 
+/** '#rrggbb' → [r, g, b]. */
+export function hexToRgb(hex: string): RGB {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+interface WindowGridOpts {
+  cellsX: number;
+  cellsY: number;
+  /** Pane margins inside a cell, px (cell = size / cells per axis). */
+  insetX: number;
+  insetTop: number;
+  insetBottom: number;
+  /** hash2 above this → the window is lit. */
+  litAbove: number;
+  /** Dark floor-slab line at each row's foot (walls only). */
+  floorBand: boolean;
+}
+
+/**
+ * The window grid, painted structurally: dark glass panes (some lit)
+ * in a frame of `base` tone. Shared by the roofgrid texture (4×4,
+ * the surviving skylight mass) and the iteration-4 WALL texture
+ * (4×5 — GTA 1's grids live on the walls, per Daniel's footage).
+ */
+function paintWindowGrid(size: number, base: RGB, seed: number, o: WindowGridOpts): Uint8ClampedArray {
+  const data = new Uint8ClampedArray(size * size * 4);
+  const cellX = size / o.cellsX;
+  const cellY = size / o.cellsY;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      const grain = (hash2(x, y, seed) - 0.5) * 2;
+      const cx = Math.floor(x / cellX);
+      const cy = Math.floor(y / cellY);
+      const lx = x % cellX;
+      const ly = y % cellY;
+      const tint = hash2(cx, cy, seed + 11);
+      const lit = hash2(cx, cy, seed + 12) > o.litAbove;
+      const inPane = lx >= o.insetX && lx < cellX - o.insetX && ly >= o.insetTop && ly < cellY - o.insetBottom;
+      let r: number, g: number, b: number;
+      if (inPane) {
+        // Glass: deep blue-grey, lighter toward the pane's top edge.
+        const glare = 1 + (1 - ly / cellY) * 0.25 + grain * 0.05;
+        if (lit) {
+          r = 208 * glare; g = 164 * glare; b = 92 * glare;
+        } else {
+          const t = 0.85 + tint * 0.35;
+          r = 44 * t * glare; g = 62 * t * glare; b = 82 * t * glare;
+        }
+      } else {
+        // Frame/mortar between panes, in the surface's own tone.
+        const ff = (0.92 + tint * 0.14) * (1 + grain * 0.05);
+        r = base[0] * ff; g = base[1] * ff; b = base[2] * ff;
+        if (lx < 1.5 || ly < 1.5) { r *= 0.62; g *= 0.62; b *= 0.62; } // cell seam
+        if (o.floorBand && ly >= cellY - 2) { r *= 0.66; g *= 0.66; b *= 0.66; } // floor slab
+      }
+      data[i] = Math.max(0, Math.min(255, Math.round(r)));
+      data[i + 1] = Math.max(0, Math.min(255, Math.round(g)));
+      data[i + 2] = Math.max(0, Math.min(255, Math.round(b)));
+      data[i + 3] = 255;
+    }
+  }
+  return data;
+}
+
+/** A generated wall texture (per building colour — not a TextureKind). */
+export interface WallTexture {
+  size: number;
+  data: Uint8ClampedArray;
+  /** World metres covered by one tile (4 window bays × 5 floors). */
+  tileM: number;
+  nominalPpm: number;
+}
+
+/**
+ * The iteration-4 wall surface for one wall colour: the window grid
+ * framed in the building's own tone, so a brick building's wall is
+ * brick-with-windows, a teal wall teal-with-windows (the footage's
+ * facades are exactly this). One tile = 9 m wide × 9 m of wall.
+ */
+export function generateWallTexture(base: RGB, seed = 1717): WallTexture {
+  const size = 128;
+  const data = paintWindowGrid(size, base, seed, {
+    cellsX: 4,
+    cellsY: 5,
+    insetX: 4,
+    insetTop: 3,
+    insetBottom: 5,
+    litAbove: 0.9,
+    floorBand: true,
+  });
+  return { size, data, tileM: 9, nominalPpm: size / 9 };
+}
+
 /** Generate one texture. Same (kind, seed) → identical bytes, always. */
 export function generateTexture(kind: TextureKind, seed = SEEDS[kind]): TextureImage {
   const spec = SPECS[kind];
   const { size, base } = spec;
-  const data = new Uint8ClampedArray(size * size * 4);
 
+  if (kind === 'roofgrid') {
+    // Window grid at GTA frequency: 4×4 cells per 9 m tile (2.25 m
+    // pitch) — panes in a stone frame, the odd one lit. Painted by
+    // the shared structural painter (walls use the same grid, 4×5).
+    const data = paintWindowGrid(size, base, seed, {
+      cellsX: 4,
+      cellsY: 4,
+      insetX: 5,
+      insetTop: 4,
+      insetBottom: 7,
+      litAbove: 0.86,
+      floorBand: false,
+    });
+    return { kind, size, data, tileM: spec.tileM, nominalPpm: size / spec.tileM };
+  }
+
+  const data = new Uint8ClampedArray(size * size * 4);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const i = (y * size + x) * 4;
@@ -124,42 +239,6 @@ export function generateTexture(kind: TextureKind, seed = SEEDS[kind]): TextureI
       // at tile edges are invisible at this contrast).
       const grain = (hash2(x, y, seed) - 0.5) * 2;
       let f = 1;
-
-      if (kind === 'roofgrid') {
-        // Window grid at GTA frequency: 4×4 cells per 9 m tile (2.25 m
-        // pitch); each cell is a dark glass pane in a stone frame, with
-        // a per-cell tint and the odd lit window. Written as absolute
-        // RGB — this kind is structure, not a shaded base.
-        const cell = size / 4;
-        const cx = Math.floor(x / cell);
-        const cy = Math.floor(y / cell);
-        const lx = x % cell;
-        const ly = y % cell;
-        const tint = hash2(cx, cy, seed + 11);
-        const lit = hash2(cx, cy, seed + 12) > 0.86;
-        const inPane = lx >= 5 && lx < cell - 5 && ly >= 4 && ly < cell - 7;
-        let r: number, g: number, b: number;
-        if (inPane) {
-          // Glass: deep blue-grey, lighter toward the pane's top edge.
-          const glare = 1 + (1 - ly / cell) * 0.25 + grain * 0.05;
-          if (lit) {
-            r = 208 * glare; g = 164 * glare; b = 92 * glare;
-          } else {
-            const t = 0.85 + tint * 0.35;
-            r = 44 * t * glare; g = 62 * t * glare; b = 82 * t * glare;
-          }
-        } else {
-          // Stone frame/mortar between panes.
-          const ff = (0.92 + tint * 0.14) * (1 + grain * 0.05);
-          r = base[0] * ff; g = base[1] * ff; b = base[2] * ff;
-          if (lx < 1.5 || ly < 1.5) { r *= 0.62; g *= 0.62; b *= 0.62; } // cell seam
-        }
-        data[i] = Math.max(0, Math.min(255, Math.round(r)));
-        data[i + 1] = Math.max(0, Math.min(255, Math.round(g)));
-        data[i + 2] = Math.max(0, Math.min(255, Math.round(b)));
-        data[i + 3] = 255;
-        continue;
-      }
 
       if (kind === 'asphalt') {
         f = 1 + grain * 0.07 + (valueNoise(x, y, size, 6, seed + 1) - 0.5) * 0.1;
@@ -214,7 +293,7 @@ export function generateAllTextures(): Record<TextureKind, TextureImage> {
 }
 
 /** DOM wrapper: bitmap → offscreen canvas (adapters only). */
-export function textureToCanvas(tex: TextureImage): HTMLCanvasElement {
+export function textureToCanvas(tex: { size: number; data: Uint8ClampedArray }): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = tex.size;
   c.height = tex.size;

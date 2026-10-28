@@ -109,9 +109,9 @@ formulae from the desktop game's `tools/osm_import.py`
   near them, so `Game.maintainPopulation()` (0.4 s cadence, seeded
   RNG) recycles the far end of each pool around the player: traffic is
   topped up to 10 cars within 220 m, untouched parked cars to 4
-  within 150 m (parked recycling pauses at speed — at a 130 m view
-  the "inside 150 m but outside the view" band vanishes, which is
-  correct behaviour). A recycle spot must sit between (view width ×
+  within 150 m (parked recycling pauses at speed — at the widest
+  85 m view the "inside 150 m but outside the view" band narrows,
+  which is correct behaviour). A recycle spot must sit between (view width ×
   1.2 + 30 m) and the bubble radius — beyond the frame diagonal on
   any aspect ratio — so recycled cars never visibly pop in; the
   driven car and stolen/wrecked cars are never recycled. Cold start
@@ -176,9 +176,11 @@ formulae from the desktop game's `tools/osm_import.py`
   scatter (rejected inside buildings/roads — and, v0.28, water).
   `render/palette.ts` is the shared palette (v0.28: re-saturated
   toward the GTA 1 refs — bold brick/slate/teal, chunky yellow dashes,
-  deep green; plus the `roofgrid` window-grid roof texture for
-  mid/large buildings). The camera is
-  GTA-1 tight — 50 m across on foot, ≤130 m at top speed — with
+  deep green; plus (iteration 4) oblique building boxes — window grids on the
+  exposed south walls, plain grain roofs — retuned against GTA 1
+  gameplay footage). The camera is
+  GTA-1 tight — 30 m across on foot, 50 m at a driving crawl up to
+  85 m at top speed (iteration 4, retuned against gameplay footage) — with
   MapLibre zoom math factored into `render/cameraMath.ts`
   (round-trip unit-tested). Sprites gained inked outlines, glass
   glare and SE drop shadows in `render/sprites.ts`.

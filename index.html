@@ -151,12 +151,25 @@
     <!-- Input readout (v0.27 diagnostics; toggled in the ? overlay). -->
     <div id="input-readout" hidden></div>
 
-    <!-- Pager: only visible when there's a brief or an objective. -->
+    <!-- Vehicle-name banner (iteration 4, GTA 1 style): the blue
+         top-centre bar that names the car as you get in. -->
+    <div id="car-banner" hidden></div>
+
+    <!-- Objective edge arrow (iteration 4, GTA 1 style): points
+         toward the active goal while it's off-screen. -->
+    <div id="obj-arrow" hidden>➤</div>
+
+    <!-- Pager: only visible when there's a brief or an objective.
+         Iteration 4: the footage's bottom line carries a small icon
+         chip at its left — the blue info square. -->
     <div id="pager" hidden>
-      <div class="pager-head">📟 PAGER</div>
-      <p id="hud-brief"></p>
-      <p id="hud-objective"></p>
-      <p id="hud-timer" hidden></p>
+      <div class="pager-chip" aria-hidden="true">i</div>
+      <div class="pager-main">
+        <div class="pager-head">📟 PAGER</div>
+        <p id="hud-brief"></p>
+        <p id="hud-objective"></p>
+        <p id="hud-timer" hidden></p>
+      </div>
     </div>
 
     <!-- Transient centre toast. -->

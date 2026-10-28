@@ -12,7 +12,7 @@ import './style.css';
 import { loadWorld } from './core/world';
 import { Game, DRIVE_HINT, type CarEntity } from './core/game';
 import { CAR_CLASSES } from './core/physics';
-import type { Renderer, RenderFrame } from './core/renderer';
+import type { Renderer, RenderFrame, RenderMarker } from './core/renderer';
 import { dist, type Vec2 } from './core/geo';
 import type { Ped } from './core/peds';
 import type { CopCar } from './core/cops';
@@ -1053,6 +1053,9 @@ async function boot(): Promise<void> {
   const hudTimer = el('hud-timer');
   const hudToast = el('hud-toast');
   const hudGear = el('hud-gear');
+  const carBanner = el('car-banner');
+  const objArrow = el('obj-arrow');
+  let carBannerUntil = 0;
   const stamp = el('stamp');
   const overlay = el('overlay');
   const overlayTitle = el('overlay-title');
@@ -1088,6 +1091,69 @@ async function boot(): Promise<void> {
       hudBrief.textContent = text.slice(0, i);
       if (i >= text.length) window.clearInterval(typeTimer);
     }, 18);
+  }
+
+  // --- iteration 4 HUD: car banner + objective edge arrow -------------------
+
+  /** GTA 1 names the car on entry. Body type beats class beats generic. */
+  function carDisplayName(body: string | undefined, carClass: string | null): string {
+    if (carClass === 'police') return 'Police Cruiser';
+    switch (body) {
+      case 'taxi': return 'Taxi';
+      case 'van': return 'Van';
+      case 'pickup': return 'Pickup';
+    }
+    if (carClass === 'fast') return 'Sports';
+    return 'Saloon';
+  }
+
+  /**
+   * The footage's ever-present goal arrow: while the active target
+   * (mission objective → EXIT → job car → chop shop on a live
+   * vehicle job → nearest payphone when idle) is OFF-screen, a
+   * chevron rides the screen edge pointing at it. On-screen targets
+   * keep their in-world markers and the arrow hides. Kill Frenzies
+   * have no single target point, so they get no arrow.
+   */
+  function updateObjectiveArrow(f: RenderFrame, vehJob: boolean): void {
+    const prio: Array<RenderMarker['kind']> = ['objective', 'exit', 'vehicle'];
+    let target: RenderMarker | undefined;
+    for (const k of prio) {
+      target = f.markers.find((m) => m.kind === k);
+      if (target) break;
+    }
+    if (!target && vehJob) target = f.markers.find((m) => m.kind === 'chopshop');
+    if (!target) {
+      // Idle: the goal chain starts at a payphone — aim at the
+      // nearest one, like the footage's always-on arrow.
+      let best = Infinity;
+      for (const m of f.markers) {
+        if (m.kind !== 'payphone') continue;
+        const d = Math.hypot(m.pos.x - f.camera.x, m.pos.z - f.camera.z);
+        if (d < best) { best = d; target = m; }
+      }
+    }
+    if (!target) {
+      objArrow.hidden = true;
+      return;
+    }
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const ppm = vw / f.viewWidthM;
+    const dx = (target.pos.x - f.camera.x) * ppm;
+    const dy = (target.pos.z - f.camera.z) * ppm;
+    const sx = vw / 2 + dx;
+    const sy = vh / 2 + dy;
+    if (sx > -12 && sx < vw + 12 && sy > -12 && sy < vh + 12) {
+      objArrow.hidden = true; // on-screen: the in-world marker speaks
+      return;
+    }
+    const inset = 30;
+    objArrow.hidden = false;
+    objArrow.dataset.kind = target.kind;
+    objArrow.style.left = `${Math.max(inset, Math.min(vw - inset, sx))}px`;
+    objArrow.style.top = `${Math.max(inset, Math.min(vh - inset, sy))}px`;
+    objArrow.style.transform = `translate(-50%, -50%) rotate(${Math.atan2(dy, dx)}rad)`;
   }
 
   // --- loop ---------------------------------------------------------------
@@ -1140,7 +1206,15 @@ async function boot(): Promise<void> {
     if (!prevInCar && hud.inCar) {
       haptics.enterCar();
       audio.enterCar();
+      // Iteration 4 (GTA 1): the blue banner names the car as you
+      // get in — brief, top-centre, gone in ~2 s.
+      const driven = frameState.entities.find((e) => e.kind === 'car-driven');
+      carBanner.textContent = carDisplayName(driven?.bodyType, hud.carClass);
+      carBanner.hidden = false;
+      carBannerUntil = performance.now() + 2100;
     }
+    if (!carBanner.hidden && performance.now() > carBannerUntil) carBanner.hidden = true;
+    updateObjectiveArrow(frameState, hud.vehJob);
     if (prevInCar && !hud.inCar && hud.phase === 'play') audio.exitCar();
     if (prevInCar !== hud.inCar) {
       syncChromeState();
