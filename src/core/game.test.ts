@@ -520,7 +520,7 @@ describe('FOLLOW iteration 2 — boot cinematic (intro camera)', () => {
     const g = new Game(loadWorld(JSON.parse(downtownRaw)), new MemoryStorage());
     g.beginIntro(390 / 844);
     expect(g.introRunning).toBe(true);
-    // GeoNB bbox ≈ 1.87 km × 1.67 km (plus the river's reach).
+    // Stage 1 GeoNB bbox ≈ 5.4 km × 5.2 km (plus the river's reach).
     expect(g.buildFrame().viewWidthM).toBeGreaterThan(1700);
   });
 });

@@ -284,8 +284,9 @@ that is the point of the seam.
 
 ## Known v0.20 simplifications
 
-- The world loader loads all 1,225 buildings in the dataset (all are
-  Polygons; non-Polygon geometries would be skipped) and 218 of 219 roads
+- The world loader loads all 11,643 buildings in the Stage 1 dataset
+  (all are Polygons; non-Polygon geometries would be skipped) and
+  1,474 of 1,478 roads
   (one sub-4 m stub is dropped).
 - ~~No Wolastoq river polygon in the playable dataset~~ — FIXED in
   v0.28: the Saint John River (Wolastoq) is baked from GeoNB's NBHN

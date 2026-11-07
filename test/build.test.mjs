@@ -33,8 +33,14 @@ test('dist ships the Saint John River as water features (v0.28)', () => {
   const doc = JSON.parse(readFileSync(p, 'utf8'));
   assert.ok(doc.water, 'downtown.json has no water collection');
   assert.ok(doc.water.features.length >= 1, `water features: ${doc.water.features.length}`);
+  // Stage 1: the expanded extract also ships the Nashwaak River,
+  // Nashwaaksis Stream and Kaine Creek — the Saint John River must
+  // still be present, and every feature must be a water polygon.
+  assert.ok(
+    doc.water.features.some((f) => f.properties.NAME1 === 'Saint John River'),
+    'no Saint John River water feature',
+  );
   for (const f of doc.water.features) {
-    assert.equal(f.properties.NAME1, 'Saint John River');
     assert.ok(f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon');
   }
   assert.equal(doc.meta.counts.water, doc.water.features.length);
