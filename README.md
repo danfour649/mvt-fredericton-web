@@ -37,6 +37,29 @@ npm run dev        # http://localhost:5173
   adapter — same game, same data. `?scenario=demo` boots into a scripted
   live-gameplay state (used for screenshots).
 
+## What's new in v0.33 — Stage 1: the city beyond downtown
+
+Zoom out and the city used to end at the downtown pavement: the
+playable extract was one bbox (219 roads, 1,225 buildings). Stage 1
+backports the MVTF6 (desktop) game's street coverage *sensibly* —
+not its 25 MB full-municipality bake, but an expansion of this
+repo's own GeoNB/NBRN pipeline (`tools/build_downtown.py`) to the
+districts the desktop game proved playable: **Northside / Devon
+across both bridges, College Hill / UNB, Forest Hill, wider
+east-west along the river**. Now **1,478 roads and 11,643
+buildings** over ~5.5 × 5.4 km; 99.4% of roads form a single
+routing component, and the bridge derivation rails **15 decks**
+including the 590 m Princess Margaret Bridge (its NBRN segment
+11045395 — the south bbox edge, 45.938, is set by that deck).
+The file is 4.11 MB / 579 KB gzipped (coordinates at 5dp, ~1 m).
+
+The prerequisite that shipped first: a **spatial grid over the
+colliders** (`world.colliderGrid`), so the 180 Hz physics collision
+path tests a handful of nearby buildings instead of the whole
+city — 3.8 µs vs 129.6 µs per query on the expanded dataset,
+results identical to the brute-force scan (seeded equivalence
+sweep in `src/core/spatial.test.ts`).
+
 ## What's new in v0.28 — the river, and a GTA 1 art pass
 
 **#1: "Where's the fucking river?"** Fair cop — it was never in the

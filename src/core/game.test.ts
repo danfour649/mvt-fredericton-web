@@ -389,6 +389,31 @@ describe('v0.29 — first-drive hint, reversing signal, walk cycle', () => {
     expect(walking.heading).toBeCloseTo(0, 5); // facing the way he walks
   });
 
+  it('walkSpeedMul scales the stroll (the FOLLOW jog seam; default 1 = unchanged)', () => {
+    const stroll = newGame();
+    stroll.moveInput = { x: 1, z: 0 };
+    const x0 = stroll.playerPos.x;
+    for (let i = 0; i < 20; i++) stroll.update(0.05);
+    const dStroll = stroll.playerPos.x - x0;
+    expect(dStroll).toBeGreaterThan(5);
+    expect(dStroll).toBeLessThan(5.8);
+    const jog = newGame();
+    jog.walkSpeedMul = 1.75;
+    jog.moveInput = { x: 1, z: 0 };
+    const jx0 = jog.playerPos.x;
+    for (let i = 0; i < 20; i++) jog.update(0.05);
+    expect((jog.playerPos.x - jx0) / dStroll).toBeCloseTo(1.75, 1);
+  });
+
+  it('teleportPlayer lands the player AND the camera on the point (the FOLLOW zip)', () => {
+    const g = newGame();
+    const dest = { x: g.playerPos.x + 900, z: g.playerPos.z - 1400 };
+    g.teleportPlayer(dest);
+    expect(g.playerPos).toEqual(dest);
+    expect(g.playerVel).toEqual({ x: 0, z: 0 });
+    expect(g.buildFrame().camera).toEqual(dest); // no cross-map camera chase
+  });
+
   it('peds carry a walk phase and speed too', () => {
     // The toy world spawns no peds (its roads start >420 m from
     // spawn) — use the real dataset, which has 20 walkers at spawn.
@@ -520,7 +545,7 @@ describe('FOLLOW iteration 2 — boot cinematic (intro camera)', () => {
     const g = new Game(loadWorld(JSON.parse(downtownRaw)), new MemoryStorage());
     g.beginIntro(390 / 844);
     expect(g.introRunning).toBe(true);
-    // GeoNB bbox ≈ 1.87 km × 1.67 km (plus the river's reach).
+    // Stage 1 GeoNB bbox ≈ 5.4 km × 5.2 km (plus the river's reach).
     expect(g.buildFrame().viewWidthM).toBeGreaterThan(1700);
   });
 });

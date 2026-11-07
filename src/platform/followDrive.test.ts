@@ -13,13 +13,14 @@
  * reverse cases, whose law didn't change, sit at ~1.4 m).
  */
 import { describe, expect, it } from 'vitest';
-import { loadWorld, pointInWater, nearestRoadPoint, type WorldModel } from '../core/world';
-import { buildRoadGraph } from '../core/routing';
-import { unproject } from '../core/geo';
-import { CAR_CLASSES, makeCar, stepCar, type CarState } from '../core/physics';
+import { loadWorld, pointInWater, nearestRoadPoint, collideWorld, type WorldModel } from '../core/world';
+import { buildRoadGraph, findRoute, routableDestination } from '../core/routing';
+import { unproject, project, dist } from '../core/geo';
+import { CAR_CLASSES, makeCar, stepCar, moveCircle, type CarState } from '../core/physics';
 import type { Vec2 } from '../core/geo';
 import { shapeSteer } from './stickMath';
 import downtownRaw from '../../public/data/downtown.json?raw';
+import { SPAWN_POS } from '../core/missions';
 import {
   followCarInput,
   followWalkInput,
@@ -28,9 +29,13 @@ import {
   isDoubleTap,
   nearestScreenHit,
   carTapIntent,
+  carHoldToFire,
+  FOLLOW_CAR_HOLD_FIRE_MS,
   planFollowPoints,
   RouteFollower,
   FOLLOW_ARRIVE_RADIUS_M,
+  FOLLOW_JOG_MIN_REMAINING_M,
+  FOLLOW_JOG_MUL,
   FOLLOW_DOUBLE_TAP_MS,
   FOLLOW_DOUBLE_TAP_PX,
   type TapStamp,
@@ -291,19 +296,27 @@ describe('nearestScreenHit — tap precedence (entities over ground)', () => {
   });
 });
 
-describe('carTapIntent — steal it or shoot it', () => {
-  it('next to the car, entry always wins (even armed)', () => {
-    expect(carTapIntent(true, 3.9)).toBe('enter-now');
-    expect(carTapIntent(false, 1)).toBe('enter-now');
+describe('carTapIntent — a car tap ALWAYS means get in', () => {
+  it('next to the car, entry is instant', () => {
+    expect(carTapIntent(3.9)).toBe('enter-now');
+    expect(carTapIntent(1)).toBe('enter-now');
   });
 
-  it('with fists out, a car tap at any range means get in', () => {
-    expect(carTapIntent(false, 30)).toBe('walk-enter');
+  it('a far car tap means walk over and get in, at any range', () => {
+    expect(carTapIntent(30)).toBe('walk-enter');
+    expect(carTapIntent(400)).toBe('walk-enter');
   });
 
-  it('with a gun out, a far car tap is a shot', () => {
-    expect(carTapIntent(true, 12)).toBe('fire');
-    expect(carTapIntent(true, 4.1)).toBe('fire');
+  // Daniel's defect report (Stage 1 play): "once you pick up a
+  // machine gun, you can only shoot at cars, no longer steal
+  // them". The old rule made armed far taps 'fire'; the intent no
+  // longer takes the weapon as an input at all — a tap is entry,
+  // and shooting a car is the HOLD's job (below).
+  it('carHoldToFire: only an armed press held past the threshold shoots', () => {
+    expect(carHoldToFire(true, FOLLOW_CAR_HOLD_FIRE_MS - 1)).toBe(false);
+    expect(carHoldToFire(true, FOLLOW_CAR_HOLD_FIRE_MS)).toBe(true);
+    expect(carHoldToFire(true, 2000)).toBe(true);
+    expect(carHoldToFire(false, 2000)).toBe(false); // fists can't shoot a car
   });
 });
 
@@ -403,6 +416,13 @@ describe('iteration 5 — RouteFollower', () => {
     expect(replans).toBe(1);
     expect(f.gaveUp).toBe(true);
     expect(out).toBeNull();
+  });
+
+  it('remainingM sums the distance to the aim plus every leg after it', () => {
+    const f = new RouteFollower([{ x: 0, z: 0 }, { x: 30, z: 0 }, { x: 30, z: 40 }], { routed: true });
+    expect(f.remainingM({ x: 0, z: 0 })).toBeCloseTo(70); // 0 + 30 + 40
+    f.update({ x: 0, z: 0 }, 0, DT); // settles the aim on (30, 0)
+    expect(f.remainingM({ x: 10, z: 0 })).toBeCloseTo(60); // 20 + 40
   });
 
   it('stuck ladder without a re-plan function advances one waypoint instead', () => {
@@ -574,5 +594,78 @@ describe('iteration 5 — REAL proofs on the downtown extract', () => {
     expect(travelM).toBeGreaterThan(500);
     expect(travelM).toBeLessThan(800); // reference run: 631 m driven
     expect(Math.hypot(to.x - car.pos.x, to.z - car.pos.z)).toBeLessThanOrEqual(2.5);
+  }, 120_000);
+
+  // Stage 1 fallout (Daniel, first play of the expanded city): a
+  // zoomed-out tap sends the WALKER across town. Three defects,
+  // all reproduced in sim before the fix: trips took 7–15 min at
+  // stroll pace; a tap 236 m from the nearest road across the
+  // Nashwaak (Barker's Point) ended in a blind straight leg over
+  // the river — 11 min of bank-grinding, gave up 220 m short; and
+  // a tap inside a house footprint (Marysville) ground its wall
+  // and gave up 7 m short after 14.7 min.
+  it('routableDestination parks unreachable taps at their road snap', () => {
+    const inHouse = project(-66.605, 45.972); // Marysville: inside a footprint
+    expect(collideWorld(world, { ...inHouse }, 0.55)).not.toBeNull();
+    const houseSnap = nearestRoadPoint(world, inHouse)!;
+    expect(dist(routableDestination(world, inHouse), houseSnap.pos)).toBeLessThan(0.01);
+    const route = findRoute(graph, world, { x: -60, z: -290 }, inHouse)!;
+    expect(dist(route[route.length - 1], houseSnap.pos)).toBeLessThan(1.6);
+
+    const acrossRiver = project(-66.615, 45.962); // Barker's Point field
+    const riverSnap = nearestRoadPoint(world, acrossRiver)!;
+    expect(dist(riverSnap.pos, acrossRiver)).toBeGreaterThan(200);
+    expect(dist(routableDestination(world, acrossRiver), riverSnap.pos)).toBeLessThan(0.01);
+
+    const clearTap = project(-66.628, 45.978); // Devon: short, clear leg
+    expect(dist(routableDestination(world, clearTap), clearTap)).toBeLessThan(0.01);
+  });
+
+  it('on-foot cross-town proof: the Barkers Point tap ARRIVES at the street in front (was: gave up 220 m short)', () => {
+    const to = project(-66.615, 45.962);
+    const dest = routableDestination(world, to);
+    let pos: Vec2 = { ...SPAWN_POS };
+    // Production wiring (main.ts): walker skip radii, replan to the
+    // same target, the jog while >250 m of route remains, the final
+    // leg judged against the PLAN's final point (step.aim).
+    const plan = planFollowPoints(graph, world, pos, to);
+    expect(plan.routed).toBe(true);
+    const follower = new RouteFollower(plan.points, {
+      routed: plan.routed,
+      replan: (f) => planFollowPoints(graph, world, f, to).points,
+      skipMinM: 5, skipPerSpeedM: 0.55, skipMaxM: 10,
+    });
+    let arrivedAt: number | null = null;
+    let last = { ...pos };
+    for (let i = 0; i < 900 / DT; i++) {
+      const t = (i + 1) * DT;
+      const speedMag = Math.hypot((pos.x - last.x) / DT, (pos.z - last.z) / DT);
+      const step = follower.update(pos, speedMag, DT);
+      if (!step) break;
+      const spd = 5.4 * (follower.remainingM(pos) > FOLLOW_JOG_MIN_REMAINING_M ? FOLLOW_JOG_MUL : 1);
+      let mx = 0;
+      let mz = 0;
+      if (!step.isFinal) {
+        const d = dist(pos, step.aim);
+        if (d > 1e-6) {
+          mx = (step.aim.x - pos.x) / d;
+          mz = (step.aim.z - pos.z) / d;
+        }
+      } else {
+        const w = followWalkInput(pos, step.aim);
+        if (w.arrived) {
+          arrivedAt = t;
+          break;
+        }
+        mx = w.move.x;
+        mz = w.move.z;
+      }
+      pos = moveCircle(world, pos, mx * spd * DT, mz * spd * DT, 0.55).pos;
+      last = { ...pos };
+    }
+    expect(follower.gaveUp).toBe(false);
+    expect(arrivedAt).not.toBeNull();
+    expect(arrivedAt!).toBeLessThan(480); // reference run: ~401 game-seconds
+    expect(dist(pos, dest)).toBeLessThanOrEqual(2.5);
   }, 120_000);
 });

@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
 """Build public/data/downtown.json for MVT Fredericton Web.
 
-Pulls the downtown Fredericton game dataset (buildings + roads + water)
-from GeoNB's public ArcGIS services — the same sources and bbox as the
-maps-of-nb downtown game-mesh extract (maps-of-nb/scripts/extract_game_mesh.py,
-W -66.652, S 45.955, E -66.628, N 45.97).
+Pulls the Fredericton game dataset (buildings + roads + water)
+from GeoNB's public ArcGIS services — the same sources as the
+maps-of-nb downtown game-mesh extract (maps-of-nb/scripts/extract_game_mesh.py).
+
+STAGE 1 (2026-11-07, MVTF6 backport): the bbox grew from the old
+downtown-only extract (W -66.652, S 45.955, E -66.628, N 45.97;
+219 roads / 1,225 buildings) to greater Fredericton — Northside/
+Devon across both bridges, College Hill / UNB, Forest Hill —
+W -66.675, S 45.938, E -66.605, N 45.985 (1,478 roads / 11,643
+buildings). The south edge is set by the Princess Margaret Bridge:
+MVTF6's deck for it spans lat 45.940-45.943, so any south edge
+north of ~45.943 silently drops the whole crossing (NBRN segment
+11045395). Coordinates are rounded to 5dp (~1 m) — at 6dp the
+expanded file's gzip size grew ~15% for no playable difference.
 
 Differences from the maps-of-nb extractor: no orderByFields (the buildings
 service rejects OBJECTID_1 there with HTTP 400) and the bbox is queried in a
@@ -30,7 +40,7 @@ import json, math, subprocess, sys
 from pathlib import Path
 
 REST = "https://geonb.snb.ca/arcgis/rest/services"
-BBOX = (-66.652, 45.955, -66.628, 45.97)  # W,S,E,N
+BBOX = (-66.675, 45.938, -66.605, 45.985)  # W,S,E,N — Stage 1 (see header)
 LAYERS = {
     "buildings": ("GeoNB_SNB_Buildings", 0, "min_g_elev,max_b_elev"),
     "roads": ("GeoNB_Basemap_NBRN", 1, "Number_Of_Lanes,Route_Name_English_1,Formatted_Street_Name,Func_Road_Class,Speed_Restrictions_Both,Dir_of_Traffic_Flow,Road_Segment_ID"),
@@ -68,7 +78,7 @@ def query_cell(service, layer, fields, env):
             return feats
         offset += len(batch)
 
-def round_coords(obj, nd=6):
+def round_coords(obj, nd=5):
     if isinstance(obj, float):
         return round(obj, nd)
     if isinstance(obj, list):
@@ -180,7 +190,7 @@ def fetch_water():
 
 def main():
     w, s, e, n = BBOX
-    gx, gy = 3, 3
+    gx, gy = 6, 4
     result = {}
     for name, (service, layer, fields) in LAYERS.items():
         seen, feats = set(), []
@@ -203,7 +213,7 @@ def main():
     out = Path(__file__).resolve().parent.parent / "public" / "data" / "downtown.json"
     doc = {
         "meta": {
-            "source": "GeoNB ArcGIS services (GeoNB_SNB_Buildings, GeoNB_Basemap_NBRN, GeoNB_DNR_NBHN water bodies) via tools/build_downtown.py; same bbox/sources as maps-of-nb downtown game-mesh extract",
+            "source": "GeoNB ArcGIS services (GeoNB_SNB_Buildings, GeoNB_Basemap_NBRN, GeoNB_DNR_NBHN water bodies) via tools/build_downtown.py; same sources as maps-of-nb downtown game-mesh extract, Stage 1 expanded bbox",
             "licence": "Open Government Licence - New Brunswick (GeoNB data)",
             "bbox": list(BBOX),
             "counts": {k: len(v["features"]) for k, v in result.items()},

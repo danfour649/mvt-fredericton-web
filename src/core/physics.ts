@@ -21,7 +21,7 @@
  * On-foot movement stays a simple kinematic circle (moveCircle).
  */
 import type { Vec2 } from './geo';
-import { collideBuildings, collideBuildingsN, type WorldModel } from './world';
+import { collideWorld, collideWorldN, type WorldModel } from './world';
 
 export function moveCircle(
   world: WorldModel,
@@ -33,7 +33,7 @@ export function moveCircle(
   const next = { x: pos.x + dx, z: pos.z + dz };
   // Iteration 5: the collider set is buildings + bridge guardrails,
   // so a walker slides along a rail exactly like a wall.
-  const pushed = collideBuildings(world.colliders, next, radius);
+  const pushed = collideWorld(world, next, radius);
   if (pushed) return { pos: pushed, hitBuilding: true };
   return { pos: next, hitBuilding: false };
 }
@@ -314,7 +314,7 @@ export function stepCar(
     // speed or angle meets the rail and slides along the deck
     // instead of leaving it (the v0.29 slide response below does
     // the rest: only the into-rail velocity component dies).
-    const hit = collideBuildingsN(world.colliders, attempted, COLLISION_RADIUS);
+    const hit = collideWorldN(world, attempted, COLLISION_RADIUS);
     if (hit) {
       hitBuilding = true;
       pos = hit.pos;

@@ -90,15 +90,23 @@ describe('water (v0.28)', () => {
     const world = loadWorld(JSON.parse(downtownRaw));
 
     it('carries the Saint John River at river scale', () => {
-      expect(world.water.length).toBeGreaterThanOrEqual(2);
+      // Stage 1: the extract now also carries the Nashwaak River,
+      // Nashwaaksis Stream and Kaine Creek — the Saint John River
+      // remains the dominant body by an order of magnitude.
+      expect(world.water.length).toBeGreaterThanOrEqual(5);
       const total = world.water.reduce((s, w) => s + w.areaM2, 0);
-      expect(total).toBeGreaterThan(1_500_000); // ~1.85 km² baked
-      expect(world.water.every((w) => w.name === 'Saint John River')).toBe(true);
+      expect(total).toBeGreaterThan(4_000_000); // ~4.95 km² baked
+      const saintJohn = world.water
+        .filter((w) => w.name === 'Saint John River')
+        .reduce((s, w) => s + w.areaM2, 0);
+      expect(saintJohn).toBeGreaterThan(3_500_000); // ~4.57 km²
+      expect(world.water.some((w) => w.name === 'Nashwaak River')).toBe(true);
     });
 
     it('the river spans the southern edge of the extract (eastern reach)', () => {
-      // z = 906 m is the bbox south edge (lat 45.955). Across the
-      // riverfront reach the channel touches that edge continuously.
+      // z = 906 m was the old downtown bbox's south edge (lat
+      // 45.955); in the Stage 1 extract it is interior. Across the
+      // riverfront reach the channel runs continuously there.
       for (let x = 850; x <= 1300; x += 50) {
         expect(pointInWater(world, { x, z: 906 }), `x=${x}`).toBe(true);
       }
@@ -207,12 +215,20 @@ describe('bridge guardrails — iteration 5 derivation', () => {
     expect(world.colliders).toBe(world.buildings);
   });
 
-  it('REAL dataset: the whole Westmorland complex is railed, main span over 250 m', () => {
+  it('REAL dataset: the bridge complexes are railed, Westmorland main span over 250 m', () => {
     const world = loadWorld(JSON.parse(downtownRaw));
-    expect(world.bridges.length).toBeGreaterThanOrEqual(8);
-    expect(world.bridges.every((b) => b.roadName.includes('WESTMORLAND'))).toBe(true);
+    // Stage 1: Westmorland is no longer the only complex — the
+    // Princess Margaret Bridge and the Union Street Nashwaak
+    // crossings derive decks too.
+    expect(world.bridges.length).toBeGreaterThanOrEqual(12);
+    const westmorland = world.bridges.filter((b) => b.roadName.includes('WESTMORLAND'));
+    expect(westmorland.length).toBeGreaterThanOrEqual(8);
+    const wmLongest = westmorland.reduce((a, b) => (a.lengthM > b.lengthM ? a : b));
+    expect(wmLongest.lengthM).toBeGreaterThan(250);
+    const pm = world.bridges.filter((b) => b.roadName.includes('PRINCESS MARGARET'));
+    expect(pm.length).toBeGreaterThanOrEqual(1);
+    expect(Math.max(...pm.map((b) => b.lengthM))).toBeGreaterThan(500);
     const longest = world.bridges.reduce((a, b) => (a.lengthM > b.lengthM ? a : b));
-    expect(longest.lengthM).toBeGreaterThan(250);
     expect(longest.rails.length).toBeGreaterThanOrEqual(2);
     const railCount = world.bridges.reduce((s, b) => s + b.rails.length, 0);
     expect(world.barriers.length).toBe(railCount);
@@ -228,17 +244,47 @@ describe('bridge guardrails — iteration 5 derivation', () => {
       const t = len2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.z - a.z) * abz) / len2)) : 0;
       return Math.hypot(p.x - (a.x + abx * t), p.z - (a.z + abz * t));
     };
+    // Stage 1 made the old all-pairs scan (rail vertices x every
+    // road segment in the city) take ~45 s. Bucket road segments
+    // into 50 m cells first and only measure against segments near
+    // the vertex: a carriageway violation needs d <= widthM/2
+    // (<= ~9 m), far inside the 40 m query box, so any segment that
+    // could violate is necessarily in the queried cells. The
+    // assertion itself is unchanged.
+    const CELL = 50, QUERY = 40;
+    type Seg = { r: (typeof world.roads)[number]; a: { x: number; z: number }; b: { x: number; z: number } };
+    const segCells = new Map<string, Seg[]>();
+    for (const r of world.roads) {
+      for (let i = 0; i < r.path.length - 1; i++) {
+        const seg: Seg = { r, a: r.path[i], b: r.path[i + 1] };
+        const x0 = Math.floor(Math.min(seg.a.x, seg.b.x) / CELL), x1 = Math.floor(Math.max(seg.a.x, seg.b.x) / CELL);
+        const z0 = Math.floor(Math.min(seg.a.z, seg.b.z) / CELL), z1 = Math.floor(Math.max(seg.a.z, seg.b.z) / CELL);
+        for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) {
+          const key = `${x},${z}`;
+          const arr = segCells.get(key);
+          if (arr) arr.push(seg); else segCells.set(key, [seg]);
+        }
+      }
+    }
     for (const span of world.bridges) {
       for (const rail of span.rails) {
         for (const p of rail) {
-          for (const r of world.roads) {
-            if (r === span.road) continue;
-            let d = Infinity;
-            for (let i = 0; i < r.path.length - 1; i++) d = Math.min(d, segDist(p, r.path[i], r.path[i + 1]));
+          const near = new Map<Seg['r'], number>();
+          const x0 = Math.floor((p.x - QUERY) / CELL), x1 = Math.floor((p.x + QUERY) / CELL);
+          const z0 = Math.floor((p.z - QUERY) / CELL), z1 = Math.floor((p.z + QUERY) / CELL);
+          for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) {
+            for (const seg of segCells.get(`${x},${z}`) ?? []) {
+              if (seg.r === span.road) continue;
+              const d = segDist(p, seg.a, seg.b);
+              const prev = near.get(seg.r);
+              if (prev === undefined || d < prev) near.set(seg.r, d);
+            }
+          }
+          for (const [r, d] of near) {
             expect(d).toBeGreaterThan(r.widthM / 2 - 0.05);
           }
         }
       }
     }
-  });
+  }, 30_000);
 });

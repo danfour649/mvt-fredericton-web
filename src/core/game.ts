@@ -295,6 +295,10 @@ export class Game {
   playerPos: Vec2 = { ...SPAWN_POS };
   playerHeading = 0;
   playerVel: Vec2 = { x: 0, z: 0 };
+  /** Walk-speed multiplier (1 = stroll). The FOLLOW scheme raises
+   *  it for the jog on long on-foot map picks (followDrive's
+   *  FOLLOW_JOG_* rule, applied in main.ts); nothing else does. */
+  walkSpeedMul = 1;
   cars: CarEntity[] = [];
   cops: CopCar[] = [];
   peds: Ped[] = [];
@@ -905,6 +909,16 @@ export class Game {
     this.persist();
   }
 
+  /** Place the on-foot player at `pos` instantly, camera snapped
+   *  onto them — the respawn treatment, without the respawn. The
+   *  FOLLOW zip (long map picks) is the caller; population and
+   *  traffic bubbles re-anchor off playerPos on their own. */
+  teleportPlayer(pos: Vec2): void {
+    this.playerPos = { ...pos };
+    this.playerVel = { x: 0, z: 0 };
+    this.camPos = { ...pos };
+  }
+
   // --- mission events -------------------------------------------------------
 
   private afterMissionEvents(): void {
@@ -1436,8 +1450,8 @@ export class Game {
       const moved = moveCircle(
         this.world,
         this.playerPos,
-        nx * WALK_SPEED * dt,
-        nz * WALK_SPEED * dt,
+        nx * WALK_SPEED * this.walkSpeedMul * dt,
+        nz * WALK_SPEED * this.walkSpeedMul * dt,
         0.55,
       );
       this.playerPos = moved.pos;
