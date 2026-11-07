@@ -9,7 +9,7 @@
  * the touch controls.
  */
 import './style.css';
-import { loadWorld } from './core/world';
+import { loadWorld, collideWorld } from './core/world';
 import { Game, DRIVE_HINT, type CarEntity } from './core/game';
 import { CAR_CLASSES } from './core/physics';
 import type { Renderer, RenderFrame, RenderMarker } from './core/renderer';
@@ -470,7 +470,7 @@ async function boot(): Promise<void> {
     const t = e.target as HTMLElement | null;
     if (!t || typeof t.closest !== 'function') return false;
     if (t.closest('button, input, select, textarea, label, a')) return false;
-    if (t.closest('#help, #overlay, #loading')) return false;
+    if (t.closest('#help, #overlay, #loading, #pager')) return false;
     return true;
   }
   function applyDesiredZoom(v: number): void {
@@ -586,7 +586,7 @@ async function boot(): Promise<void> {
     const t = e.target as HTMLElement | null;
     if (!t || typeof t.closest !== 'function') return false;
     if (t.closest('button, input, select, textarea, label, a')) return false;
-    if (t.closest('#help, #overlay, #loading')) return false;
+    if (t.closest('#help, #overlay, #loading, #pager')) return false;
     return true;
   }
   function followPointAt(clientX: number, clientY: number): void {
@@ -1207,15 +1207,27 @@ async function boot(): Promise<void> {
             // the whole trip lands inside Daniel's 5-second bar
             // however far the tap was. Entity picks never zip.
             if (
-              step && followRoute?.routed && followTarget.kind === 'point' &&
+              step && followRoute?.routed &&
+              (followTarget.kind === 'point' || followTarget.kind === 'phone') &&
               followPointerId === -1 && game.phase === 'play' &&
               followRoute.remainingM(game.playerPos) > FOLLOW_ZIP_MIN_REMAINING_M
             ) {
-              game.teleportPlayer(followRoute.finalPos);
+              const zipKind = followTarget.kind;
+              // A phone target lands AT the phone (pushed out of
+              // any footprint), inside the 7 m interact radius —
+              // the route's road snap can sit farther than that,
+              // and a mission that doesn't start on landing is a
+              // zip that didn't finish the job.
+              const zipDest =
+                zipKind === 'phone'
+                  ? (collideWorld(world, { ...targetPos }, 0.55) ?? { ...targetPos })
+                  : followRoute.finalPos;
+              game.teleportPlayer(zipDest);
               followArrivedRouted = true;
               followTarget = null;
               followRoute = null;
               haptics.tick();
+              if (zipKind === 'phone') interact();
             } else if (!step) {
               followTarget = null;
               followRoute = null;
@@ -1293,6 +1305,45 @@ async function boot(): Promise<void> {
   const hudGear = el('hud-gear');
   const carBanner = el('car-banner');
   const objArrow = el('obj-arrow');
+  // The pager is the mission button (Daniel: "the mission icon
+  // no longer works — clicking it does nothing"; it had been
+  // pointer-events:none since v0.25). A tap sends the follow
+  // scheme to the mission: the running objective if there is one,
+  // else the nearest payphone with a mission waiting. Far ones
+  // ZIP like any far pick (phone targets zip + interact on
+  // landing), so the button reads: take me to the mission.
+  pager.addEventListener('click', () => {
+    if (game.phase !== 'play') return;
+    const step = game.missions.currentStep;
+    if (game.missions.active && step?.pos) {
+      followTarget = {
+        kind: step.kind === 'interact' ? 'phone' : 'point',
+        pos: step.pos,
+      };
+      followRoute = null;
+      followPlannedFor = null;
+      haptics.tick();
+      return;
+    }
+    if (!game.missions.active) {
+      const anchorPos = game.drivenCar ? game.drivenCar.pos : game.playerPos;
+      let bestPos: Vec2 | null = null;
+      let bestD = Infinity;
+      for (const m of game.missions.available()) {
+        const d = dist(anchorPos, m.startPos);
+        if (d < bestD) {
+          bestD = d;
+          bestPos = m.startPos;
+        }
+      }
+      if (bestPos) {
+        followTarget = { kind: 'phone', pos: bestPos };
+        followRoute = null;
+        followPlannedFor = null;
+        haptics.tick();
+      }
+    }
+  });
   let carBannerUntil = 0;
   const stamp = el('stamp');
   const overlay = el('overlay');
