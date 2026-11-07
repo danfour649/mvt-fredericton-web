@@ -7,7 +7,7 @@
  * in tools/drive-metrics.md.
  */
 import { describe, it, expect } from 'vitest';
-import { loadWorld, type WorldModel, type Building } from './world';
+import { loadWorld, buildColliderGrid, type WorldModel, type Building } from './world';
 import { makeCar, stepCar, type CarInput, type CarState } from './physics';
 
 const DT = 1 / 60;
@@ -258,7 +258,7 @@ function wallWorld(): WorldModel {
     polygon, heightM: 10, center: { x: 13, z: 0 },
     minX: 10, maxX: 16, minZ: -40, maxZ: 40,
   };
-  return { buildings: [b], roads: [], water: [], bridges: [], barriers: [], colliders: [b], bounds: { minX: -1e3, maxX: 1e3, minZ: -1e3, maxZ: 1e3 } };
+  return { buildings: [b], roads: [], water: [], bridges: [], barriers: [], colliders: [b], colliderGrid: buildColliderGrid([b]), bounds: { minX: -1e3, maxX: 1e3, minZ: -1e3, maxZ: 1e3 } };
 }
 
 function runWorld(world: WorldModel, car: CarState, input: CarInput, seconds: number, onStep?: (c: CarState, t: number) => void): CarState {

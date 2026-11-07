@@ -93,7 +93,68 @@ export interface WorldModel {
   /** Everything the collision path tests against: buildings +
    *  barriers, precomputed so physics never allocates per substep. */
   colliders: Building[];
+  /** Stage 1 backport: uniform spatial grid over `colliders`, built
+   *  once at load. The collision hot path (car physics at 180 Hz)
+   *  tests only the colliders near the circle instead of scanning
+   *  the whole city — with the expanded Stage 1 dataset (11k+
+   *  buildings) the full scan is no longer affordable. Candidate
+   *  order is the original `colliders` order, so results are
+   *  identical to the brute-force scan (pinned by spatial tests). */
+  colliderGrid: ColliderGrid;
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
+}
+
+/** Uniform grid over a collider set: each collider's index is filed
+ *  in every cell its bbox overlaps. */
+export interface ColliderGrid {
+  cellM: number;
+  cells: Map<string, number[]>;
+}
+
+/** Grid cell size, metres. City blocks here run ~80-100 m; 64 m
+ *  keeps a query circle (r <= ~3 m) inside 1-4 cells while a giant
+ *  footprint (max ~200 m) still spans only a handful. */
+export const COLLIDER_CELL_M = 64;
+
+export function buildColliderGrid(colliders: Building[]): ColliderGrid {
+  const cells = new Map<string, number[]>();
+  const c = COLLIDER_CELL_M;
+  colliders.forEach((b, i) => {
+    const x0 = Math.floor(b.minX / c), x1 = Math.floor(b.maxX / c);
+    const z0 = Math.floor(b.minZ / c), z1 = Math.floor(b.maxZ / c);
+    for (let x = x0; x <= x1; x++) {
+      for (let z = z0; z <= z1; z++) {
+        const key = `${x},${z}`;
+        const arr = cells.get(key);
+        if (arr) arr.push(i);
+        else cells.set(key, [i]);
+      }
+    }
+  });
+  return { cellM: c, cells };
+}
+
+/** The colliders that could touch the circle at `pos` with radius
+ *  `r`: those filed in the cells the circle's bbox overlaps, in
+ *  original `colliders` order (the brute-force result depends on
+ *  that order, so the grid preserves it exactly). */
+export function colliderCandidates(
+  grid: ColliderGrid,
+  colliders: Building[],
+  pos: Vec2,
+  r: number,
+): Building[] {
+  const c = grid.cellM;
+  const x0 = Math.floor((pos.x - r) / c), x1 = Math.floor((pos.x + r) / c);
+  const z0 = Math.floor((pos.z - r) / c), z1 = Math.floor((pos.z + r) / c);
+  const idx = new Set<number>();
+  for (let x = x0; x <= x1; x++) {
+    for (let z = z0; z <= z1; z++) {
+      const arr = grid.cells.get(`${x},${z}`);
+      if (arr) for (const i of arr) idx.add(i);
+    }
+  }
+  return [...idx].sort((a, b) => a - b).map((i) => colliders[i]);
 }
 
 interface DowntownDoc {
@@ -221,12 +282,14 @@ export function loadWorld(doc: unknown): WorldModel {
   // roads × water geometry just parsed (see deriveBridges).
   const partial: WorldModel = {
     buildings, roads, water,
-    bridges: [], barriers: [], colliders: buildings, bounds,
+    bridges: [], barriers: [], colliders: buildings,
+    colliderGrid: buildColliderGrid(buildings), bounds,
   };
   const { bridges, barriers } = deriveBridges(partial);
   partial.bridges = bridges;
   partial.barriers = barriers;
   partial.colliders = barriers.length ? [...buildings, ...barriers] : buildings;
+  partial.colliderGrid = buildColliderGrid(partial.colliders);
   return partial;
 }
 
@@ -541,6 +604,27 @@ export function collideBuildings(buildings: Building[], pos: Vec2, r: number): V
  * arc clipped the wall lost its escape velocity every substep.
  */
 export function collideBuildingsN(buildings: Building[], pos: Vec2, r: number): CollisionHit | null {
+  return collideList(buildings, pos, r);
+}
+
+/**
+ * Grid-accelerated collision against a whole world: identical
+ * result to `collideBuildingsN(world.colliders, pos, r)` (the grid
+ * returns a superset of the colliders the brute-force bbox reject
+ * would pass, in the same order), but only tests the handful of
+ * colliders near the circle. This is the physics hot path.
+ */
+export function collideWorldN(world: WorldModel, pos: Vec2, r: number): CollisionHit | null {
+  return collideList(colliderCandidates(world.colliderGrid, world.colliders, pos, r), pos, r);
+}
+
+/** `collideWorldN` without the normal, for circle movers. */
+export function collideWorld(world: WorldModel, pos: Vec2, r: number): Vec2 | null {
+  const hit = collideWorldN(world, pos, r);
+  return hit ? hit.pos : null;
+}
+
+function collideList(buildings: Building[], pos: Vec2, r: number): CollisionHit | null {
   let result: Vec2 | null = null;
   let resultNormal: Vec2 = { x: 1, z: 0 };
   let resultDepth = -1;

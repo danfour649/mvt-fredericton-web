@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { WorldModel, Road } from '../core/world';
-import { pointInPolygon, pointInWater } from '../core/world';
+import { pointInPolygon, pointInWater, buildColliderGrid } from '../core/world';
 import { buildRoadGraph } from '../core/routing';
 import { segmentRoof } from './segment';
 import { shadowRing, roofClutter, crosswalkStripes, scatterTrees, SHADOW_OFFSET } from './dressing';
@@ -90,7 +90,7 @@ describe('crosswalks', () => {
     buildings: [],
     roads: [ew, ew2, ns],
     water: [],
-    bridges: [], barriers: [], colliders: [],
+    bridges: [], barriers: [], colliders: [], colliderGrid: buildColliderGrid([]),
     bounds: { minX: -60, maxX: 60, minZ: 0, maxZ: 60 },
   };
 
@@ -107,7 +107,7 @@ describe('crosswalks', () => {
   });
 
   it('a single dead-end road gets no crosswalk', () => {
-    const lone: WorldModel = { buildings: [], roads: [ew], water: [], bridges: [], barriers: [], colliders: [], bounds: world.bounds };
+    const lone: WorldModel = { buildings: [], roads: [ew], water: [], bridges: [], barriers: [], colliders: [], colliderGrid: buildColliderGrid([]), bounds: world.bounds };
     expect(crosswalkStripes(buildRoadGraph(lone))).toEqual([]);
   });
 });
@@ -119,7 +119,7 @@ describe('street trees', () => {
     buildings: [blocker],
     roads: [street],
     water: [],
-    bridges: [], barriers: [], colliders: [blocker],
+    bridges: [], barriers: [], colliders: [blocker], colliderGrid: buildColliderGrid([blocker]),
     bounds: { minX: -120, maxX: 120, minZ: -20, maxZ: 20 },
   };
 
@@ -161,7 +161,7 @@ describe('street trees', () => {
           minX: -130, maxX: 130, minZ: 5, maxZ: 45,
         },
       ],
-      bridges: [], barriers: [], colliders: [],
+      bridges: [], barriers: [], colliders: [], colliderGrid: buildColliderGrid([]),
       bounds: { minX: -120, maxX: 120, minZ: -20, maxZ: 45 },
     };
     const trees = scatterTrees(riverWorld);
