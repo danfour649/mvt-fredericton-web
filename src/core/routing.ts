@@ -13,7 +13,14 @@
  * a given world.
  */
 import { dist, type Vec2 } from './geo';
-import { nearestRoadPoint, pointAlongRoad, type Road, type WorldModel } from './world';
+import {
+  collideWorld,
+  nearestRoadPoint,
+  pointAlongRoad,
+  pointInWater,
+  type Road,
+  type WorldModel,
+} from './world';
 
 export interface JunctionEdge {
   road: Road;
@@ -234,29 +241,86 @@ function buildAdjacency(graph: RoadGraph): Adj[][] {
   return adj;
 }
 
+/** Final off-road legs up to this length (m) are trusted when clear. */
+export const ROUTE_DEST_FREE_LEG_M = 30;
+
+/** Is `p` standing on a road surface (the game's own bridge-deck
+ *  test: over water but on a road is deck, not drowning)? */
+function onRoadSurface(world: WorldModel, p: Vec2): boolean {
+  const n = nearestRoadPoint(world, p);
+  return !!n && dist(p, n.pos) <= n.road.widthM / 2 + 1.0;
+}
+
+/** Can a mover actually STAND at `p`? Not inside a building
+ *  footprint, not in open water (a bridge deck over water is fine). */
+function standable(world: WorldModel, p: Vec2): boolean {
+  if (collideWorld(world, { ...p }, 0.55) !== null) return false;
+  if (pointInWater(world, p) && !onRoadSurface(world, p)) return false;
+  return true;
+}
+
+/** Is the straight leg a→b obstructed for a mover on the ground?
+ *  Samples every few metres: a building in the way, or open water
+ *  with no road surface under it (a riverbank final leg used to
+ *  grind the FOLLOW walker against the Nashwaak for a quarter of
+ *  an hour before the stuck ladder gave up). */
+function legObstructed(world: WorldModel, a: Vec2, b: Vec2): boolean {
+  const d = dist(a, b);
+  const n = Math.max(1, Math.ceil(d / 5));
+  for (let i = 1; i < n; i++) {
+    const p = { x: a.x + ((b.x - a.x) * i) / n, z: a.z + ((b.z - a.z) * i) / n };
+    if (!standable(world, p)) return true;
+  }
+  return false;
+}
+
+/**
+ * The destination a route can actually END at. A map tap lands
+ * where the finger fell — inside a house footprint, in the river,
+ * or 200+ m from the nearest road across open water — and a mover
+ * sent to the raw point grinds against a wall or a riverbank
+ * until the stuck ladder surrenders metres short. When the tap
+ * itself is unstandable, or the off-road leg from its road snap
+ * is long AND obstructed, the route ends at the snap instead:
+ * the street in front of the place you tapped. Clear legs of any
+ * length (a tap in an open field) keep the exact point.
+ */
+export function routableDestination(world: WorldModel, to: Vec2): Vec2 {
+  const snap = nearestRoadPoint(world, to);
+  if (!snap) return to;
+  if (!standable(world, to)) return { ...snap.pos };
+  if (dist(snap.pos, to) > ROUTE_DEST_FREE_LEG_M && legObstructed(world, snap.pos, to)) {
+    return { ...snap.pos };
+  }
+  return to;
+}
+
 /**
  * Route from `from` to `to` over the road graph (see header).
- * Returns pursuit waypoints ending exactly at `to`, or null when
- * no road route exists (different components, a road with no
- * graph nodes, an empty world). Pure and deterministic.
+ * Returns pursuit waypoints ending at the routable destination
+ * for `to` (the point itself when a mover can stand there and
+ * reach it, else its road snap), or null when no road route
+ * exists (different components, a road with no graph nodes, an
+ * empty world). Pure and deterministic.
  */
 export function findRoute(graph: RoadGraph, world: WorldModel, from: Vec2, to: Vec2): Vec2[] | null {
   if (!graph.nodes.length || !world.roads.length) return null;
   const fromSnap = nearestRoadPoint(world, from);
   const toSnap = nearestRoadPoint(world, to);
   if (!fromSnap || !toSnap) return null;
+  const dest = routableDestination(world, to);
   const fromRoad = fromSnap.road;
   const toRoad = toSnap.road;
   const fromAlong = closestAlong(fromRoad, from);
-  const toAlong = closestAlong(toRoad, to);
+  const toAlong = closestAlong(toRoad, dest);
 
   const assemble = (pts: Vec2[]): Vec2[] => {
     const out: Vec2[] = [];
     for (const p of pts) {
       if (!out.length || dist(out[out.length - 1], p) > 1.5) out.push(p);
     }
-    // The exact target always closes the route.
-    if (!out.length || dist(out[out.length - 1], to) > 0.01) out.push({ ...to });
+    // The routable destination always closes the route.
+    if (!out.length || dist(out[out.length - 1], dest) > 0.01) out.push({ ...dest });
     return out;
   };
 

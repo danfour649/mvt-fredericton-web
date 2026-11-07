@@ -35,13 +35,21 @@
 
 import type { Vec2 } from '../core/geo';
 import { dist } from '../core/geo';
-import { findRoute, type RoadGraph } from '../core/routing';
+import { findRoute, routableDestination, type RoadGraph } from '../core/routing';
 import type { WorldModel } from '../core/world';
 
 /** Distance at which the car is declared ON the point (m). */
 export const FOLLOW_ARRIVE_RADIUS_M = 2.2;
 /** On-foot arrive distance (m) — walking stops this close. */
 export const FOLLOW_WALK_ARRIVE_M = 0.9;
+/** On foot with more route than this ahead (m), the walker breaks
+ *  into a jog — a cross-town map pick at stroll pace is a quarter
+ *  hour of thumb-watching (the Stage 1 city is ~5.7 km across).
+ *  The multiplier scales the core's walk speed (5.4 → ~9.5 m/s);
+ *  main.ts applies it through Game.walkSpeedMul ONLY while a far
+ *  follow target is live on foot — ordinary walking never jogs. */
+export const FOLLOW_JOG_MIN_REMAINING_M = 250;
+export const FOLLOW_JOG_MUL = 1.75;
 /** Tap-the-car stop: a tap this close to the car just stops it (m). */
 export const FOLLOW_STOP_TAP_M = 3.5;
 /** Rear targets farther than this are looped to, not reversed to (m). */
@@ -244,7 +252,10 @@ export function planFollowPoints(
     const route = findRoute(graph, world, from, to);
     if (route && route.length) return { points: route, routed: true };
   }
-  return { points: [{ ...to }], routed: false };
+  // Near tap (or unroutable far one): the point itself — unless no
+  // mover can stand there (a tap inside a house, in the river), in
+  // which case the road snap in front of it is the destination.
+  return { points: [routableDestination(world, to)], routed: false };
 }
 
 export interface RouteFollowerOpts {
@@ -317,6 +328,17 @@ export class RouteFollower {
 
   get finalPos(): Vec2 {
     return this.points[this.points.length - 1];
+  }
+
+  /** Route distance still ahead of `pos` (m): to the current aim,
+   *  then along every remaining leg. The on-foot jog rule reads it. */
+  remainingM(pos: Vec2): number {
+    if (this.gaveUp || this.idx >= this.points.length) return 0;
+    let d = dist(pos, this.points[this.idx]);
+    for (let i = this.idx; i < this.points.length - 1; i++) {
+      d += dist(this.points[i], this.points[i + 1]);
+    }
+    return d;
   }
 
   get currentAim(): Vec2 | null {

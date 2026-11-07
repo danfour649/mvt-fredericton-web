@@ -46,6 +46,8 @@ import {
   RouteFollower,
   FOLLOW_STOP_TAP_M,
   FOLLOW_CAR_ENTER_M,
+  FOLLOW_JOG_MIN_REMAINING_M,
+  FOLLOW_JOG_MUL,
   FOLLOW_DRIFT_PULSE_MS,
   FOLLOW_EXIT_MAX_SPEED_MPS,
   type TapStamp,
@@ -538,19 +540,26 @@ async function boot(): Promise<void> {
    * differ by context: a car at speed blows through junction
    * centres; a walker threads them.
    */
+  /** The target position the live plan was built for. The plan's
+   *  own final point can sit far from it (routableDestination
+   *  parks unreachable taps at their road snap), so plan freshness
+   *  keys on the TARGET, never on the plan's final point. */
+  let followPlannedFor: Vec2 | null = null;
   function ensureFollowRoute(anchor: Vec2, onFoot: boolean): void {
     const target = followTargetPos();
     if (!target) {
       followRoute = null;
+      followPlannedFor = null;
       return;
     }
-    if (followRoute && dist(followRoute.finalPos, target) <= 6) return;
+    if (followRoute && followPlannedFor && dist(followPlannedFor, target) <= 6) return;
+    followPlannedFor = { ...target };
     const plan = planFollowPoints(game.roadGraph, world, anchor, target);
     followRoute = new RouteFollower(plan.points, {
       routed: plan.routed,
       replan: (from) => planFollowPoints(game.roadGraph, world, from, target).points,
       ...(onFoot
-        ? { skipMinM: 2.5, skipPerSpeedM: 0.3, skipMaxM: 5 }
+        ? { skipMinM: 5, skipPerSpeedM: 0.55, skipMaxM: 10 }
         : { skipMinM: 7, skipPerSpeedM: 0.35, skipMaxM: 16 }),
     });
   }
@@ -1116,6 +1125,7 @@ async function boot(): Promise<void> {
       game.moveInput = { x: 0, z: 0 };
       game.fireHeld = false; // no drive-by shooting — GTA 1 rules
     } else {
+      game.walkSpeedMul = 1; // the follow-jog below may raise it
       let mx = maxAbs(down('KeyD', 'ArrowRight') - down('KeyA', 'ArrowLeft'), pad?.moveX ?? 0);
       let mz = maxAbs(down('KeyS', 'ArrowDown') - down('KeyW', 'ArrowUp'), pad?.moveZ ?? 0);
       // v0.31: under the tilt scheme the stick still walks the
@@ -1156,6 +1166,15 @@ async function boot(): Promise<void> {
             ensureFollowRoute(game.playerPos, true);
             const speedMag = Math.hypot(game.playerVel.x, game.playerVel.z);
             const step = followRoute?.update(game.playerPos, speedMag, gatherDtS) ?? null;
+            // A long trip ahead → jog, don't stroll (followDrive
+            // FOLLOW_JOG_*): cross-town at walk pace reads as
+            // wandering, however straight the line.
+            if (
+              step && followRoute &&
+              followRoute.remainingM(game.playerPos) > FOLLOW_JOG_MIN_REMAINING_M
+            ) {
+              game.walkSpeedMul = FOLLOW_JOG_MUL;
+            }
             if (!step) {
               followTarget = null;
               followRoute = null;
@@ -1173,7 +1192,14 @@ async function boot(): Promise<void> {
               ) {
                 arrived = true; // close enough — the door's right there
               } else {
-                const w = followWalkInput(game.playerPos, targetPos);
+                // Point targets arrive at the PLAN's final point,
+                // which routableDestination may have parked at the
+                // road snap in front of an unreachable tap (inside
+                // a house, across the river) — aiming at the raw
+                // tap there grinds the wall forever. Entity targets
+                // (car/phone) keep their live positions.
+                const destPos = followTarget.kind === 'point' ? step.aim : targetPos;
+                const w = followWalkInput(game.playerPos, destPos);
                 if (w.arrived) arrived = true;
                 else {
                   mx = maxAbs(mx, w.move.x);
