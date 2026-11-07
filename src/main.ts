@@ -48,6 +48,8 @@ import {
   FOLLOW_CAR_ENTER_M,
   FOLLOW_JOG_MIN_REMAINING_M,
   FOLLOW_JOG_MUL,
+  FOLLOW_ZIP_MIN_REMAINING_M,
+  carHoldToFire,
   FOLLOW_DRIFT_PULSE_MS,
   FOLLOW_EXIT_MAX_SPEED_MPS,
   type TapStamp,
@@ -433,6 +435,10 @@ async function boot(): Promise<void> {
   let followDriftUntil = 0;
   /** Held-tap shooting: the entity under the finger, tracked live. */
   let followFire: { pos: () => Vec2; live: () => boolean } | null = null;
+  /** A press on a car, held with a gun out: the tap meant "get
+   *  in", but holding converts it to fire at that car (the frame
+   *  loop checks carHoldToFire). Cleared by any new tap/release. */
+  let followCarHold: { car: CarEntity; since: number } | null = null;
   let followFireDown = false;
   /** A tap too fast to span a frame still fires: latch the trigger
    *  for a few frames after the press. */
@@ -641,6 +647,7 @@ async function boot(): Promise<void> {
     return nearestScreenHit(hits, clientX, clientY);
   }
   function startFollowFire(ref: { pos: () => Vec2; live: () => boolean }): void {
+    followCarHold = null;
     followFire = ref;
     followFireDown = true;
     followFireUntil = performance.now() + 130;
@@ -650,6 +657,7 @@ async function boot(): Promise<void> {
   }
   /** One follow tap, fully interpreted. */
   function handleFollowTap(clientX: number, clientY: number): void {
+    followCarHold = null; // a fresh tap supersedes any pending hold
     zoomReturn = null; // a fresh pick outranks the arrival dive
     const now = performance.now();
     const dbl = isDoubleTap(lastFollowTap, now, clientX, clientY);
@@ -685,21 +693,19 @@ async function boot(): Promise<void> {
     }
     if (hit?.kind === 'car') {
       const car = hit.car;
-      const intent = carTapIntent(
-        game.loadout.def.id !== 'fists',
-        dist(game.playerPos, car.pos),
-      );
+      const intent = carTapIntent(dist(game.playerPos, car.pos));
       if (intent === 'enter-now') {
         followTarget = null;
         lastFollowTap = null;
         interact();
         return;
       }
-      if (intent === 'fire') {
-        startFollowFire({ pos: () => car.pos, live: () => !car.wrecked });
-        return;
-      }
+      // Walk over and get in — gun or no gun, a car TAP is always
+      // an entry order. If the finger stays down with a gun out,
+      // the hold converts to fire at the car (frame loop).
       followTarget = { kind: 'car', car };
+      followCarHold =
+        game.loadout.def.id !== 'fists' ? { car, since: now } : null;
       return;
     }
     if (hit?.kind === 'phone') {
@@ -720,12 +726,14 @@ async function boot(): Promise<void> {
     // While a fire tap is held the finger is a trigger, not a
     // steering wheel — dragging never retargets a shot.
     if (e.pointerId !== followPointerId || scheme !== 'follow' || followFire) return;
+    if (followCarHold) return; // a car press is a press, not a drag
     followPointAt(e.clientX, e.clientY);
   });
   const followTapEnd = (e: PointerEvent): void => {
     if (e.pointerId === followPointerId) {
       followPointerId = -1;
       followFireDown = false;
+      followCarHold = null;
     }
   };
   window.addEventListener('pointerup', followTapEnd);
@@ -1149,6 +1157,23 @@ async function boot(): Promise<void> {
       // trigger (it owns the facing and suppresses walking); a
       // car/phone target walks there and interacts on arrival;
       // a point target just walks.
+      // A press still held on a car with a gun out becomes the
+      // shot (carHoldToFire) — the tap itself only ever said
+      // "get in"; the hold is the trigger, as everywhere in FOLLOW.
+      if (
+        scheme === 'follow' && !game.drivenCar && followCarHold &&
+        followPointerId !== -1 &&
+        carHoldToFire(
+          game.loadout.def.id !== 'fists',
+          performance.now() - followCarHold.since,
+        )
+      ) {
+        const heldCar = followCarHold.car;
+        followCarHold = null;
+        if (!heldCar.wrecked) {
+          startFollowFire({ pos: () => heldCar.pos, live: () => !heldCar.wrecked });
+        }
+      }
       const followFiring = scheme === 'follow' && followFireActive();
       if (scheme === 'follow') {
         if (followFiring && followFire) {
@@ -1175,7 +1200,23 @@ async function boot(): Promise<void> {
             ) {
               game.walkSpeedMul = FOLLOW_JOG_MUL;
             }
-            if (!step) {
+            // The zip: a far POINT pick with the finger lifted is
+            // a place, not a hike — land the player at the route's
+            // end now; the arrival dive brings the camera down to
+            // street level in ~2 s (followArrivedRouted below), so
+            // the whole trip lands inside Daniel's 5-second bar
+            // however far the tap was. Entity picks never zip.
+            if (
+              step && followRoute?.routed && followTarget.kind === 'point' &&
+              followPointerId === -1 && game.phase === 'play' &&
+              followRoute.remainingM(game.playerPos) > FOLLOW_ZIP_MIN_REMAINING_M
+            ) {
+              game.teleportPlayer(followRoute.finalPos);
+              followArrivedRouted = true;
+              followTarget = null;
+              followRoute = null;
+              haptics.tick();
+            } else if (!step) {
               followTarget = null;
               followRoute = null;
             } else if (!step.isFinal) {

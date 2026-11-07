@@ -405,6 +405,15 @@ describe('v0.29 — first-drive hint, reversing signal, walk cycle', () => {
     expect((jog.playerPos.x - jx0) / dStroll).toBeCloseTo(1.75, 1);
   });
 
+  it('teleportPlayer lands the player AND the camera on the point (the FOLLOW zip)', () => {
+    const g = newGame();
+    const dest = { x: g.playerPos.x + 900, z: g.playerPos.z - 1400 };
+    g.teleportPlayer(dest);
+    expect(g.playerPos).toEqual(dest);
+    expect(g.playerVel).toEqual({ x: 0, z: 0 });
+    expect(g.buildFrame().camera).toEqual(dest); // no cross-map camera chase
+  });
+
   it('peds carry a walk phase and speed too', () => {
     // The toy world spawns no peds (its roads start >420 m from
     // spawn) — use the real dataset, which has 20 walkers at spawn.

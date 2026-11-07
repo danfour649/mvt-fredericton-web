@@ -909,6 +909,16 @@ export class Game {
     this.persist();
   }
 
+  /** Place the on-foot player at `pos` instantly, camera snapped
+   *  onto them — the respawn treatment, without the respawn. The
+   *  FOLLOW zip (long map picks) is the caller; population and
+   *  traffic bubbles re-anchor off playerPos on their own. */
+  teleportPlayer(pos: Vec2): void {
+    this.playerPos = { ...pos };
+    this.playerVel = { x: 0, z: 0 };
+    this.camPos = { ...pos };
+  }
+
   // --- mission events -------------------------------------------------------
 
   private afterMissionEvents(): void {

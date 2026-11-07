@@ -29,6 +29,8 @@ import {
   isDoubleTap,
   nearestScreenHit,
   carTapIntent,
+  carHoldToFire,
+  FOLLOW_CAR_HOLD_FIRE_MS,
   planFollowPoints,
   RouteFollower,
   FOLLOW_ARRIVE_RADIUS_M,
@@ -294,19 +296,27 @@ describe('nearestScreenHit — tap precedence (entities over ground)', () => {
   });
 });
 
-describe('carTapIntent — steal it or shoot it', () => {
-  it('next to the car, entry always wins (even armed)', () => {
-    expect(carTapIntent(true, 3.9)).toBe('enter-now');
-    expect(carTapIntent(false, 1)).toBe('enter-now');
+describe('carTapIntent — a car tap ALWAYS means get in', () => {
+  it('next to the car, entry is instant', () => {
+    expect(carTapIntent(3.9)).toBe('enter-now');
+    expect(carTapIntent(1)).toBe('enter-now');
   });
 
-  it('with fists out, a car tap at any range means get in', () => {
-    expect(carTapIntent(false, 30)).toBe('walk-enter');
+  it('a far car tap means walk over and get in, at any range', () => {
+    expect(carTapIntent(30)).toBe('walk-enter');
+    expect(carTapIntent(400)).toBe('walk-enter');
   });
 
-  it('with a gun out, a far car tap is a shot', () => {
-    expect(carTapIntent(true, 12)).toBe('fire');
-    expect(carTapIntent(true, 4.1)).toBe('fire');
+  // Daniel's defect report (Stage 1 play): "once you pick up a
+  // machine gun, you can only shoot at cars, no longer steal
+  // them". The old rule made armed far taps 'fire'; the intent no
+  // longer takes the weapon as an input at all — a tap is entry,
+  // and shooting a car is the HOLD's job (below).
+  it('carHoldToFire: only an armed press held past the threshold shoots', () => {
+    expect(carHoldToFire(true, FOLLOW_CAR_HOLD_FIRE_MS - 1)).toBe(false);
+    expect(carHoldToFire(true, FOLLOW_CAR_HOLD_FIRE_MS)).toBe(true);
+    expect(carHoldToFire(true, 2000)).toBe(true);
+    expect(carHoldToFire(false, 2000)).toBe(false); // fists can't shoot a car
   });
 });
 

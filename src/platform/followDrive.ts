@@ -50,6 +50,15 @@ export const FOLLOW_WALK_ARRIVE_M = 0.9;
  *  follow target is live on foot — ordinary walking never jogs. */
 export const FOLLOW_JOG_MIN_REMAINING_M = 250;
 export const FOLLOW_JOG_MUL = 1.75;
+/** On foot, a POINT pick with more route than this ahead (m) is
+ *  not walked at all: the player ZIPS — placed at the route's end
+ *  the moment the finger lifts, and the camera dive (the arrival
+ *  zoom return) lands them at street level inside ~2 s, so the
+ *  whole trip reads in under 5 s however far the tap was. Daniel's
+ *  bar after the jog still felt slow. Entity picks (a car to
+ *  steal, a payphone) are never zipped — you walk up to things;
+ *  you zip to PLACES. */
+export const FOLLOW_ZIP_MIN_REMAINING_M = 250;
 /** Tap-the-car stop: a tap this close to the car just stops it (m). */
 export const FOLLOW_STOP_TAP_M = 3.5;
 /** Rear targets farther than this are looped to, not reversed to (m). */
@@ -544,16 +553,25 @@ export function nearestScreenHit<T extends ScreenHit>(
   return best;
 }
 
-export type CarTapIntent = 'enter-now' | 'walk-enter' | 'fire';
+export type CarTapIntent = 'enter-now' | 'walk-enter';
 
 /**
- * A tap on a car is ambiguous — steal it or shoot it? The player's
- * hands answer: next to the car, entry always wins (that's what
- * standing at a car MEANS); with fists out, entry wins at any range
- * (fists can't hurt a car anyway); with a gun out and the car beyond
- * arm's reach, the tap is a shot.
+ * A tap on a car ALWAYS means get in: next to the car entry is
+ * instant (the core's 4 m enter radius); farther off, walk over.
+ * Iteration 5 tried "with a gun out, a far car tap shoots it" —
+ * Daniel's verdict from real play: pick up a machine gun once and
+ * you can never tap-to-steal again. Shooting a car moved to the
+ * HOLD (carHoldToFire below), where the scheme keeps its triggers.
  */
-export function carTapIntent(armed: boolean, distToCarM: number): CarTapIntent {
-  if (distToCarM <= 4) return 'enter-now'; // the core's enter radius
-  return armed ? 'fire' : 'walk-enter';
+export function carTapIntent(distToCarM: number): CarTapIntent {
+  return distToCarM <= 4 ? 'enter-now' : 'walk-enter';
+}
+
+/** Holding a press on a car this long (ms) with a gun out turns
+ *  the press into fire at that car. A plain tap never fires. */
+export const FOLLOW_CAR_HOLD_FIRE_MS = 300;
+
+/** Is this press on a car a shot yet? (Armed, and held long enough.) */
+export function carHoldToFire(armed: boolean, heldMs: number): boolean {
+  return armed && heldMs >= FOLLOW_CAR_HOLD_FIRE_MS;
 }
