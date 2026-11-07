@@ -70,7 +70,9 @@ body { font-family: system-ui, sans-serif; }
 /* --- pager -------------------------------------------------------------- */
 #pager {
   position: fixed; left: 10px; bottom: 34px; z-index: 20;
-  pointer-events: none; /* v0.25: display-only — never eat a steer touch */
+  pointer-events: auto; cursor: pointer; /* v0.25 made it display-only so it
+     could never eat a steer touch; in the FOLLOW era it is the mission
+     button — tap it and the follow scheme takes you to the mission. */
   display: flex; gap: 8px; align-items: flex-start;
   max-width: min(330px, calc(100vw - 20px));
   background: rgba(16, 22, 14, 0.88); color: #b6f09a;
