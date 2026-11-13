@@ -465,3 +465,83 @@ body.follow-mode #ctl-right { display: none !important; }
   #help-toggle { font-size: 0.85rem; }
   #hud-score { font-size: 1.35rem; }
 }
+
+/* --- site header + showcase tabs (Models / Songs) -----------------------
+   The game stays the landing view under a slim site header. The game's
+   top-anchored HUD is shifted down by the header height (52px) so
+   nothing hides behind it. Showcase panels are fixed overlays below
+   the header; their media (GLBs, renders, songs) streams from the
+   mvtf-assets host — no model or audio binaries live in this repo. */
+#site-header {
+  position: fixed; top: 0; left: 0; right: 0; height: 52px; z-index: 55;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 12px; background: rgba(10, 16, 8, 0.96);
+  border-bottom: 2px solid #ffd23f;
+}
+.site-brand {
+  font-weight: 900; letter-spacing: 0.06em; color: #fff; font-size: 17px;
+  white-space: nowrap;
+}
+.site-brand span { color: #ffd23f; }
+#site-tabs { display: flex; gap: 6px; }
+#site-tabs button {
+  font: 800 14px system-ui, sans-serif; cursor: pointer;
+  color: #dfe8d8; background: rgba(255,255,255,0.08);
+  border: 1.5px solid rgba(255,255,255,0.25); border-radius: 999px;
+  padding: 6px 13px;
+}
+#site-tabs button.on { background: #ffd23f; color: #20180a; border-color: #ffd23f; }
+
+/* Game HUD offset by the header height. */
+#goalbar { top: 52px; }
+#topbar { top: 57px; }
+#hud-gear { top: 86px; }
+#input-readout { top: 90px; }
+#car-banner { top: 92px; }
+#hud-toast { top: 148px; }
+@media (pointer: coarse) {
+  #pager { top: 110px; }
+}
+
+.showcase {
+  position: fixed; left: 0; right: 0; top: 52px; bottom: 0; z-index: 48;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  background: #141a10; color: #eef3e6;
+}
+.showcase[hidden] { display: none; }
+.sc-inner { max-width: 860px; margin: 0 auto; padding: 22px 16px 56px; }
+.sc-inner h1 { font-size: 30px; margin: 4px 0 8px; letter-spacing: 0.01em; }
+.sc-sub { color: #b9c8ab; line-height: 1.55; margin: 0 0 22px; }
+.sc-group { font-size: 19px; margin: 28px 0 12px; color: #ffd23f; }
+.sc-card, .sc-track {
+  background: #1d2716; border: 1px solid #37492a; border-radius: 14px;
+  padding: 16px; margin: 0 0 20px;
+}
+.sc-card h2, .sc-track h3 { margin: 0 0 10px; font-size: 19px; }
+.sc-card model-viewer {
+  width: 100%; height: 380px; border-radius: 10px;
+  background: radial-gradient(120% 100% at 50% 0%, #2c3a20 0%, #1a2413 70%);
+}
+.sc-toggle { display: flex; gap: 6px; margin: 0 0 10px; }
+.sc-toggle button {
+  font: 800 13px system-ui, sans-serif; cursor: pointer;
+  color: #dfe8d8; background: rgba(255,255,255,0.08);
+  border: 1.5px solid rgba(255,255,255,0.25); border-radius: 999px; padding: 5px 12px;
+}
+.sc-toggle button.on { background: #ffd23f; color: #20180a; border-color: #ffd23f; }
+.sc-facts, .sc-track p { color: #b9c8ab; line-height: 1.55; margin: 10px 2px 0; }
+.sc-renders {
+  display: flex; gap: 8px; overflow-x: auto; margin-top: 12px;
+  padding-bottom: 4px; -webkit-overflow-scrolling: touch;
+}
+.sc-renders img {
+  height: 120px; width: auto; border-radius: 8px; flex: 0 0 auto;
+  border: 1px solid #37492a;
+}
+.sc-track audio { width: 100%; margin-top: 2px; }
+.sc-foot { color: #8fa382; font-size: 13px; line-height: 1.55; margin-top: 26px; }
+@media (max-width: 560px) {
+  .site-brand { font-size: 14px; }
+  #site-tabs button { padding: 6px 10px; font-size: 13px; }
+  .sc-card model-viewer { height: 300px; }
+}

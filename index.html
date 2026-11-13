@@ -5,9 +5,175 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>MVT Fredericton Web — top-down Fredericton</title>
     <meta name="description" content="A minimalist, web-playable, top-down MVT Fredericton: real GeoNB buildings and roads for downtown Fredericton, NB, in your browser." />
+    <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
   </head>
   <body>
     <div id="map"></div>
+
+    <!-- Site header: the game stays the landing view; Models and
+         Songs are sibling tabs. Model GLBs, renders and song files
+         are NOT in this repo — they stream from the mvtf-assets host
+         (generated from the mvtf-model-pipeline / mvtf-audio-pipeline
+         repos by sync-assets.sh), so nothing is duplicated here. -->
+    <header id="site-header">
+      <div class="site-brand">MVT <span>FREDERICTON</span></div>
+      <nav id="site-tabs" aria-label="Site sections">
+        <button type="button" data-view="game" class="on">🎮 Game</button>
+        <button type="button" data-view="models">🏛️ Models</button>
+        <button type="button" data-view="songs">🎵 Songs</button>
+      </nav>
+    </header>
+
+    <section id="view-models" class="showcase" hidden>
+      <div class="sc-inner">
+        <h1>The models</h1>
+        <p class="sc-sub">Custom Fredericton landmarks and vehicles, hand-built for MVT Fredericton in the model pipeline. Drag to orbit, scroll or pinch to zoom — these are the real game GLBs, streamed from the assets host. Every church has an interior too.</p>
+
+        <article class="sc-card" data-model="bus">
+          <h2>Fredericton Transit Bus — New Flyer XDE40, fleet 8265</h2>
+          <model-viewer src="https://mvtf-assets.vercel.app/models/bus/exterior.glb" poster="https://mvtf-assets.vercel.app/models/bus/renders/frontclose.jpg" alt="Fredericton Transit XDE40 hybrid bus, fleet 8265" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
+          <p class="sc-facts">12.50 × 2.59 × 3.30 m · 23,760 tris · destination 11S PROSPECT · bike rack, bilingual hybrid livery. Drives in MVTF6 as Fredericton Transit.</p>
+          <div class="sc-renders">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/bus/renders/frontclose.jpg" alt="Bus, front close">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/bus/renders/front3q.jpg" alt="Bus, front three-quarter">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/bus/renders/side.jpg" alt="Bus, side profile">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/bus/renders/rear3q.jpg" alt="Bus, rear three-quarter">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/bus/renders/front.jpg" alt="Bus, straight front">
+          </div>
+        </article>
+
+        <article class="sc-card" data-model="cathedral">
+          <h2>Christ Church Cathedral</h2>
+          <div class="sc-toggle" role="group" aria-label="Cathedral view">
+            <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/cathedral/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/cathedral/renders/sw3q.jpg">Exterior</button>
+            <button type="button" data-glb="https://mvtf-assets.vercel.app/models/cathedral/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/cathedral/renders/int-nave-east.jpg">Interior</button>
+          </div>
+          <model-viewer src="https://mvtf-assets.vercel.app/models/cathedral/exterior.glb" poster="https://mvtf-assets.vercel.app/models/cathedral/renders/sw3q.jpg" alt="Christ Church Cathedral, Fredericton" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
+          <p class="sc-facts">150 Church St · 52.4 × 20.4 m footprint, spire top 60.4 m · 3,940 tris. Interior fitted on the exterior's origin; home of the Anglican hymn playlist in game.</p>
+          <div class="sc-renders">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cathedral/renders/sw3q.jpg" alt="Cathedral, southwest three-quarter">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cathedral/renders/south.jpg" alt="Cathedral, south side">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cathedral/renders/east3q.jpg" alt="Cathedral, east three-quarter">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cathedral/renders/aerial.jpg" alt="Cathedral, aerial">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cathedral/renders/int-nave-east.jpg" alt="Cathedral interior, nave looking east">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cathedral/renders/int-sanctuary.jpg" alt="Cathedral interior, sanctuary">
+          </div>
+        </article>
+
+        <article class="sc-card" data-model="parish">
+          <h2>Christ Church (Parish Church)</h2>
+          <div class="sc-toggle" role="group" aria-label="Parish Church view">
+            <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/parish/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/parish/renders/front.jpg">Exterior</button>
+            <button type="button" data-glb="https://mvtf-assets.vercel.app/models/parish/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/parish/renders/nave-east.jpg">Interior</button>
+          </div>
+          <model-viewer src="https://mvtf-assets.vercel.app/models/parish/exterior.glb" poster="https://mvtf-assets.vercel.app/models/parish/renders/front.jpg" alt="Christ Church (Parish Church), Fredericton" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
+          <p class="sc-facts">245 Westmorland St · 3,330 tris, lattice tower top 18.05 m · church + chapel, full interior (nave, sanctuary, chapel).</p>
+          <div class="sc-renders">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/parish/renders/front.jpg" alt="Parish Church, front">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/parish/renders/drive.jpg" alt="Parish Church, from the drive">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/parish/renders/nave-east.jpg" alt="Parish Church interior, nave east">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/parish/renders/sanctuary.jpg" alt="Parish Church interior, sanctuary">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/parish/renders/chapel.jpg" alt="Parish Church, chapel">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/parish/renders/yard.jpg" alt="Parish Church, yard">
+          </div>
+        </article>
+
+        <article class="sc-card" data-model="wilmot">
+          <h2>Wilmot United Church</h2>
+          <div class="sc-toggle" role="group" aria-label="Wilmot view">
+            <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/wilmot/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/wilmot/renders/three-quarter.jpg">Exterior</button>
+            <button type="button" data-glb="https://mvtf-assets.vercel.app/models/wilmot/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/wilmot/renders/int-nave-organ.jpg">Interior</button>
+          </div>
+          <model-viewer src="https://mvtf-assets.vercel.app/models/wilmot/exterior.glb" poster="https://mvtf-assets.vercel.app/models/wilmot/renders/three-quarter.jpg" alt="Wilmot United Church, Fredericton" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
+          <p class="sc-facts">473 King St · 39.0 × 24.2 m, 62.8 m to the gilt hand's fingertip · 15,567 tris. Restores the 1852–1973 silhouette: square spire, four pinnacles, gilt carved hand.</p>
+          <div class="sc-renders">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/wilmot/renders/three-quarter.jpg" alt="Wilmot, three-quarter">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/wilmot/renders/front.jpg" alt="Wilmot, front">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/wilmot/renders/side.jpg" alt="Wilmot, side">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/wilmot/renders/int-nave-organ.jpg" alt="Wilmot interior, nave and organ">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/wilmot/renders/int-gallery.jpg" alt="Wilmot interior, gallery">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/wilmot/renders/int-nave-west.jpg" alt="Wilmot interior, nave west">
+          </div>
+        </article>
+
+        <article class="sc-card" data-model="st-dunstans">
+          <h2>St. Dunstan's Roman Catholic Church</h2>
+          <div class="sc-toggle" role="group" aria-label="St. Dunstan's view">
+            <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/st-dunstans/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/st-dunstans/renders/front.jpg">Exterior</button>
+            <button type="button" data-glb="https://mvtf-assets.vercel.app/models/st-dunstans/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/st-dunstans/renders/int-nave.jpg">Interior</button>
+          </div>
+          <model-viewer src="https://mvtf-assets.vercel.app/models/st-dunstans/exterior.glb" poster="https://mvtf-assets.vercel.app/models/st-dunstans/renders/front.jpg" alt="St. Dunstan's RC Church, Fredericton" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
+          <p class="sc-facts">120 Regent St · church proper 60.0 × 19.0 m, 33.7 m high · the modernist pylon church, exterior + interior.</p>
+          <div class="sc-renders">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/front.jpg" alt="St. Dunstan's, front">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/aerial.jpg" alt="St. Dunstan's, aerial">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/brunswick.jpg" alt="St. Dunstan's, from Brunswick St">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/ne_side.jpg" alt="St. Dunstan's, northeast side">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/int-nave.jpg" alt="St. Dunstan's interior, nave">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/int-sanctuary.jpg" alt="St. Dunstan's interior, sanctuary">
+          </div>
+        </article>
+
+        <p class="sc-foot">Models © the MVT Fredericton project — original in-house builds from published dimensions and reference photos. GLBs and renders stream from the project assets host; the pipeline repos stay the source of truth.</p>
+      </div>
+    </section>
+
+    <section id="view-songs" class="showcase" hidden>
+      <div class="sc-inner">
+        <h1>The songs</h1>
+        <p class="sc-sub">Original hymns written in-house for MVT Fredericton's churches and generated on Suno Pro — the tracks that play inside the churches in MVTF6. Every take below is a Daniel-approved pick.</p>
+
+        <h2 class="sc-group">⛪ The Anglican churches — Cathedral &amp; Parish Church playlist</h2>
+
+        <article class="sc-track">
+          <h3>O King of Mercy — take A</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/o-king-of-mercy-a.ogg"></audio>
+          <p>The first original hymn, in-house Long Metre text. Daniel, on the Pro pair: “I fucking love both hymns.”</p>
+        </article>
+
+        <article class="sc-track">
+          <h3>O King of Mercy — take B</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/o-king-of-mercy-b.ogg"></audio>
+          <p>The second take of the same hymn — both shipped, alternating in the playlist.</p>
+        </article>
+
+        <article class="sc-track">
+          <h3>Put Not Your Trust in Princes</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/put-not-your-trust-in-princes.ogg"></audio>
+          <p>Original anti-royalty hymn — 1 Samuel 8 and Psalm 146, with Henry VIII and the modern monarchy in the later verses, both unnamed. Take 1.</p>
+        </article>
+
+        <article class="sc-track">
+          <h3>When Evening Falls</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/when-evening-falls.ogg"></audio>
+          <p>An evensong hymn in EVENTIDE's 10.10.10.10 metre, written because the filters wouldn't pass Lyte's 1847 words. Take 1.</p>
+        </article>
+
+        <h2 class="sc-group">⛪ Wilmot United</h2>
+
+        <article class="sc-track">
+          <h3>God of the Living Waters</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/god-of-the-living-waters.ogg"></audio>
+          <p>Wilmot's own hymn, a Wolastoq river hymn — all eight takes were accepted; this is the looping game cut that plays in the church.</p>
+        </article>
+
+        <h2 class="sc-group">⛪ St. Dunstan's</h2>
+
+        <article class="sc-track">
+          <h3>Cod Be With You</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/cod-be-with-you.ogg"></audio>
+          <p>The Friday-fish hymn for St. Dunstan's. Take 1.</p>
+        </article>
+
+        <article class="sc-track">
+          <h3>Bless Me, Father</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/bless-me-father.ogg"></audio>
+          <p>The confession hymn for St. Dunstan's. Take 4.</p>
+        </article>
+
+        <p class="sc-foot">All songs: original in-house texts, Suno Pro generation — Pro downloads carry perpetual commercial-use rights. Masters and provenance records live in the mvtf-audio-pipeline repo; these web copies stream from the project assets host.</p>
+      </div>
+    </section>
 
     <!-- Loading screen (v0.30): the game's real boot overlay, built
          from the approved mockup (DAY theme). Static HTML + inline
@@ -316,6 +482,34 @@
       WASD drive/walk · S reverse · E interact · Space handbrake · on foot: Space/F FIRE, Q weapon · <span id="help-toggle">?</span>
     </div>
 
+    <script>
+      // Site tabs: Game is the landing view (the map + HUD are never
+      // touched); Models / Songs are fixed overlays under the header.
+      // Leaving Songs pauses every track; leaving Models just hides
+      // the panel. Exterior/Interior toggles swap the card's GLB.
+      (function () {
+        var buttons = document.querySelectorAll('#site-tabs button');
+        var panels = { models: document.getElementById('view-models'), songs: document.getElementById('view-songs') };
+        function show(view) {
+          buttons.forEach(function (b) { b.classList.toggle('on', b.dataset.view === view); });
+          Object.keys(panels).forEach(function (k) { panels[k].hidden = k !== view; });
+          if (view !== 'songs') document.querySelectorAll('#view-songs audio').forEach(function (a) { a.pause(); });
+          document.body.classList.toggle('showcase-open', view !== 'game');
+        }
+        buttons.forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.view); }); });
+        document.querySelectorAll('.sc-toggle').forEach(function (tg) {
+          var card = tg.closest('.sc-card');
+          var viewer = card.querySelector('model-viewer');
+          tg.querySelectorAll('button').forEach(function (b) {
+            b.addEventListener('click', function () {
+              tg.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
+              viewer.setAttribute('poster', b.dataset.poster);
+              viewer.setAttribute('src', b.dataset.glb);
+            });
+          });
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
