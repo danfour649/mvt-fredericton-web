@@ -39,7 +39,7 @@
   #site-tabs::-webkit-scrollbar { display: none; }
   #site-tabs a.tab-link { font: 800 14px system-ui, sans-serif; cursor: pointer; color: #dfe8d8; background: rgba(255,255,255,0.08); border: 1.5px solid rgba(255,255,255,0.25); border-radius: 999px; padding: 6px 13px; flex: 0 0 auto; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
   #site-tabs a.tab-link.on { background: #ffd23f; color: #20180a; border-color: #ffd23f; }
-  .tab-soon { font-size: 8.5px; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.25; white-space: nowrap; color: #fff; background: #e2481d; border-radius: 999px; padding: 2px 6px; font-family: system-ui, sans-serif; }
+  .tab-new { font-size: 8.5px; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.25; white-space: nowrap; color: #fff; background: #e2481d; border-radius: 999px; padding: 2px 6px; font-family: system-ui, sans-serif; }
   @media (max-width: 560px) {
     .site-brand { font-size: 21px; }
     #site-header { padding: 0 8px; }
@@ -48,7 +48,7 @@
     #site-tabs .tab-ico { font-size: 17px; line-height: 1.1; }
     #site-tabs .tab-label { font-size: 9.5px; line-height: 1.15; white-space: nowrap; letter-spacing: -0.02em; }
     #site-tabs a.tab-3d { position: relative; }
-    .tab-soon { position: absolute; top: -7px; right: -3px; font-size: 7.5px; padding: 1.5px 5px; transform: rotate(3deg); box-shadow: 0 1px 4px rgba(0,0,0,0.45); }
+    .tab-new { position: absolute; top: -7px; right: -3px; font-size: 7.5px; padding: 1.5px 5px; transform: rotate(3deg); box-shadow: 0 1px 4px rgba(0,0,0,0.45); }
   }
   main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
   h1 { font-size: 2rem; margin: 16px 0 4px; overflow-wrap: break-word; }
@@ -64,10 +64,10 @@
   <div class="site-brand">MVT <span>FREDERICTON</span></div>
   <nav id="site-tabs" aria-label="Site sections">
     <a class="tab-link" href="/"><span class="tab-ico" aria-hidden="true">🎮</span><span class="tab-label">2D</span></a>
+    <a class="tab-link tab-3d on" href="/bambam/"><span class="tab-ico" aria-hidden="true">🎬</span><span class="tab-label">3D</span><span class="tab-new">New</span></a>
     <a class="tab-link" href="/#models"><span class="tab-ico" aria-hidden="true">🏛️</span><span class="tab-label">Models</span></a>
     <a class="tab-link" href="/#songs"><span class="tab-ico" aria-hidden="true">🎵</span><span class="tab-label">Songs</span></a>
     <a class="tab-link" href="/#maps"><span class="tab-ico" aria-hidden="true">🗺️</span><span class="tab-label">Maps</span></a>
-    <a class="tab-link tab-3d on" href="/bambam/"><span class="tab-ico" aria-hidden="true">🎬</span><span class="tab-label">3D</span><span class="tab-soon">Coming soon</span></a>
   </nav>
 </header>
 <main>
