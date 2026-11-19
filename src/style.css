@@ -453,7 +453,7 @@ body.follow-mode #ctl-right { display: none !important; }
 @media (pointer: coarse) {
   #touch { display: block; }
   /* Pager moves up: the stick lives bottom-left now. */
-  #pager { bottom: auto; top: 98px; }
+  #pager { bottom: auto; top: calc(var(--header-h) + 6px); }
   #credit { display: none; }
 }
 @media (max-width: 560px) {
@@ -470,15 +470,22 @@ body.follow-mode #ctl-right { display: none !important; }
    The game stays the landing view under the site header: a two-line
    header since 2026-11-19 — the brand on its own, bigger line, the tab
    pills on a second line below it. The game's top-anchored HUD is
-   shifted down by the header height (92px) so nothing hides behind
-   it. Showcase panels are fixed overlays below the header; their media
+   shifted down by the header height (--header-h, 92px at default
+   metrics) so nothing hides behind it. Showcase panels are fixed overlays below the header; their media
    (GLBs, renders, songs) streams from the mvtf-assets host — no model
    or audio binaries live in this repo. */
+/* --header-h is the header's live height: 92px at default metrics, and
+   an inline script in index.html keeps it synced to the header's real
+   height (ResizeObserver), because a webview that scales text (e.g.
+   Messenger's in-app browser) makes the header taller than any fixed
+   number — every HUD/showcase offset below hangs off this variable so
+   nothing can slide under or be sliced by the header again. */
+:root { --header-h: 92px; }
 #site-header {
-  position: fixed; top: 0; left: 0; right: 0; height: 92px; z-index: 55;
+  position: fixed; top: 0; left: 0; right: 0; min-height: 92px; z-index: 55;
   display: flex; flex-direction: column; align-items: stretch;
   justify-content: center; gap: 7px;
-  padding: 0 12px; background: rgba(10, 16, 8, 0.96);
+  padding: 6px 12px; background: rgba(10, 16, 8, 0.96);
   border-bottom: 2px solid #ffd23f;
 }
 .site-brand {
@@ -510,18 +517,18 @@ body.follow-mode #ctl-right { display: none !important; }
 }
 
 /* Game HUD offset by the header height. */
-#goalbar { top: 92px; }
-#topbar { top: 97px; }
-#hud-gear { top: 126px; }
-#input-readout { top: 130px; }
-#car-banner { top: 132px; }
-#hud-toast { top: 188px; }
+#goalbar { top: var(--header-h); }
+#topbar { top: calc(var(--header-h) + 5px); }
+#hud-gear { top: calc(var(--header-h) + 34px); }
+#input-readout { top: calc(var(--header-h) + 38px); }
+#car-banner { top: calc(var(--header-h) + 40px); }
+#hud-toast { top: calc(var(--header-h) + 96px); }
 @media (pointer: coarse) {
-  #pager { top: 150px; }
+  #pager { top: calc(var(--header-h) + 58px); }
 }
 
 .showcase {
-  position: fixed; left: 0; right: 0; top: 92px; bottom: 0; z-index: 48;
+  position: fixed; left: 0; right: 0; top: var(--header-h); bottom: 0; z-index: 48;
   overflow-y: auto; -webkit-overflow-scrolling: touch;
   background: #141a10; color: #eef3e6;
 }
@@ -595,10 +602,10 @@ body.follow-mode #ctl-right { display: none !important; }
   .site-brand { font-size: 21px; }
   /* Mobile first (Daniel, 2026-11-19): all five pills fit the row —
      no horizontal scrolling. Each pill stacks its icon over its
-     label and the five share the row evenly. The taller tab line
-     still fits the 92px header (brand ~23 + gap 7 + pill ~45), so
-     the HUD/showcase offsets keyed to 92px do not move. */
-  #site-header { padding: 0 8px; }
+     label and the five share the row evenly. If the taller tab line
+     (or a text-scaling webview) grows the header past 92px, the
+     --header-h sync moves the HUD/showcase offsets with it. */
+  #site-header { padding: 6px 8px; }
   #site-tabs { overflow-x: visible; gap: 4px; }
   #site-tabs button, #site-tabs a.tab-link {
     flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center;

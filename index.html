@@ -655,6 +655,16 @@
       // wired here at all — it navigates to /bambam/.) Exterior /
       // Interior toggles swap the card's GLB.
       (function () {
+        // Keep --header-h synced to the header's real height: the CSS
+        // default is 92px, but a text-scaling webview (Messenger's
+        // in-app browser) grows the header, and every HUD/showcase
+        // offset hangs off the variable.
+        var header = document.getElementById('site-header');
+        function syncHeaderH() {
+          document.documentElement.style.setProperty('--header-h', header.offsetHeight + 'px');
+        }
+        syncHeaderH();
+        if (window.ResizeObserver) new ResizeObserver(syncHeaderH).observe(header);
         var buttons = document.querySelectorAll('#site-tabs button');
         var panels = { models: document.getElementById('view-models'), songs: document.getElementById('view-songs'), maps: document.getElementById('view-maps') };
         function show(view) {
