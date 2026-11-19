@@ -14,17 +14,22 @@
   <body>
     <div id="map"></div>
 
-    <!-- Site header: the game stays the landing view; Models and
-         Songs are sibling tabs. Model GLBs, renders and song files
-         are NOT in this repo — they stream from the mvtf-assets host
-         (generated from the mvtf-model-pipeline / mvtf-audio-pipeline
-         repos by sync-assets.sh), so nothing is duplicated here. -->
+    <!-- Site header: the game stays the landing view; Models, Songs
+         and Maps are sibling tabs (two-line header: brand above, tabs
+         below). Model GLBs, renders and song files are NOT in this
+         repo — they stream from the mvtf-assets host (generated from
+         the mvtf-model-pipeline / mvtf-audio-pipeline repos by
+         sync-assets.sh), so nothing is duplicated here. The Game
+         Preview pill is a plain link, not a view: it navigates to the
+         Bam Bam video page, which is the game's preview page. -->
     <header id="site-header">
       <div class="site-brand">MVT <span>FREDERICTON</span></div>
       <nav id="site-tabs" aria-label="Site sections">
         <button type="button" data-view="game" class="on">🎮 Game</button>
         <button type="button" data-view="models">🏛️ Models</button>
         <button type="button" data-view="songs">🎵 Songs</button>
+        <button type="button" data-view="maps">🗺️ Maps</button>
+        <a class="tab-link" href="/bambam/">🎬 Game Preview</a>
       </nav>
     </header>
 
@@ -300,6 +305,36 @@
         </article>
 
         <p class="sc-foot">All songs: original in-house texts, Suno generation — downloads carry perpetual commercial-use rights. Masters and provenance records live in the mvtf-audio-pipeline repo; these web copies stream from the project assets host.</p>
+      </div>
+    </section>
+
+    <section id="view-maps" class="showcase" hidden>
+      <div class="sc-inner">
+        <h1>The maps</h1>
+        <p class="sc-sub">MVT Fredericton isn't drawn from imagination. The city in the game is baked from New Brunswick's own open survey data — the provincial road network, province-wide LiDAR, aerial orthophotos and measured river soundings — catalogued source by source in the <a href="https://maps-of-nb.vercel.app">Maps of New Brunswick</a> project. Here is that same data, live:</p>
+
+        <div id="maps-map" role="img" aria-label="3D map of downtown Fredericton on GeoNB imagery, buildings at their LiDAR-measured heights"></div>
+        <p class="sc-facts">Downtown Fredericton in 3D, on GeoNB's own imagery: every building stands at its LiDAR-measured height. Drag to look around; zoom with ctrl-scroll or pinch (the page keeps plain scrolling).</p>
+
+        <h2 class="sc-group">🛣️ Roads — the province's own network</h2>
+        <p class="sc-copy">The streets are the New Brunswick Road Network (NBRN), the province's authoritative road layer, published through GeoNB. Each segment carries its real name, lane count, speed limit and traffic-flow direction — the same attributes the game's traffic drives on and its routing graph is built from, so Queen Street is Queen Street, one-way where the real one is.</p>
+
+        <h2 class="sc-group">🏙️ Buildings &amp; ground — one LiDAR survey</h2>
+        <p class="sc-copy">New Brunswick is covered by province-wide LiDAR. The game's buildings are the LiDAR-derived footprints GeoNB publishes, each with a measured height — roof elevation minus ground elevation — and the terrain under them comes from the same survey. The 3D view above extrudes exactly those measured heights; nothing is eyeballed to look right.</p>
+
+        <h2 class="sc-group">🛰️ The imagery — 15 cm orthophotos</h2>
+        <p class="sc-copy">The aerial imagery is GeoNB's orthophoto programme: the latest contribution covers 13,000 km² at 0.15 m per pixel, flown in the summer of 2025 — sharp enough to read road markings and driveways. It's the ground truth the game world is checked against, and it's the basemap under the map above.</p>
+
+        <h2 class="sc-group">🌊 The riverbed — measured soundings</h2>
+        <p class="sc-copy">The Saint John River (Wolastoq) has a real bottom. Its bed through the Fredericton reach is sampled from the Canadian Hydrographic Service's NONNA bathymetric data — measured soundings gridded along transects through the city, mostly 2–8 m deep in the channel — so the water the game dives and fishes in has the shape the surveyors measured, not a flat blue plane.</p>
+
+        <h2 class="sc-group">🌾 Wetlands &amp; water</h2>
+        <p class="sc-copy">GeoNB's regulated wetlands inventory marks the marshes and bogs — in the game they're the soft, slow ground at the city's edges. The river channel itself comes from the provincial hydrographic network (NBHN), which is a different thing from a wetland, and the game treats them differently.</p>
+
+        <h2 class="sc-group">🌲 The trees — canopy from LiDAR, species from inventories</h2>
+        <p class="sc-copy">Tree positions and heights come from a canopy-height model built on GeoNB's 2024 LiDAR — the canopy the lasers actually measured, at 2 m resolution. Species come from inventories, not guesses: the City of Fredericton's tree inventory records 21,186 city-managed trees by species (Norway maple, sugar maple, red oak and green ash lead the count), which is why autumn colour in the game varies species by species — maples red, oaks russet, ash yellow. Beyond the city-managed trees, the provincial forest inventory (GeoNB DNR Forest) gives the woodlots their species mix and stand heights, so a pine stand is pine and a maple stand is maple.</p>
+
+        <p class="sc-foot">Explore the full data catalogue in the <a href="https://maps-of-nb.vercel.app">Maps of New Brunswick</a> viewer. Data: © GeoNB / Service New Brunswick under the Open Government Licence – New Brunswick; bathymetry © Canadian Hydrographic Service (NONNA).</p>
       </div>
     </section>
 
@@ -612,12 +647,16 @@
 
     <script>
       // Site tabs: Game is the landing view (the map + HUD are never
-      // touched); Models / Songs are fixed overlays under the header.
-      // Leaving Songs pauses every track; leaving Models just hides
-      // the panel. Exterior/Interior toggles swap the card's GLB.
+      // touched); Models / Songs / Maps are fixed overlays under the
+      // header. Leaving Songs pauses every track; leaving the others
+      // just hides the panel. The Maps view's MapLibre map is created
+      // lazily by src/maps-view.ts when the panel is first unhidden.
+      // (The Game Preview pill is an <a>, not a button, so it is not
+      // wired here at all — it navigates to /bambam/.) Exterior /
+      // Interior toggles swap the card's GLB.
       (function () {
         var buttons = document.querySelectorAll('#site-tabs button');
-        var panels = { models: document.getElementById('view-models'), songs: document.getElementById('view-songs') };
+        var panels = { models: document.getElementById('view-models'), songs: document.getElementById('view-songs'), maps: document.getElementById('view-maps') };
         function show(view) {
           buttons.forEach(function (b) { b.classList.toggle('on', b.dataset.view === view); });
           Object.keys(panels).forEach(function (k) { panels[k].hidden = k !== view; });
@@ -671,5 +710,6 @@
       })();
     </script>
     <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/maps-view.ts"></script>
   </body>
 </html>

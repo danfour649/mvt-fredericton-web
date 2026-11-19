@@ -453,7 +453,7 @@ body.follow-mode #ctl-right { display: none !important; }
 @media (pointer: coarse) {
   #touch { display: block; }
   /* Pager moves up: the stick lives bottom-left now. */
-  #pager { bottom: auto; top: 58px; }
+  #pager { bottom: auto; top: 98px; }
   #credit { display: none; }
 }
 @media (max-width: 560px) {
@@ -466,45 +466,55 @@ body.follow-mode #ctl-right { display: none !important; }
   #hud-score { font-size: 1.35rem; }
 }
 
-/* --- site header + showcase tabs (Models / Songs) -----------------------
-   The game stays the landing view under a slim site header. The game's
-   top-anchored HUD is shifted down by the header height (52px) so
-   nothing hides behind it. Showcase panels are fixed overlays below
-   the header; their media (GLBs, renders, songs) streams from the
-   mvtf-assets host — no model or audio binaries live in this repo. */
+/* --- site header + showcase tabs (Models / Songs / Maps) ---------------
+   The game stays the landing view under the site header: a two-line
+   header since 2026-11-19 — the brand on its own, bigger line, the tab
+   pills on a second line below it. The game's top-anchored HUD is
+   shifted down by the header height (92px) so nothing hides behind
+   it. Showcase panels are fixed overlays below the header; their media
+   (GLBs, renders, songs) streams from the mvtf-assets host — no model
+   or audio binaries live in this repo. */
 #site-header {
-  position: fixed; top: 0; left: 0; right: 0; height: 52px; z-index: 55;
-  display: flex; align-items: center; justify-content: space-between;
+  position: fixed; top: 0; left: 0; right: 0; height: 92px; z-index: 55;
+  display: flex; flex-direction: column; align-items: stretch;
+  justify-content: center; gap: 7px;
   padding: 0 12px; background: rgba(10, 16, 8, 0.96);
   border-bottom: 2px solid #ffd23f;
 }
 .site-brand {
-  font-weight: 900; letter-spacing: 0.06em; color: #fff; font-size: 17px;
-  white-space: nowrap;
+  font-weight: 900; letter-spacing: 0.06em; color: #fff; font-size: 27px;
+  line-height: 1.1; white-space: nowrap;
 }
 .site-brand span { color: #ffd23f; }
-#site-tabs { display: flex; gap: 6px; }
-#site-tabs button {
+#site-tabs {
+  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+#site-tabs::-webkit-scrollbar { display: none; }
+#site-tabs button, #site-tabs a.tab-link {
   font: 800 14px system-ui, sans-serif; cursor: pointer;
   color: #dfe8d8; background: rgba(255,255,255,0.08);
   border: 1.5px solid rgba(255,255,255,0.25); border-radius: 999px;
-  padding: 6px 13px;
+  padding: 6px 13px; flex: 0 0 auto; white-space: nowrap;
+}
+#site-tabs a.tab-link {
+  text-decoration: none; display: inline-flex; align-items: center;
 }
 #site-tabs button.on { background: #ffd23f; color: #20180a; border-color: #ffd23f; }
 
 /* Game HUD offset by the header height. */
-#goalbar { top: 52px; }
-#topbar { top: 57px; }
-#hud-gear { top: 86px; }
-#input-readout { top: 90px; }
-#car-banner { top: 92px; }
-#hud-toast { top: 148px; }
+#goalbar { top: 92px; }
+#topbar { top: 97px; }
+#hud-gear { top: 126px; }
+#input-readout { top: 130px; }
+#car-banner { top: 132px; }
+#hud-toast { top: 188px; }
 @media (pointer: coarse) {
-  #pager { top: 110px; }
+  #pager { top: 150px; }
 }
 
 .showcase {
-  position: fixed; left: 0; right: 0; top: 52px; bottom: 0; z-index: 48;
+  position: fixed; left: 0; right: 0; top: 92px; bottom: 0; z-index: 48;
   overflow-y: auto; -webkit-overflow-scrolling: touch;
   background: #141a10; color: #eef3e6;
 }
@@ -540,8 +550,18 @@ body.follow-mode #ctl-right { display: none !important; }
 }
 .sc-track audio { width: 100%; margin-top: 2px; }
 .sc-foot { color: #8fa382; font-size: 13px; line-height: 1.55; margin-top: 26px; }
+.sc-foot a, .sc-sub a { color: #ffd23f; }
+
+/* Maps tab: the embedded 3D Fredericton (lazy MapLibre view, created
+   by src/maps-view.ts on first open) + the data-provenance copy. */
+#maps-map {
+  width: 100%; height: 520px; border-radius: 14px; overflow: hidden;
+  border: 1px solid #37492a; background: #1a2413;
+}
+.sc-copy { color: #b9c8ab; line-height: 1.6; margin: 0 0 6px; }
 @media (max-width: 560px) {
-  .site-brand { font-size: 14px; }
-  #site-tabs button { padding: 6px 10px; font-size: 13px; }
+  .site-brand { font-size: 21px; }
+  #site-tabs button, #site-tabs a.tab-link { padding: 6px 10px; font-size: 13px; }
   .sc-card model-viewer { height: 300px; }
+  #maps-map { height: 380px; }
 }
