@@ -31,7 +31,7 @@
     <section id="view-models" class="showcase" hidden>
       <div class="sc-inner">
         <h1>The models</h1>
-        <p class="sc-sub">Custom Fredericton landmarks and vehicles, hand-built for MVT Fredericton in the model pipeline. Drag to orbit, scroll or pinch to zoom — these are the real game GLBs, streamed from the assets host. Every church has an interior too.</p>
+        <p class="sc-sub">Custom Fredericton landmarks, vehicles and the game's cast, hand-built for MVT Fredericton in the model pipeline. Drag to orbit, scroll or pinch to zoom — these are the real game GLBs, streamed from the assets host. Every church has an interior too.</p>
 
         <article class="sc-card" data-model="bus">
           <h2>Fredericton Transit Bus — New Flyer XDE40, fleet 8265</h2>
@@ -43,6 +43,19 @@
             <img loading="lazy" src="https://mvtf-assets.vercel.app/models/bus/renders/side.jpg" alt="Bus, side profile">
             <img loading="lazy" src="https://mvtf-assets.vercel.app/models/bus/renders/rear3q.jpg" alt="Bus, rear three-quarter">
             <img loading="lazy" src="https://mvtf-assets.vercel.app/models/bus/renders/front.jpg" alt="Bus, straight front">
+          </div>
+        </article>
+
+        <article class="sc-card" data-model="cannoli">
+          <h2>Yotola Cannoli — the 2018 Corolla</h2>
+          <model-viewer src="https://mvtf-assets.vercel.app/models/cannoli/exterior.glb" poster="https://mvtf-assets.vercel.app/models/cannoli/renders/frontclose.jpg" alt="Yotola Cannoli — the game's 2018 Toyota Corolla" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
+          <p class="sc-facts">4.63 × 2.01 × 1.38 m · 47,366 tris · Daniel's own 2018 Toyota Corolla, modelled in-house as the game's hero car — the Cannoli that headlines the Bam Bam video.</p>
+          <div class="sc-renders">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cannoli/renders/frontclose.jpg" alt="Cannoli, front close">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cannoli/renders/front3q.jpg" alt="Cannoli, front three-quarter">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cannoli/renders/side.jpg" alt="Cannoli, side profile">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cannoli/renders/rear3q.jpg" alt="Cannoli, rear three-quarter">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cannoli/renders/front.jpg" alt="Cannoli, straight front">
           </div>
         </article>
 
@@ -169,6 +182,20 @@
           </div>
         </article>
 
+        <h2 class="sc-group">👩 The ladies</h2>
+        <p class="sc-sub">The game's generated ladies — original characters built in the character pipeline. More of the cast joins this shelf as their models are finished.</p>
+
+        <article class="sc-card" data-model="marishka">
+          <h2>Marishka</h2>
+          <model-viewer src="https://mvtf-assets.vercel.app/models/marishka/marishka.glb" poster="https://mvtf-assets.vercel.app/models/marishka/renders/front.jpg" alt="Marishka — MVT Fredericton character model" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
+          <p class="sc-facts">1.77 m · 24,999 tris · a Fredericton lady generated for the game's cast (Flux Pro master portrait, Hunyuan3D model) and fitted to the game skeleton in the character pipeline — banked 2026-11-17, waiting in the cast wings.</p>
+          <div class="sc-renders">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/marishka/renders/master.jpg" alt="Marishka, the generated master portrait">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/marishka/renders/front.jpg" alt="Marishka model, front">
+            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/marishka/renders/side.jpg" alt="Marishka model, side">
+          </div>
+        </article>
+
         <p class="sc-foot">Models © the MVT Fredericton project — original in-house builds from published dimensions and reference photos. GLBs and renders stream from the project assets host; the pipeline repos stay the source of truth.</p>
       </div>
     </section>
@@ -176,7 +203,7 @@
     <section id="view-songs" class="showcase" hidden>
       <div class="sc-inner">
         <h1>The songs</h1>
-        <p class="sc-sub">Original hymns written in-house for MVT Fredericton's churches and generated on Suno Pro — the tracks that play inside the churches in MVTF6. Every take below is a Daniel-approved pick.</p>
+        <p class="sc-sub">Original songs written in-house for MVT Fredericton and generated on Suno — the hymns that play inside MVTF6's churches, plus the radio and bar songs from the game's CROC dial. Every take below is a Daniel-approved pick.</p>
 
         <h2 class="sc-group">⛪ The Anglican churches — Cathedral &amp; Parish Church playlist</h2>
 
@@ -226,7 +253,59 @@
           <p>The confession hymn for St. Dunstan's. Take 4.</p>
         </article>
 
-        <p class="sc-foot">All songs: original in-house texts, Suno Pro generation — Pro downloads carry perpetual commercial-use rights. Masters and provenance records live in the mvtf-audio-pipeline repo; these web copies stream from the project assets host.</p>
+        <h2 class="sc-group">📻 The radio &amp; the bars — the CROC dial</h2>
+
+        <article class="sc-track">
+          <h3>Callie (506-555-0169) — classic rock take 1</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/callie-506-cr1.ogg"></audio>
+          <p>Callie, the Queen St bartender whose coaster number the whole Maritimes has — the 1982 arena power-pop take. <a href="/callie/">Watch the music video</a>.</p>
+        </article>
+
+        <article class="sc-track">
+          <h3>Callie (506-555-0169) — classic rock take 2</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/callie-506-cr2.ogg"></audio>
+          <p>The second classic-rock take — the low, dark lead opening into the big gang-vocal singalong. Both takes shipped on the dial.</p>
+        </article>
+
+        <article class="sc-track">
+          <h3>High Water</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/high-water.ogg"></audio>
+          <p>The spring freshet blues — gritty blues-rock with slide guitar and harmonica, for the CROC classic-rock station. Take 1.</p>
+        </article>
+
+        <article class="sc-track">
+          <h3>Fredericton (Bam Bam) — take A</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/fredericton-bambam-a.ogg"></audio>
+          <p>The town anthem — an Afro-house / dancehall tour of the city, from Queen St to the walking bridge. The lead take. <a href="/bambam/">Watch the music video</a>.</p>
+        </article>
+
+        <article class="sc-track">
+          <h3>Fredericton (Bam Bam) — take B</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/fredericton-bambam-b.ogg"></audio>
+          <p>The second take of the town anthem — same chant, hushed close-mic verses.</p>
+        </article>
+
+        <h2 class="sc-group">🎓 CHSR sessions — campus-radio-inspired</h2>
+
+        <article class="sc-track">
+          <h3>Beach Goth Party</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/beach-goth-party.ogg"></audio>
+          <p>Indie surf rock named for CHSR 97.9 FM's Beach Goth Party show — Killarney beach in October, black umbrella, the cold-water treasure dive.</p>
+        </article>
+
+        <article class="sc-track">
+          <h3>Fiesta on the Wolastoq</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/fiesta-on-the-wolastoq.ogg"></audio>
+          <p>Bluegrass named for CHSR's Bluegrass Fiesta — fast banjo rolls over the river camp, the walking bridge and the Saturday market.</p>
+        </article>
+
+        <article class="sc-track">
+          <h3>Harmony Corruption</h3>
+          <audio controls preload="none" src="https://mvtf-assets.vercel.app/songs/harmony-corruption.ogg"></audio>
+          <p>Groove-thrash metal named for CHSR's Harmony Corruption show — the midnight Queen Street run, diesel-choir engines, the swarm over the city.</p>
+        </article>
+
+        <p class="sc-foot">All songs: original in-house texts, Suno generation — downloads carry perpetual commercial-use rights. Masters and provenance records live in the mvtf-audio-pipeline repo; these web copies stream from the project assets host.</p>
       </div>
     </section>
 
