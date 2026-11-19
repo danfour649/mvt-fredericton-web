@@ -664,6 +664,9 @@
           document.body.classList.toggle('showcase-open', view !== 'game');
         }
         buttons.forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.view); }); });
+        // Deep links from the standalone pages' headers (e.g. /bambam/ links to /#models).
+        var hashView = window.location.hash.replace('#', '');
+        if (hashView && panels[hashView]) show(hashView);
         document.querySelectorAll('.sc-toggle').forEach(function (tg) {
           var card = tg.closest('.sc-card');
           var viewer = card.querySelector('model-viewer');

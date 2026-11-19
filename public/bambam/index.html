@@ -30,7 +30,23 @@
 <meta name="twitter:player:stream:content_type" content="video/mp4">
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; background: #0d0f12; color: #f2f2f2; font-family: Georgia, 'Times New Roman', serif; }
+  body { margin: 0; padding-top: 92px; background: #0d0f12; color: #f2f2f2; font-family: Georgia, 'Times New Roman', serif; }
+  /* Site header — same markup and styling as the main page (index.html / src/style.css). */
+  #site-header { position: fixed; top: 0; left: 0; right: 0; height: 92px; z-index: 55; display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 7px; padding: 0 12px; background: rgba(10, 16, 8, 0.96); border-bottom: 2px solid #ffd23f; }
+  .site-brand { font-weight: 900; letter-spacing: 0.06em; color: #fff; font-size: 27px; line-height: 1.1; white-space: nowrap; font-family: system-ui, sans-serif; }
+  .site-brand span { color: #ffd23f; }
+  #site-tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  #site-tabs::-webkit-scrollbar { display: none; }
+  #site-tabs a.tab-link { font: 800 14px system-ui, sans-serif; cursor: pointer; color: #dfe8d8; background: rgba(255,255,255,0.08); border: 1.5px solid rgba(255,255,255,0.25); border-radius: 999px; padding: 6px 13px; flex: 0 0 auto; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+  #site-tabs a.tab-link.on { background: #ffd23f; color: #20180a; border-color: #ffd23f; }
+  @media (max-width: 560px) {
+    .site-brand { font-size: 21px; }
+    #site-header { padding: 0 8px; }
+    #site-tabs { overflow-x: visible; gap: 4px; }
+    #site-tabs a.tab-link { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 1px; padding: 5px 1px; font-size: 10.5px; border-radius: 16px; }
+    #site-tabs .tab-ico { font-size: 17px; line-height: 1.1; }
+    #site-tabs .tab-label { font-size: 9.5px; line-height: 1.15; white-space: nowrap; letter-spacing: -0.02em; }
+  }
   main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
   h1 { font-size: 2rem; margin: 16px 0 4px; overflow-wrap: break-word; }
   h1 .num { color: #e33; white-space: nowrap; }
@@ -41,6 +57,16 @@
 </style>
 </head>
 <body>
+<header id="site-header">
+  <div class="site-brand">MVT <span>FREDERICTON</span></div>
+  <nav id="site-tabs" aria-label="Site sections">
+    <a class="tab-link" href="/"><span class="tab-ico" aria-hidden="true">🎮</span><span class="tab-label">Game</span></a>
+    <a class="tab-link" href="/#models"><span class="tab-ico" aria-hidden="true">🏛️</span><span class="tab-label">Models</span></a>
+    <a class="tab-link" href="/#songs"><span class="tab-ico" aria-hidden="true">🎵</span><span class="tab-label">Songs</span></a>
+    <a class="tab-link" href="/#maps"><span class="tab-ico" aria-hidden="true">🗺️</span><span class="tab-label">Maps</span></a>
+    <a class="tab-link on" href="/bambam/"><span class="tab-ico" aria-hidden="true">🎬</span><span class="tab-label">Game Preview</span></a>
+  </nav>
+</header>
 <main>
   <h1>Fredericton <span class="num">(Bam Bam)</span></h1>
   <p class="sub">The official in-game music video — the MVT Fredericton town anthem, shot entirely in-game in Fredericton, New Brunswick, in the fall.</p>
