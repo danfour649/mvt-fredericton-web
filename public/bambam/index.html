@@ -30,9 +30,13 @@
 <meta name="twitter:player:stream:content_type" content="video/mp4">
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; padding-top: 92px; background: #0d0f12; color: #f2f2f2; font-family: Georgia, 'Times New Roman', serif; }
-  /* Site header — same markup and styling as the main page (index.html / src/style.css). */
-  #site-header { position: fixed; top: 0; left: 0; right: 0; height: 92px; z-index: 55; display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 7px; padding: 0 12px; background: rgba(10, 16, 8, 0.96); border-bottom: 2px solid #ffd23f; }
+  body { margin: 0; background: #0d0f12; color: #f2f2f2; font-family: Georgia, 'Times New Roman', serif; }
+  /* Site header — same markup as the main page, but sticky + auto height:
+     a hard-coded 92px fixed header overflows when a webview scales text
+     (e.g. Messenger's in-app browser), slicing its border through the tab
+     pills and letting page text slide underneath. Sticky keeps it in flow,
+     so it is always exactly as tall as its content. */
+  #site-header { position: sticky; top: 0; z-index: 55; display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 7px; padding: 8px 12px; background: rgba(10, 16, 8, 0.96); border-bottom: 2px solid #ffd23f; }
   .site-brand { font-weight: 900; letter-spacing: 0.06em; color: #fff; font-size: 27px; line-height: 1.1; white-space: nowrap; font-family: system-ui, sans-serif; }
   .site-brand span { color: #ffd23f; }
   #site-tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
