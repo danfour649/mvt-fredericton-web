@@ -684,7 +684,7 @@
                 // Keep the camera inside the room vertically: without
                 // polar clamps it exits through the floor when tipped
                 // down to look at the ceiling, and through the ceiling
-                // when tipped up (Daniel's report, 2026-11-13). Ranges
+                // when tipped up (reported 2026-11-13). Ranges
                 // are per building, from each interior's floor/ceiling
                 // heights; the defaults suit the church naves.
                 viewer.setAttribute('min-camera-orbit', 'auto ' + (b.dataset.minPolar || '55deg') + ' 3m');
