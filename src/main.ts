@@ -470,7 +470,13 @@ async function boot(): Promise<void> {
     const t = e.target as HTMLElement | null;
     if (!t || typeof t.closest !== 'function') return false;
     if (t.closest('button, input, select, textarea, label, a')) return false;
-    if (t.closest('#help, #overlay, #loading, #pager')) return false;
+    // The site chrome is not a game surface: the header's gestures are
+    // the header's, and a showcase panel owns its own scrolling — the
+    // window wheel handler below preventDefaults what it accepts, so
+    // accepting a wheel event over a panel would freeze the panel's
+    // scroll (Daniel's report, 2026-11-19: "the game takes over
+    // scroll control").
+    if (t.closest('#site-header, .showcase, #help, #overlay, #loading, #pager')) return false;
     return true;
   }
   function applyDesiredZoom(v: number): void {
@@ -586,7 +592,10 @@ async function boot(): Promise<void> {
     const t = e.target as HTMLElement | null;
     if (!t || typeof t.closest !== 'function') return false;
     if (t.closest('button, input, select, textarea, label, a')) return false;
-    if (t.closest('#help, #overlay, #loading, #pager')) return false;
+    // Same chrome exclusion as zoomSurfaceOk: taps and drags that
+    // start on the header or inside a showcase panel never plant a
+    // drive target behind them (2026-11-19).
+    if (t.closest('#site-header, .showcase, #help, #overlay, #loading, #pager')) return false;
     return true;
   }
   function followPointAt(clientX: number, clientY: number): void {

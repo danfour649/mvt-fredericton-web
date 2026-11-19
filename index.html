@@ -25,11 +25,11 @@
     <header id="site-header">
       <div class="site-brand">MVT <span>FREDERICTON</span></div>
       <nav id="site-tabs" aria-label="Site sections">
-        <button type="button" data-view="game" class="on">🎮 Game</button>
-        <button type="button" data-view="models">🏛️ Models</button>
-        <button type="button" data-view="songs">🎵 Songs</button>
-        <button type="button" data-view="maps">🗺️ Maps</button>
-        <a class="tab-link" href="/bambam/">🎬 Game Preview</a>
+        <button type="button" data-view="game" class="on"><span class="tab-ico" aria-hidden="true">🎮</span><span class="tab-label">Game</span></button>
+        <button type="button" data-view="models"><span class="tab-ico" aria-hidden="true">🏛️</span><span class="tab-label">Models</span></button>
+        <button type="button" data-view="songs"><span class="tab-ico" aria-hidden="true">🎵</span><span class="tab-label">Songs</span></button>
+        <button type="button" data-view="maps"><span class="tab-ico" aria-hidden="true">🗺️</span><span class="tab-label">Maps</span></button>
+        <a class="tab-link" href="/bambam/"><span class="tab-ico" aria-hidden="true">🎬</span><span class="tab-label">Game Preview</span></a>
       </nav>
     </header>
 
@@ -708,6 +708,44 @@
           });
         });
       })();
+    </script>
+    <script>
+      // Model-viewer touch gate — the McFam Monument Hunt fix
+      // (mcfam PR #70, 2026-11-14) carried over: on touch devices a
+      // live 3D viewer swallows every scroll swipe that starts on it,
+      // so each viewer in the Models panel is inert until tapped
+      // ("Tap to spin the model"); its "Done" button hands scrolling
+      // back to the panel. Mouse visitors keep the always-live
+      // viewer. Styles live in src/style.css under .mv-gate.
+      if (window.matchMedia('(pointer: coarse)').matches) {
+        document.querySelectorAll('.sc-card model-viewer').forEach(function (viewer) {
+          var gate = document.createElement('div');
+          gate.className = 'mv-gate mv-gate--gated';
+          viewer.parentNode.insertBefore(gate, viewer);
+          gate.appendChild(viewer);
+          var activate = document.createElement('button');
+          activate.type = 'button';
+          activate.className = 'mv-gate__activate';
+          activate.setAttribute('aria-label', 'Use the 3D model viewer');
+          var label = document.createElement('span');
+          label.textContent = 'Tap to spin the model';
+          activate.append(label);
+          var release = document.createElement('button');
+          release.type = 'button';
+          release.className = 'mv-gate__release';
+          release.textContent = '✕ Done';
+          release.setAttribute('aria-label', 'Stop using the model viewer and scroll the page again');
+          activate.addEventListener('click', function () {
+            gate.classList.add('mv-gate--active');
+            gate.classList.remove('mv-gate--gated');
+          });
+          release.addEventListener('click', function () {
+            gate.classList.remove('mv-gate--active');
+            gate.classList.add('mv-gate--gated');
+          });
+          gate.append(activate, release);
+        });
+      }
     </script>
     <script type="module" src="/src/main.ts"></script>
     <script type="module" src="/src/maps-view.ts"></script>
