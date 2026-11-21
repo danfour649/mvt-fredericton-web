@@ -88,7 +88,7 @@ describe('[feedback] cars disappear', () => {
 describe('[feedback] people teleport', () => {
   it('a downed ped gets up where they fell, not 25 m away', () => {
     const world = toyWorld();
-    const peds: Ped[] = spawnPeds(world, SPAWN_POS, 1, () => 0.42);
+    const peds: Ped[] = spawnPeds(world, { x: -500, z: SPAWN_POS.z }, 1, () => 0.42);
     const ped = peds[0];
     const fellAt = { ...ped.pos };
     forceDown(ped, 0.1);
@@ -99,7 +99,7 @@ describe('[feedback] people teleport', () => {
 
   it('a fleeing ped returns to the path continuously (no step > 1 m)', () => {
     const world = toyWorld();
-    const peds: Ped[] = spawnPeds(world, SPAWN_POS, 1, () => 0.42);
+    const peds: Ped[] = spawnPeds(world, { x: -500, z: SPAWN_POS.z }, 1, () => 0.42);
     const ped = peds[0];
     // Trigger a flee with a fast threat beside the ped.
     updatePed(ped, 0.05, { pos: { x: ped.pos.x - 6, z: ped.pos.z }, speed: 8 });

@@ -1237,6 +1237,13 @@ export class Game {
           // stacked pair brakes (bumperGap below is deeply negative)
           // and the pair separates as the front car pulls away.
           if (along <= -2.5 || along > 17) continue;
+          // Stacked-pair tie-break: with along ≈ 0 neither car is
+          // geometrically in front, so both would brake forever
+          // (a deadlock, verified in the feedback test's first run).
+          // The lower id is the front car and ignores its twin; the
+          // higher id brakes until a real gap opens, then follows
+          // under the normal profile.
+          if (along < 0.5 && other.traffic && car.id <= other.id) continue;
           const lateral = Math.abs(rx * -hvz + rz * hvx);
           if (lateral > 1.7) {
             // Crossing traffic at a junction: not in this car's lane
@@ -1260,6 +1267,11 @@ export class Game {
               : other.traffic!.speedMps;
           const bumperGap = along - 4.4;
           let capHere = leaderSpeed + Math.max(0, bumperGap - 1.6) * 0.85;
+          // Inside the desired 1.6 m bumper gap the follower must go
+          // SLOWER than the leader (a fraction of its speed), not
+          // merely match it — matching speed froze a stacked pair at
+          // a 4.2 m centre distance (bumpers touching) forever.
+          if (bumperGap < 1.6) capHere = Math.min(capHere, leaderSpeed * Math.max(0, bumperGap / 1.6));
           if (bumperGap <= 0.2) capHere = 0;
           if (capHere < cap) cap = capHere;
         }
