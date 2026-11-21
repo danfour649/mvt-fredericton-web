@@ -109,3 +109,47 @@ describe('MissionRunner state machine', () => {
     expect(r.available().map((m) => m.id)).toContain('downtown_burner');
   });
 });
+
+describe('encore laps (v0.34 — the run must not go dry)', () => {
+  function completeCurrent(r: MissionRunner): void {
+    for (let guard = 0; guard < 12 && r.active; guard++) {
+      const step = r.currentStep!;
+      if (step.kind === 'interact') r.tryInteract(step.pos!);
+      else if (step.kind === 'steal_vehicle') r.notifyEnteredParkedCar();
+      else if (step.kind === 'deliver_vehicle') r.update(step.pos!, true);
+    }
+    expect(r.active).toBeNull();
+  }
+
+  it('completing every mission rolls into lap 2 with refilled payphones and +50% payouts', () => {
+    const r = new MissionRunner();
+    expect(r.lap).toBe(1);
+    expect(r.payoutScale()).toBe(1);
+    for (const m of MISSIONS) {
+      expect(r.start(m)).toBe(true);
+      completeCurrent(r);
+    }
+    const evts = r.drainEvents();
+    const completed = evts.filter((e) => e.type === 'completed');
+    expect(completed).toHaveLength(MISSIONS.length);
+    // Lap-1 completions all paid at the base scale…
+    for (const e of completed) {
+      if (e.type === 'completed') expect(e.payoutScale).toBe(1);
+    }
+    // …then the lap rolled over exactly once.
+    const laps = evts.filter((e) => e.type === 'lap');
+    expect(laps).toHaveLength(1);
+    expect(laps[0]).toMatchObject({ lap: 2 });
+    expect(r.lap).toBe(2);
+    expect(r.payoutScale()).toBe(1.5);
+    expect(r.completed.size).toBe(0);
+    expect(r.available().map((m) => m.id)).toEqual(MISSIONS.map((m) => m.id));
+    // A lap-2 completion pays at the raised scale.
+    const first = r.available()[0];
+    expect(r.start(first)).toBe(true);
+    completeCurrent(r);
+    const ev2 = r.drainEvents().filter((e) => e.type === 'completed');
+    expect(ev2).toHaveLength(1);
+    if (ev2[0].type === 'completed') expect(ev2[0].payoutScale).toBe(1.5);
+  });
+});

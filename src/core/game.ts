@@ -165,16 +165,18 @@ export const START_LIVES = 5;
  * metres from the player, counts are the floors we recycle toward.
  */
 export const BUBBLE_R = 220;
-/** Iteration 3 mayhem dial (Follow PR): 10 → 14 traffic in the bubble. */
-export const TRAFFIC_TARGET = 14;
+/** Iteration 3 mayhem dial (Follow PR): 10 → 14 traffic in the bubble.
+ *  v0.34: 14 → 16 — fuller streets (Daniel: "make it less boring"). */
+export const TRAFFIC_TARGET = 16;
 export const PARKED_NEAR_R = 150;
 export const PARKED_TARGET = 4;
 /** v0.25: pedestrians bubble too — peds beyond PED_BUBBLE_R are
  *  re-anchored near the player until PED_TARGET are within range.
  *  Iteration 3 mayhem dial: the floor rises 12 → 16 (of the 20-ped
- *  pool) — the sidewalks should feel populated, not sprinkled. */
+ *  pool) — the sidewalks should feel populated, not sprinkled.
+ *  v0.34: pool 20 → 26, floor 16 → 19 — busier sidewalks still. */
 export const PED_BUBBLE_R = 260;
-export const PED_TARGET = 16;
+export const PED_TARGET = 19;
 const PED_SCORE = 100;
 const THEFT_SCORE = 500;
 /** v0.30 crime economy (audit #9): GTA 1 paid for violence directly —
@@ -192,6 +194,10 @@ const CHOP_BASE: Record<string, number> = { standard: 800, fast: 1600 };
 /** v0.30: the vehicle job (a marked parked car → timed delivery). */
 const VEH_JOB_PAYOUT = 250; // × MISSION_SCORE_SCALE, like the payphones
 const VEH_JOB_SECS = 90;
+/** v0.34: the wait between vehicle jobs drops 120 s → 30 s — two
+ *  minutes of nothing between jobs was dead air (Daniel: "make it
+ *  less boring"). */
+const VEH_JOB_COOLDOWN_SEC = 30;
 const WALK_SPEED = 5.4;
 /** v0.29: metres per full 4-frame walk cycle (two steps). */
 const PLAYER_STRIDE_M = 1.5;
@@ -418,7 +424,7 @@ export class Game {
     this.exitPos = snapToRoad(world, 170, 20);
     this.chopShopPos = snapToRoad(world, -120, 100);
     this.spawnCars();
-    this.peds = spawnPeds(world, SPAWN_POS, 20, mulberry32(777));
+    this.peds = spawnPeds(world, SPAWN_POS, 26, mulberry32(777));
     this.pickups = placePickups(world);
     this.markVehJobCar();
   }
@@ -947,7 +953,7 @@ export class Game {
     this.pickups = placePickups(this.world);
     this.spawnCars();
     this.markVehJobCar();
-    this.peds = spawnPeds(this.world, SPAWN_POS, 20, mulberry32(777));
+    this.peds = spawnPeds(this.world, SPAWN_POS, 26, mulberry32(777));
     this.phase = 'play';
     this.camPos = { ...SPAWN_POS };
     this.showToast('New run — reach $250,000');
@@ -972,7 +978,7 @@ export class Game {
         this.brief = `${ev.mission.title} — ${ev.mission.brief}`;
         this.briefTtl = 7;
       } else if (ev.type === 'completed') {
-        const gained = this.wallet.earn(ev.mission.payout * MISSION_SCORE_SCALE);
+        const gained = this.wallet.earn(ev.mission.payout * MISSION_SCORE_SCALE * ev.payoutScale);
         this.wallet.missionCompleted();
         this.showToast(
           `${ev.mission.title} complete! +$${gained.toLocaleString()} — multiplier now ×${this.wallet.multiplier}`,
@@ -982,6 +988,10 @@ export class Game {
         }
         this.checkGoal();
         this.persist();
+      } else if (ev.type === 'lap') {
+        this.brief = `ENCORE LAP ${ev.lap} — every payphone in the district is ringing again. Payouts +50%.`;
+        this.briefTtl = 8;
+        this.showToast(`ENCORE LAP ${ev.lap}! Mission payouts now ×${this.missions.payoutScale()}`);
       } else if (ev.type === 'failed') {
         this.showToast(`${ev.mission.title} FAILED — the payphone will ring again`);
       } else if (ev.type === 'step') {
@@ -2194,13 +2204,13 @@ export class Game {
     if (!car || car.wrecked) {
       this.showToast('VEHICLE JOB FAILED — the car is wreckage');
       this.vehJob = null;
-      this.vehJobCd = 120;
+      this.vehJobCd = VEH_JOB_COOLDOWN_SEC;
       return;
     }
     if (job.tLeft <= 0) {
       this.showToast('VEHICLE JOB FAILED — too slow');
       this.vehJob = null;
-      this.vehJobCd = 120;
+      this.vehJobCd = VEH_JOB_COOLDOWN_SEC;
       return;
     }
     if (this.drivenCar === car && dist(this.playerPos, this.chopShopPos) <= 10 && Math.abs(car.speed) < 3) {
@@ -2209,7 +2219,7 @@ export class Game {
       this.wallet.missionCompleted();
       this.showToast(`VEHICLE JOB complete! +$${gained.toLocaleString()} — multiplier now ×${this.wallet.multiplier}`);
       this.vehJob = null;
-      this.vehJobCd = 120;
+      this.vehJobCd = VEH_JOB_COOLDOWN_SEC;
       this.checkGoal();
       this.persist();
     }

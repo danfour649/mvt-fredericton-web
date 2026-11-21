@@ -54,7 +54,9 @@ export const PICKUP_STYLE: Record<PickupKind, { glyph: string; color: string; la
   'frenzy-gun': { glyph: '💀', color: '#20242c', label: 'KILL FRENZY' },
 };
 
-/** The shopping list: 23 spots (3 of them frenzy skulls). */
+/** The shopping list: 29 spots (3 of them frenzy skulls). v0.34 adds
+ *  six more of the useful commons — appended at the end so the
+ *  existing 23 seeded placements don't move. */
 const MANIFEST: PickupKind[] = [
   'pistol', 'pistol', 'pistol',
   'mg', 'mg',
@@ -66,6 +68,7 @@ const MANIFEST: PickupKind[] = [
   'life',
   'rocket', 'flame',
   'frenzy-runover', 'frenzy-destroy', 'frenzy-gun',
+  'pistol', 'mg', 'armour', 'bribe', 'multiplier', 'ammo',
 ];
 
 function mulberry32(seed: number): () => number {
