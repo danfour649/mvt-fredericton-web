@@ -179,8 +179,9 @@ export const MISSIONS: MissionDef[] = [
 export type MissionEvent =
   | { type: 'started'; mission: MissionDef }
   | { type: 'step'; mission: MissionDef; step: MissionStep }
-  | { type: 'completed'; mission: MissionDef }
-  | { type: 'failed'; mission: MissionDef };
+  | { type: 'completed'; mission: MissionDef; payoutScale: number }
+  | { type: 'failed'; mission: MissionDef }
+  | { type: 'lap'; lap: number };
 
 /**
  * Mission state machine: at most one active mission. Positional steps are
@@ -193,7 +194,16 @@ export class MissionRunner {
   active: MissionDef | null = null;
   stepIndex = 0;
   completed = new Set<string>();
+  /** Encore lap (v0.34): when every mission is done the payphones
+   *  ring again instead of the run going dry — the completed set
+   *  clears, the lap increments and payouts scale +50% per lap. */
+  lap = 1;
   events: MissionEvent[] = [];
+
+  /** Payout multiplier for the current lap: ×1, ×1.5, ×2, … */
+  payoutScale(): number {
+    return 1 + 0.5 * (this.lap - 1);
+  }
   /** Seconds left on the active timed mission; null when untimed/none. */
   timeLeft: number | null = null;
 
@@ -228,7 +238,14 @@ export class MissionRunner {
       this.active = null;
       this.stepIndex = 0;
       this.timeLeft = null;
-      this.events.push({ type: 'completed', mission });
+      this.events.push({ type: 'completed', mission, payoutScale: this.payoutScale() });
+      if (this.completed.size >= MISSIONS.length) {
+        // Encore lap: refill the payphones rather than declaring
+        // "all missions complete" and leaving free roam goalless.
+        this.completed.clear();
+        this.lap++;
+        this.events.push({ type: 'lap', lap: this.lap });
+      }
     } else {
       this.events.push({ type: 'step', mission: this.active, step: this.currentStep! });
     }
