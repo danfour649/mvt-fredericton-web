@@ -668,6 +668,15 @@ export class Game {
       // tick instead; a free spot is sampled next tick.
       const landing = spawnTraffic(spot.road, spot.along);
       if (this.cars.some((o) => o !== car && dist(o.pos, landing.pos) < 8)) break;
+      // The recycled slot is a DIFFERENT car in the fiction (new
+      // driver, elsewhere): the player's claim on the old one ends
+      // here — otherwise a once-stolen car would sit stopped
+      // forever at its new spot under the driverless rule in
+      // updateTrafficCars. A recycle must never carry a fire
+      // across the map either.
+      car.stolen = false;
+      car.burning = false;
+      car.burnT = 0;
       car.traffic = landing;
       car.trafficStopT = 0;
       car.pos = { ...car.traffic.pos };
@@ -1203,7 +1212,18 @@ export class Game {
       const ahead =
         d < 9 &&
         (toPlayer.x * Math.cos(car.heading) + toPlayer.z * Math.sin(car.heading)) / (d || 1) > 0.4;
-      car.traffic.stopped = car.trafficStopT > 0 || ahead;
+      // A car the player has taken is DRIVERLESS once he steps
+      // out: traffic must not resume its route and drive it away
+      // from beside him (Daniel, 2026-11-21: "the car disappeared
+      // after I got out of it" — the sim drove it off at full route
+      // speed the moment he exited). And a BURNING car's engine is
+      // dead — the same rule updateDriving applies to the driven
+      // car — so a burning traffic car sits, burns and explodes
+      // where it stopped instead of driving off mid-fuse. Both read
+      // as "stopped" here, which zeroes the route speed below and
+      // also makes followers queue behind the car, as they should
+      // for a car abandoned in the road.
+      car.traffic.stopped = car.trafficStopT > 0 || ahead || car.stolen || car.burning;
       // v0.25 follow behaviour: cap this car's speed by whatever is
       // rolling ahead of it in its lane corridor — another traffic car
       // or the player's car. Before this, traffic had NO car-ahead
