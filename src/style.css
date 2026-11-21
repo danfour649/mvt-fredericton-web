@@ -162,9 +162,11 @@ body { font-family: system-ui, sans-serif; }
 #help {
   position: fixed;
   right: max(10px, env(safe-area-inset-right));
+  /* The raised position that clears the touch cluster lives in
+     the coarse-pointer block below (the cluster only exists
+     there); on desktop the corner is free and the ? stays in it. */
   bottom: max(10px, calc(env(safe-area-inset-bottom) + 4px));
-  z-index: 34; /* above the touch layer (22) and the follow marker (21):
-     in FOLLOW mode this button is the ONLY chrome on screen */
+  z-index: 34; /* above the touch layer (22) and the follow marker (21) */
   font-size: 10.5px; color: rgba(255,255,255,0.9);
   text-shadow: 0 1px 2px rgba(0,0,0,0.7);
   max-width: min(520px, calc(100vw - 20px)); text-align: right;
@@ -294,9 +296,13 @@ body.tilt-driving #stick-zone { pointer-events: none; }
    the target marker is a fixed pin positioned by main.ts (left/top
    in client px from the frame camera), styled like the game's gold
    anchor ring — a pulsing double ring with a solid heart. In
-   follow mode NO control clusters render at all — the whole
-   #ctl-right is display:none (body.follow-mode is set by
-   applyScheme in main.ts); gestures carry every action. */
+   follow mode gestures carry driving, but the E button (exit car /
+   interact) ALWAYS renders — it is the one action a gesture can't
+   safely carry: the follow double-tap only exits at a near-stop
+   (at speed it's the handbrake), which left a player in a BURNING
+   car with no way out on a phone (Daniel, 2026-11-21). CSS below
+   hides every #ctl-right button except the two E buttons while
+   body.follow-mode is set (applyScheme in main.ts). */
 #follow-hint {
   position: absolute; left: 50%; bottom: 108px; transform: translateX(-50%);
   font: 700 12px system-ui, sans-serif; color: rgba(255,255,255,0.85);
@@ -323,7 +329,24 @@ body.tilt-driving #stick-zone { pointer-events: none; }
   70% { transform: scale(1.05); opacity: 0.75; }
   100% { transform: scale(1.12); opacity: 0.55; }
 }
-body.follow-mode #ctl-right { display: none !important; }
+body.follow-mode #ctl-right #btn-drift,
+body.follow-mode #ctl-right #btn-brk,
+body.follow-mode #ctl-right #btn-gas,
+body.follow-mode #ctl-right #btn-weapon,
+body.follow-mode #ctl-right #btn-fire { display: none !important; }
+/* Bail-out urgency: while the driven car burns (body.car-burning,
+   toggled from the frame loop in main.ts) the E button goes red
+   and pulses in EVERY scheme — the fuse is ~3 s, the way out must
+   be findable at a glance. */
+body.car-burning #btn-e,
+body.car-burning #ctl-buttons [data-action="interact"] {
+  background: rgba(216, 49, 26, 0.9);
+  animation: e-bail 0.45s ease-in-out infinite alternate;
+}
+@keyframes e-bail {
+  from { transform: scale(1); }
+  to { transform: scale(1.14); }
+}
 /* Gear line: weapon/ammo/armour/card, under the top bar. */
 #hud-gear {
   position: fixed; top: 34px; right: 10px; z-index: 20;
@@ -455,6 +478,13 @@ body.follow-mode #ctl-right { display: none !important; }
   /* Pager moves up: the stick lives bottom-left now. */
   #pager { bottom: auto; top: calc(var(--header-h) + 6px); }
   #credit { display: none; }
+  /* The ? disc parks ABOVE the bottom-right control cluster on
+     touch screens: the cluster's top edge reaches ~218px from the
+     bottom (pedals 116 + gap + 64px row + its 26px offset), and
+     the disc used to sit right on the E button — #help is z 34,
+     over the touch layer's 22 — eating the tap that gets you out
+     of a car (worse: out of a BURNING car; Daniel, 2026-11-21). */
+  #help { bottom: calc(env(safe-area-inset-bottom) + 238px); }
 }
 @media (max-width: 560px) {
   /* The one-line help crowds the corner on narrow screens (its text
