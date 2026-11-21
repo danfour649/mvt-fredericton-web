@@ -61,6 +61,10 @@ export class CanvasRenderer implements Renderer {
   private clutter: ClutterItem[][] = [];
   private crosswalks: Vec2[][] = [];
   private trees: TreeSpot[] = [];
+  /** Per-road bounding boxes, derived at init — the road culling
+   *  test (a long segment whose ENDPOINTS are both off-screen but
+   *  whose middle crosses the frame must still draw). */
+  private roadBoxes: { minX: number; maxX: number; minZ: number; maxZ: number }[] = [];
   private textures: Record<TextureKind, TextureImage> | null = null;
   private patterns = new Map<TextureKind, CanvasPattern>();
   /** Iteration 4: building indices in painter order (north → south)
@@ -90,6 +94,14 @@ export class CanvasRenderer implements Renderer {
     );
     this.crosswalks = crosswalkStripes(buildRoadGraph(world));
     this.trees = scatterTrees(world);
+    this.roadBoxes = world.roads.map((r) => {
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const p of r.path) {
+        minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+        minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+      }
+      return { minX, maxX, minZ, maxZ };
+    });
     this.buildingOrder = world.buildings
       .map((_, i) => i)
       .sort((a, b2) => world.buildings[a].center.z - world.buildings[b2].center.z);
@@ -157,6 +169,19 @@ export class CanvasRenderer implements Renderer {
     const viewM = { x: frame.viewWidthM / 2 + 60, z: h / scale / 2 + 60 };
     const near = (x: number, z: number) =>
       Math.abs(x - frame.camera.x) < viewM.x && Math.abs(z - frame.camera.z) < viewM.z;
+    // Road visibility by bounding box, NOT by endpoints: the old
+    // endpoint-only test culled any long segment that crossed the
+    // frame with both ends off-screen — whole streets vanished,
+    // worst at the map edges where GeoNB segments run longest
+    // (the "unfinished streets at the city edges" report).
+    const roadVisible = (i: number): boolean => {
+      const bb = this.roadBoxes[i];
+      if (!bb) return true;
+      return !(
+        bb.maxX < frame.camera.x - viewM.x || bb.minX > frame.camera.x + viewM.x ||
+        bb.maxZ < frame.camera.z - viewM.z || bb.minZ > frame.camera.z + viewM.z
+      );
+    };
     const tracePath = (ring: Vec2[]): void => {
       ring.forEach((p, j) => (j === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
       ctx.closePath();
@@ -208,8 +233,9 @@ export class CanvasRenderer implements Renderer {
     }
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    for (const r of this.world.roads) {
-      if (!near(r.path[0].x, r.path[0].z) && !near(r.path[r.path.length - 1].x, r.path[r.path.length - 1].z)) continue;
+    for (let ri = 0; ri < this.world.roads.length; ri++) {
+      const r = this.world.roads[ri];
+      if (!roadVisible(ri)) continue;
       ctx.beginPath();
       r.path.forEach((p, i) => (i === 0 ? ctx.moveTo(sx(p.x), sy(p.z)) : ctx.lineTo(sx(p.x), sy(p.z))));
       ctx.strokeStyle = pave;
@@ -222,8 +248,9 @@ export class CanvasRenderer implements Renderer {
     // (iteration 4 — the footage's lighter violet arcs), yellow dash.
     const asphalt = this.pattern('asphalt', scale, frame.camera, w, h);
     for (const pass of [0, 1, 2, 3, 4] as const) {
-      for (const r of this.world.roads) {
-        if (!near(r.path[0].x, r.path[0].z) && !near(r.path[r.path.length - 1].x, r.path[r.path.length - 1].z)) continue;
+      for (let ri = 0; ri < this.world.roads.length; ri++) {
+        const r = this.world.roads[ri];
+        if (!roadVisible(ri)) continue;
         if (pass === 3) {
           // Polish: one subtle band per lane centre, offset from the
           // centreline — through a corner the bands arc with the road.

@@ -41,15 +41,24 @@ export function forceDown(ped: Ped, seconds: number): void {
 const PED_COLORS = ['#d35450', '#5b8dd9', '#58b368', '#e8c547', '#9d7bd8', '#e07a5f', '#4fb8ac', '#c0c6ce'];
 const WALK_SPEED = 1.4;
 
-function placeOnPath(ped: Ped): void {
+/** The sidewalk point for the ped's current road position. */
+function pathPos(ped: Ped): { pos: Vec2; heading: number } {
   const { pos, heading } = pointAlongRoad(ped.road, ped.distAlong);
   const travel = ped.dir === 1 ? heading : heading + Math.PI;
   const off = ped.road.widthM / 2 + 1.1;
-  ped.pos = {
-    x: pos.x + Math.cos(travel + (Math.PI / 2) * ped.side) * off,
-    z: pos.z + Math.sin(travel + (Math.PI / 2) * ped.side) * off,
+  return {
+    pos: {
+      x: pos.x + Math.cos(travel + (Math.PI / 2) * ped.side) * off,
+      z: pos.z + Math.sin(travel + (Math.PI / 2) * ped.side) * off,
+    },
+    heading: travel,
   };
-  ped.heading = travel;
+}
+
+function placeOnPath(ped: Ped): void {
+  const { pos, heading } = pathPos(ped);
+  ped.pos = pos;
+  ped.heading = heading;
 }
 
 export function spawnPeds(
@@ -120,9 +129,12 @@ export function updatePed(ped: Ped, dt: number, threat?: PedThreat): 'downed' | 
   if (ped.state === 'down') {
     ped.downT -= dt;
     if (ped.downT <= 0) {
-      // Get up somewhere along the same road, GTA-forgiving.
+      // Get up WHERE THEY FELL. This used to jump the ped 25 m along
+      // the road on recovery — a visible teleport (the Reddit report:
+      // "people teleport"). Getting up in place is also more honest:
+      // the player can see the same person stand back up.
       ped.state = 'walk';
-      ped.distAlong = Math.max(2, Math.min(ped.road.lengthM - 2, ped.distAlong + 25 * ped.dir));
+      ped.distAlong = Math.max(2, Math.min(ped.road.lengthM - 2, ped.distAlong));
       placeOnPath(ped);
     }
     return null;
@@ -153,9 +165,23 @@ export function updatePed(ped: Ped, dt: number, threat?: PedThreat): 'downed' | 
     };
     ped.heading = Math.atan2(ped.fleeDir.z, ped.fleeDir.x);
     if (ped.fleeT <= 0) {
-      ped.state = 'walk';
-      // Re-anchor onto the path so fleeing doesn't strand them in a wall.
-      placeOnPath(ped);
+      // Walk BACK to the sidewalk instead of snapping onto it. This
+      // used to call placeOnPath() unconditionally — fleeing moves a
+      // ped up to ~5 m off the path, so the snap read as a teleport.
+      // Now: if the path point is still some way off, keep moving
+      // toward it (a startled hurry back to the kerb); only the final
+      // sub-0.35 m step is a placement, which is below visual notice.
+      const target = pathPos(ped);
+      const dx = target.pos.x - ped.pos.x;
+      const dz = target.pos.z - ped.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d > 0.35) {
+        ped.fleeDir = { x: dx / d, z: dz / d };
+        ped.fleeT = Math.min(0.6, d / 4.4);
+      } else {
+        ped.state = 'walk';
+        placeOnPath(ped);
+      }
     }
     return null;
   }
