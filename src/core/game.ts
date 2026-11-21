@@ -623,7 +623,20 @@ export class Game {
     if (this.bubbleTimer < 0.1) return;
     this.bubbleTimer = 0;
     const player = this.playerPos;
-    const viewMargin = this.camViewM * 1.2 + 30;
+    // Feedback fix (2026-11-21, "cars disappear / people teleport"):
+    // the recycle margin must cover what the player can actually
+    // SEE, or a recycled car/ped vanishes (or pops in) on screen.
+    // The old margin (camViewM × 1.2 + 30, measured from the PLAYER)
+    // under-counted three ways: (1) the visible half-diagonal of a
+    // portrait frame is ~1.2–1.35× the view WIDTH alone; (2) it
+    // ignored the player's zoom target — while a pinch zoom-out is
+    // still chasing, cars were recycled against the old narrow view
+    // and then disappeared as the frame widened onto them; (3) the
+    // camera centre is offset from the player (lookahead + smoothing
+    // lag). Now: margin from the CAMERA centre, against the larger
+    // of the current and target view, with a diagonal factor.
+    const visibleView = Math.max(this.camViewM, this.zoomViewM ?? 0);
+    const viewMargin = visibleView * 1.45 + 40;
     const rng = this.trafficRng;
 
     // Traffic: top the bubble up from the far pool. Usually one car
@@ -635,12 +648,27 @@ export class Game {
     const inBubble = live.filter((c) => c !== this.drivenCar && dist(c.pos, player) <= BUBBLE_R);
     let deficit = TRAFFIC_TARGET - inBubble.length;
     for (let k = 0; k < 6 && deficit > 0; k++) {
-      const far = live.filter((c) => c !== this.drivenCar && dist(c.pos, player) > BUBBLE_R);
+      // Only cars that are off-screen (from the CAMERA, not just
+      // outside the player bubble) may be recycled — a car the
+      // player can see must drive out of view, never vanish.
+      const far = live.filter(
+        (c) =>
+          c !== this.drivenCar &&
+          dist(c.pos, player) > BUBBLE_R &&
+          dist(c.pos, this.camPos) > viewMargin,
+      );
       if (!far.length) break;
       const car = far[Math.floor(rng() * far.length)];
       const spot = this.pickBubbleSpot(player, viewMargin, BUBBLE_R, true);
       if (!spot) break;
-      car.traffic = spawnTraffic(spot.road, spot.along);
+      // Never land a recycled car on top of another car: the spot
+      // sampler knew nothing about occupancy, so a recycle could
+      // stack two cars on one point (which then drove overlapped —
+      // see the stacked-pair fix in updateTrafficCars). Skip this
+      // tick instead; a free spot is sampled next tick.
+      const landing = spawnTraffic(spot.road, spot.along);
+      if (this.cars.some((o) => o !== car && dist(o.pos, landing.pos) < 8)) break;
+      car.traffic = landing;
       car.trafficStopT = 0;
       car.pos = { ...car.traffic.pos };
       car.heading = car.traffic.heading;
@@ -660,15 +688,19 @@ export class Game {
       const far = this.cars.filter(
         (c) =>
           c.kind === 'parked' && !c.stolen && !c.wrecked &&
-          c !== this.drivenCar && dist(c.pos, player) > BUBBLE_R + 80,
+          c !== this.drivenCar && dist(c.pos, player) > BUBBLE_R + 80 &&
+          dist(c.pos, this.camPos) > viewMargin,
       );
       if (far.length) {
         const car = far[Math.floor(rng() * far.length)];
         const spot = this.pickBubbleSpot(player, viewMargin, PARKED_NEAR_R, false);
         if (spot) {
           const at = kerbPlacement(spot.road, spot.along, rng);
-          car.pos = at.pos;
-          car.heading = at.heading;
+          // Same occupancy guard as traffic: don't stack kerbside.
+          if (!this.cars.some((o) => o !== car && dist(o.pos, at.pos) < 7)) {
+            car.pos = at.pos;
+            car.heading = at.heading;
+          }
         }
       }
     }
@@ -685,7 +717,9 @@ export class Game {
         (r) => r.lengthM > 50 && roadMinDist(r, player) <= PED_BUBBLE_R - 40,
       );
       if (candidates.length) {
-        const farPeds = this.peds.filter((p) => dist(p.pos, player) > PED_BUBBLE_R);
+        const farPeds = this.peds.filter(
+          (p) => dist(p.pos, player) > PED_BUBBLE_R && dist(p.pos, this.camPos) > viewMargin,
+        );
         let moved = 0;
         for (const ped of farPeds) {
           if (nearPeds + moved >= PED_TARGET || moved >= 3) break;
@@ -701,7 +735,9 @@ export class Game {
             const road = candidates[Math.floor(this.pedRng() * candidates.length)];
             reanchorPed(ped, road, this.pedRng);
             const d = dist(ped.pos, player);
-            if (d >= viewMargin && d <= PED_BUBBLE_R) placed = true;
+            // Landing must be off-screen from the camera too, not
+            // just far from the player (see viewMargin note above).
+            if (d >= viewMargin && d <= PED_BUBBLE_R && dist(ped.pos, this.camPos) >= viewMargin) placed = true;
           }
           if (placed) {
             moved++;
@@ -1192,9 +1228,31 @@ export class Game {
           const rx = other.pos.x - car.pos.x;
           const rz = other.pos.z - car.pos.z;
           const along = rx * hvx + rz * hvz;
-          if (along <= 0 || along > 17) continue;
+          // Feedback fix (2026-11-21, "cars pass over each other"):
+          // the old `along <= 0` cut-off meant two cars spawned or
+          // junction-merged onto the SAME spot (along ≈ 0) never saw
+          // each other as leader/follower at all — both drove at full
+          // cruise in perfect overlap forever. A car up to 2.5 m
+          // BEHIND centre now still counts, so the rear car of a
+          // stacked pair brakes (bumperGap below is deeply negative)
+          // and the pair separates as the front car pulls away.
+          if (along <= -2.5 || along > 17) continue;
           const lateral = Math.abs(rx * -hvz + rz * hvx);
-          if (lateral > 1.7) continue;
+          if (lateral > 1.7) {
+            // Crossing traffic at a junction: not in this car's lane
+            // corridor, but about to cross its path. Yield for a car
+            // on a non-parallel heading within a few metres ahead —
+            // without this, cross traffic drove straight through
+            // each other at every intersection.
+            const otherHeading = other === this.drivenCar ? other.heading : other.traffic!.heading;
+            const parallel = Math.abs(Math.cos(otherHeading - car.heading));
+            const gap = Math.hypot(rx, rz);
+            if (parallel < 0.65 && along > 0 && gap < 9) {
+              const capHere = Math.max(0, (gap - 5.2) * 1.1);
+              if (capHere < cap) cap = capHere;
+            }
+            continue;
+          }
           const leaderSpeed = isDriven
             ? Math.abs(other.speed)
             : other.traffic!.stopped || other.trafficStopT > 0
