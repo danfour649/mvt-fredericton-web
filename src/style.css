@@ -198,7 +198,12 @@ body { font-family: system-ui, sans-serif; }
   padding: 10px 12px; text-align: left;
   font-size: 12.5px; line-height: 1.55; text-shadow: none;
   box-shadow: 0 10px 30px rgba(0,0,0,0.55);
-  max-height: calc(100dvh - 110px); overflow-y: auto;
+  /* v0.34 QA: the panel grows UP from the toggle, so its height
+     budget must subtract everything below AND the site header
+     above. The old flat 110px let the panel's top slide under the
+     header (and off the top of the screen on phones, where the ?
+     parks 238px up) — the first lines of help were unreachable. */
+  max-height: calc(100dvh - var(--header-h) - 122px); overflow-y: auto;
 }
 
 /* --- touch controls ---------------------------------------------------- */
@@ -308,8 +313,11 @@ body.tilt-driving #stick-zone { pointer-events: none; }
   font: 700 12px system-ui, sans-serif; color: rgba(255,255,255,0.85);
   text-shadow: 0 1px 3px rgba(0,0,0,0.8); pointer-events: none;
   /* v0.34: nowrap ran the line off both edges of a phone screen —
-     wrap it, capped and centred. */
-  max-width: min(92vw, 430px); text-align: center; line-height: 1.4;
+     wrap it, capped and centred. The width must be EXPLICIT: with
+     left:50% and no width, shrink-to-fit caps the box at the half
+     of the screen right of centre (195px on a phone), so the hint
+     wrapped into a narrow column instead of the intended measure. */
+  width: min(92vw, 430px); text-align: center; line-height: 1.4;
 }
 #follow-target {
   position: fixed; left: 0; top: 0; width: 46px; height: 46px; z-index: 21;
@@ -488,6 +496,9 @@ body.car-burning #ctl-buttons [data-action="interact"] {
      over the touch layer's 22 — eating the tap that gets you out
      of a car (worse: out of a BURNING car; Daniel, 2026-11-21). */
   #help { bottom: calc(env(safe-area-inset-bottom) + 238px); }
+  /* With the ? parked 238px up, the open panel's budget shrinks by
+     the same amount or its top leaves the screen (see base rule). */
+  #help #help-full:not([hidden]) { max-height: calc(100dvh - var(--header-h) - 356px); }
 }
 @media (max-width: 560px) {
   /* The one-line help crowds the corner on narrow screens (its text
