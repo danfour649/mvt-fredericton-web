@@ -57,7 +57,7 @@ import {
 
 /** First-drive hint for the FOLLOW scheme: gestures, not pedals. */
 const FOLLOW_DRIVE_HINT =
-  'Tap the street to drive there · tap behind the car to reverse · double-tap: stopped = get out · moving = handbrake';
+  'Tap the street to drive there · tap behind the car to reverse · the green E (bottom right) gets out — if the car catches fire, bail out!';
 
 const localStorageAdapter: StorageAdapter = {
   read: (key) => {
@@ -675,8 +675,15 @@ async function boot(): Promise<void> {
       // Double-tap is the action key in a car: at a standstill it's
       // the door handle, at speed it's the handbrake. The tap ALSO
       // still names a destination (additive — never delayed).
+      // EXCEPTION: a BURNING car is always a bail-out, at any speed
+      // — the ~3 s fuse does not wait for the car to roll to a stop
+      // (the core exit itself has no speed gate; Daniel's phone
+      // report, 2026-11-21: no way out of a burning car).
       if (dbl && game.phase === 'play') {
-        if (Math.abs(game.drivenCar.speed) <= FOLLOW_EXIT_MAX_SPEED_MPS) {
+        if (
+          game.drivenCar.burning ||
+          Math.abs(game.drivenCar.speed) <= FOLLOW_EXIT_MAX_SPEED_MPS
+        ) {
           followTarget = null;
           lastFollowTap = null;
           interact();
@@ -854,8 +861,10 @@ async function boot(): Promise<void> {
       const list = (elm.dataset.schemes ?? '').split(' ');
       elm.hidden = !list.includes(scheme);
     });
-    // Follow is gesture-only: NO control clusters render at all
-    // while it's the scheme (body class drives the CSS kill).
+    // Follow is gesture-driven: the CSS trims #ctl-right to just
+    // the E button while it's the scheme (body class drives it) —
+    // gestures can't safely carry exit/interact (burning-car fix,
+    // 2026-11-21).
     document.body.classList.toggle('follow-mode', scheme === 'follow');
     // The first-drive hint teaches the live scheme's vocabulary.
     game.driveHintText = scheme === 'follow' ? FOLLOW_DRIVE_HINT : DRIVE_HINT;
@@ -1363,6 +1372,7 @@ async function boot(): Promise<void> {
   let typedBriefFor = '';
   // Haptics transition trackers.
   let prevInCar = false;
+  let prevBurning = false;
   let prevPhase = 'play';
   let prevStamp = '';
   let prevToast = '';
@@ -1543,6 +1553,14 @@ async function boot(): Promise<void> {
     if (!carBanner.hidden && performance.now() > carBannerUntil) carBanner.hidden = true;
     updateObjectiveArrow(frameState, hud.vehJob);
     if (prevInCar && !hud.inCar && hud.phase === 'play') audio.exitCar();
+    // Bail-out urgency chrome: body.car-burning turns the E button
+    // red and pulsing in every scheme (CSS) while the driven car
+    // burns — diffed here like the other transition trackers.
+    const burningNow = !!game.drivenCar?.burning;
+    if (burningNow !== prevBurning) {
+      prevBurning = burningNow;
+      document.body.classList.toggle('car-burning', burningNow);
+    }
     if (prevInCar !== hud.inCar) {
       syncChromeState();
       // Follow: a target belongs to the context it was tapped in —
