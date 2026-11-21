@@ -738,7 +738,7 @@ export class MapLibreRenderer implements Renderer {
             frame: walkFrame(e.walkPhase ?? 0, (e.speedMps ?? 0) > 0.25),
             hair: PLAYER_HAIR,
           }),
-          p.x, p.y, ppm, e.heading, 13,
+          p.x, p.y, ppm, e.heading, 17,
         );
       } else if (e.kind === 'ped') {
         drawSprite(

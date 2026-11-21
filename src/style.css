@@ -306,7 +306,10 @@ body.tilt-driving #stick-zone { pointer-events: none; }
 #follow-hint {
   position: absolute; left: 50%; bottom: 108px; transform: translateX(-50%);
   font: 700 12px system-ui, sans-serif; color: rgba(255,255,255,0.85);
-  text-shadow: 0 1px 3px rgba(0,0,0,0.8); white-space: nowrap; pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8); pointer-events: none;
+  /* v0.34: nowrap ran the line off both edges of a phone screen —
+     wrap it, capped and centred. */
+  max-width: min(92vw, 430px); text-align: center; line-height: 1.4;
 }
 #follow-target {
   position: fixed; left: 0; top: 0; width: 46px; height: 46px; z-index: 21;
