@@ -558,6 +558,14 @@ body.car-burning #ctl-buttons [data-action="interact"] {
 #hud-toast { top: calc(var(--header-h) + 96px); }
 @media (pointer: coarse) {
   #pager { top: calc(var(--header-h) + 58px); }
+  /* The toast's slot (header + 96px) sits INSIDE the pager's box on
+     touch screens — the pager moved up to header + 58px and runs
+     ~90–130px tall, so "Reckless driving — wanted level up" printed
+     across the mission card and neither could be read (measured at
+     390×844: pager 164–253, toast 202–245; Daniel, 2026-11-21).
+     On coarse pointers the toast drops below the pager's tallest
+     case (brief + objective + timer ≈ header + 188px). */
+  #hud-toast { top: calc(var(--header-h) + 196px); }
 }
 
 .showcase {
