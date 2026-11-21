@@ -318,7 +318,9 @@ const FEET: Record<number, [number, number][]> = {
  * crescent at the face edge, a shirt-coloured shoulder/torso mass,
  * and dark foot specks that alternate through the walk cycle. Bold
  * shapes + dark ink outline so it still reads as a person at the
- * real on-foot framing (~13–15 px on a phone), not a blob.
+ * real on-foot framing (~13–15 px on a phone), not a blob. v0.34:
+ * wider shoulders, a bigger forward head, a dark backpack and a 3×
+ * raster — the flat gold disc still read as a yellow dot (Daniel).
  */
 export function personSprite(
   color: string,
@@ -330,10 +332,15 @@ export function personSprite(
   const hit = cache.get(key);
   if (hit) return hit;
 
-  const S = Math.round(PERSON_M * PPM);
+  // v0.34: drawn at 3× supersample — at the old 44 px canvas the head,
+  // feet and outline were sub-pixel mush and the gold torso was all
+  // that survived, so the player read as a plain yellow dot on a phone
+  // (Daniel, 2026-11-21). Same 1 m footprint; only the raster is finer.
+  const SS = 3;
+  const S = Math.round(PERSON_M * PPM * SS);
   const [c, ctx] = canvas(S, S);
   const cx = S / 2, cy = S / 2;
-  const M = PPM; // px per metre in sprite space
+  const M = PPM * SS; // px per metre in sprite space
 
   if (opts.down) {
     // Lying flat: elongated torso along +X, head at the front end.
@@ -341,7 +348,7 @@ export function personSprite(
     ctx.beginPath();
     ctx.ellipse(cx, cy, 0.4 * M, 0.16 * M, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 * SS;
     ctx.strokeStyle = 'rgba(10,10,14,0.55)';
     ctx.stroke();
     // Head: hair disc with a skin crescent, same as standing.
@@ -363,7 +370,7 @@ export function personSprite(
     // v0 metre-radius circle layer.
     ctx.beginPath();
     ctx.arc(cx, cy, S * 0.47, 0, Math.PI * 2);
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3 * SS;
     ctx.strokeStyle = 'rgba(255,255,255,0.9)';
     ctx.stroke();
   }
@@ -371,33 +378,44 @@ export function personSprite(
   ctx.fillStyle = '#211d19';
   for (const [fx, fz] of FEET[frame] ?? FEET[0]) {
     ctx.beginPath();
-    ctx.ellipse(cx + fx * M, cy + fz * M, 0.085 * M, 0.055 * M, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx + fx * M, cy + fz * M, 0.105 * M, 0.07 * M, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Torso / shoulders: the shirt-coloured mass.
+  // Torso / shoulders: wider across than long — the shoulder bar is
+  // the silhouette cue that reads "person" at phone size.
   ctx.beginPath();
-  ctx.ellipse(cx, cy, 0.295 * M, 0.27 * M, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, 0.26 * M, 0.3 * M, 0, 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = 'rgba(10,10,14,0.6)';
+  ctx.lineWidth = 2 * SS;
+  ctx.strokeStyle = 'rgba(10,10,14,0.65)';
   ctx.stroke();
   // Rear shading so the mass has a front and a back.
   ctx.save();
   ctx.beginPath();
-  ctx.ellipse(cx, cy, 0.295 * M, 0.27 * M, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, 0.26 * M, 0.3 * M, 0, 0, Math.PI * 2);
   ctx.clip();
   ctx.fillStyle = 'rgba(0,0,0,0.14)';
-  ctx.fillRect(cx - 0.3 * M, cy - 0.28 * M, 0.13 * M, 0.56 * M);
+  ctx.fillRect(cx - 0.27 * M, cy - 0.31 * M, 0.12 * M, 0.62 * M);
   ctx.restore();
+  // Backpack: a dark pack on the back breaks the torso's disc — the
+  // other half of not-a-dot (v0.34).
+  rr(ctx, cx - 0.235 * M, cy - 0.165 * M, 0.3 * M, 0.33 * M, 0.09 * M);
+  ctx.fillStyle = '#2e3444';
+  ctx.fill();
+  ctx.lineWidth = 1.6 * SS;
+  ctx.strokeStyle = 'rgba(10,10,14,0.6)';
+  ctx.stroke();
   // Head: skin disc first, hair disc over it — a skin crescent of
   // forehead survives at the face edge; from above it's mostly hair.
+  // v0.34: bigger and pushed forward so the head breaks the torso's
+  // outline — a dot has no head bump.
   ctx.beginPath();
-  ctx.arc(cx + 0.345 * M, cy, 0.105 * M, 0, Math.PI * 2);
+  ctx.arc(cx + 0.36 * M, cy, 0.125 * M, 0, Math.PI * 2);
   ctx.fillStyle = '#e8b88a';
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(cx + 0.3 * M, cy, 0.12 * M, 0, Math.PI * 2);
+  ctx.arc(cx + 0.325 * M, cy, 0.145 * M, 0, Math.PI * 2);
   ctx.fillStyle = hair;
   ctx.fill();
 

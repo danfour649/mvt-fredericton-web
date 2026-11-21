@@ -306,7 +306,10 @@ body.tilt-driving #stick-zone { pointer-events: none; }
 #follow-hint {
   position: absolute; left: 50%; bottom: 108px; transform: translateX(-50%);
   font: 700 12px system-ui, sans-serif; color: rgba(255,255,255,0.85);
-  text-shadow: 0 1px 3px rgba(0,0,0,0.8); white-space: nowrap; pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8); pointer-events: none;
+  /* v0.34: nowrap ran the line off both edges of a phone screen —
+     wrap it, capped and centred. */
+  max-width: min(92vw, 430px); text-align: center; line-height: 1.4;
 }
 #follow-target {
   position: fixed; left: 0; top: 0; width: 46px; height: 46px; z-index: 21;
@@ -555,6 +558,14 @@ body.car-burning #ctl-buttons [data-action="interact"] {
 #hud-toast { top: calc(var(--header-h) + 96px); }
 @media (pointer: coarse) {
   #pager { top: calc(var(--header-h) + 58px); }
+  /* The toast's slot (header + 96px) sits INSIDE the pager's box on
+     touch screens — the pager moved up to header + 58px and runs
+     ~90–130px tall, so "Reckless driving — wanted level up" printed
+     across the mission card and neither could be read (measured at
+     390×844: pager 164–253, toast 202–245; Daniel, 2026-11-21).
+     On coarse pointers the toast drops below the pager's tallest
+     case (brief + objective + timer ≈ header + 188px). */
+  #hud-toast { top: calc(var(--header-h) + 196px); }
 }
 
 .showcase {

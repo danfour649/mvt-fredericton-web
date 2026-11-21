@@ -474,7 +474,7 @@ export class CanvasRenderer implements Renderer {
             frame: walkFrame(e.walkPhase ?? 0, (e.speedMps ?? 0) > 0.25),
             hair: PLAYER_HAIR,
           }),
-          px, py, scale, e.heading, 13,
+          px, py, scale, e.heading, 17,
         );
       }
       else if (e.kind === 'ped') {
