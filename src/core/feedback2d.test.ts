@@ -115,3 +115,36 @@ describe('[feedback] people teleport', () => {
     expect(maxStep).toBeLessThan(1);
   });
 });
+
+describe('[feedback] the car stays where you left it (Daniel, 2026-11-21)', () => {
+  it('a stolen traffic car does not drive away after the player gets out', () => {
+    const g = new Game(toyWorld(), new MemoryStorage());
+    const car = g.cars.find((c) => c.kind === 'traffic')!;
+    g.playerPos = { x: car.pos.x + 1.5, z: car.pos.z };
+    g.pressInteract();
+    expect(g.drivenCar).toBe(car);
+    g.pressInteract(); // step back out
+    expect(g.drivenCar).toBeNull();
+    const leftAt = { ...car.pos };
+    run(g, 5);
+    // Still there, still parked where it was left — before the fix
+    // the traffic sim resumed its route at full speed (~14 m/s)
+    // the moment the player exited, and the car "disappeared".
+    expect(g.cars.includes(car)).toBe(true);
+    expect(dist(car.pos, leftAt)).toBeLessThan(1);
+  });
+
+  it('a burning traffic car burns and explodes in place instead of driving off mid-fuse', () => {
+    const g = new Game(toyWorld(), new MemoryStorage());
+    const car = g.cars.find((c) => c.kind === 'traffic')!;
+    g.playerPos = { x: car.pos.x + 30, z: car.pos.z };
+    car.burning = true;
+    car.burnT = 1.0;
+    const leftAt = { ...car.pos };
+    run(g, 3);
+    expect(car.exploded).toBe(true);
+    expect(car.wrecked).toBe(true);
+    expect(g.cars.includes(car)).toBe(true); // the wreck stays
+    expect(dist(car.pos, leftAt)).toBeLessThan(1);
+  });
+});
