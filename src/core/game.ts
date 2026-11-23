@@ -2344,8 +2344,35 @@ export class Game {
     // frame LENGTHWISE in landscape and much bigger across the
     // portrait width Daniel actually plays in, and the road ahead
     // still holds >2 s of travel at full pace.
-    const view = this.drivenCar ? 50 + speedRatio * 35 : 30;
+    //
+    // Polish pass (2026-11-23, "the desktop view is fucked up"):
+    // those metres now span the viewport's SHORT side. The width-
+    // only rule was tuned on portrait phones, where width IS the
+    // short side — but a 1440×900 desktop showed the same 30 m
+    // across its long side, i.e. 18.75 m top to bottom at ~48 px
+    // per metre: a car filled a fifth of the screen and you could
+    // see nothing coming. Portrait framing is byte-identical; in
+    // landscape the view width scales by the aspect so the vertical
+    // span matches what a phone shows across. Big screens (short
+    // side past 600 px: tablets, monitors) also get up to 25 % more
+    // ground, so a 27" monitor doesn't blow a car up to fist size;
+    // every phone (short side ≤ 600 px, either orientation) is 1×.
+    const shortSideM = (this.drivenCar ? 50 + speedRatio * 35 : 30) * this.bigScreenFactor;
+    const view = shortSideM * Math.max(1, this.viewportAspect);
     return { pos, view };
+  }
+
+  /** Viewport width ÷ height and the large-screen factor, set by the
+   *  platform on boot and on resize. Defaults to a portrait phone
+   *  (≈ 390×844), so the core (and every test that never sets it)
+   *  frames exactly as before. */
+  private viewportAspect = 390 / 844;
+  private bigScreenFactor = 1;
+
+  setViewportSize(widthPx: number, heightPx: number): void {
+    if (!(widthPx > 0) || !(heightPx > 0) || !Number.isFinite(widthPx) || !Number.isFinite(heightPx)) return;
+    this.viewportAspect = Math.max(0.2, Math.min(4, widthPx / heightPx));
+    this.bigScreenFactor = Math.max(1, Math.min(1.25, Math.min(widthPx, heightPx) / 600));
   }
 
   /** True while the boot cinematic owns the camera. */
@@ -2467,7 +2494,8 @@ export class Game {
       this.cops.push(cop);
     }
     this.camPos = { ...this.playerPos };
-    this.camViewM = 58; // ≈ the settled width at the demo's 9 m/s roll
+    // ≈ the settled short-side span at the demo's 9 m/s roll.
+    this.camViewM = 58 * this.bigScreenFactor * Math.max(1, this.viewportAspect);
   }
 
   private drainBriefForDemo(): void {

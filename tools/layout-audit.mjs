@@ -12,7 +12,7 @@
  *   - no control overlaps the pager or the HUD gear line
  *   - every control fully inside the viewport
  *
- * Usage: node tools/layout-audit.mjs [url]
+ * Usage: [CHROME_BIN=/path/to/chrome] node tools/layout-audit.mjs [url]
  *   url defaults to the production site. Exit code 0 = all pass.
  */
 import { spawn } from 'node:child_process';
@@ -129,7 +129,7 @@ async function connect() {
   // which is what lets Chrome load a local preview at all (direct
   // loopback navigation is blocked by Local Network Access checks).
   args.splice(4, 0, `--proxy-server=http://127.0.0.1:${RELAY_PORT}`);
-  chrome = spawn('/opt/meta-chromium/chrome', args, { stdio: 'ignore' });
+  chrome = spawn(process.env.CHROME_BIN ?? '/opt/meta-chromium/chrome', args, { stdio: 'ignore' });
   ws = new WebSocket(await wsUrl());
   await new Promise((r) => (ws.onopen = r));
   ws.onmessage = (ev2) => {

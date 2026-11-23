@@ -3,20 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>MVT Fredericton — Radio in the Cannoli</title>
-    <meta name="description" content="The MVT Fredericton radio: sit in the 2018 Corolla (the Cannoli) and tune six Fredericton stations — every station a playlist of original songs written for the town. Plus the top-down web game, models and maps." />
+    <title>MVT Fredericton — drive downtown Fredericton in your browser</title>
+    <meta name="description" content="A top-down, GTA 1-style Fredericton built from real GeoNB buildings, roads and LiDAR — playable in your browser. Plus six radio stations of original Fredericton songs, the 3D game's music video, models and maps." />
     <link rel="canonical" href="https://www.mvtfredericton.ca/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="MVT Fredericton" />
-    <meta property="og:title" content="MVT Fredericton — Radio in the Cannoli" />
-    <meta property="og:description" content="Sit in the Cannoli and tune six Fredericton stations of original songs — plus the web-playable top-down Fredericton built from real GeoNB buildings, roads and LiDAR." />
+    <meta property="og:title" content="MVT Fredericton — drive downtown Fredericton in your browser" />
+    <meta property="og:description" content="The web-playable, top-down Fredericton built from real GeoNB buildings, roads and LiDAR — plus six radio stations of original Fredericton songs, the 3D music video, models and maps." />
     <meta property="og:url" content="https://www.mvtfredericton.ca/" />
     <meta property="og:image" content="https://www.mvtfredericton.ca/bambam/poster.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="MVT Fredericton — Radio in the Cannoli" />
-    <meta name="twitter:description" content="Six Fredericton radio stations of original songs, in the game's 2018 Corolla. Plus the playable top-down city." />
+    <meta name="twitter:title" content="MVT Fredericton — drive downtown Fredericton in your browser" />
+    <meta name="twitter:description" content="The playable top-down Fredericton, six radio stations of original songs, the 3D music video, models and maps." />
     <meta name="twitter:image" content="https://www.mvtfredericton.ca/bambam/poster.jpg" />
-    <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+    <meta name="theme-color" content="#0b1009" />
+    <link rel="stylesheet" href="/site.css" />
     <script>
       window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
     </script>
@@ -25,207 +26,300 @@
   <body>
     <div id="map"></div>
 
-    <!-- Site header: the Radio is the landing view; the game, Models
-         and Maps are sibling tabs (two-line header: brand above, tabs
-         below). Model GLBs, renders and song files are NOT in this
-         repo — they stream from the mvtf-assets host (generated from
-         the mvtf-model-pipeline / mvtf-audio-pipeline repos by
-         sync-assets.sh), so nothing is duplicated here. The 3D
-         pill (badged "New") is a plain link, not a view: it
-         navigates to the Bam Bam video page, the 3D preview page. -->
+    <!-- Site header: the game is the landing view; Models, FM and
+         Maps are sibling panels (two-line header on phones, one row
+         from 760px — styles in /site.css, shared with the 3D page).
+         Model GLBs, renders and song files are NOT in this repo — they
+         stream from the mvtf-assets host (generated from the
+         mvtf-model-pipeline / mvtf-audio-pipeline repos by
+         sync-assets.sh). The 3D pill (badged "New") is a plain link to
+         the 3D preview page, /bambam/. -->
     <header id="site-header">
       <div class="site-brand">MVT <span>FREDERICTON</span></div>
       <nav id="site-tabs" aria-label="Site sections">
-        <button type="button" data-view="game" class="on"><span class="tab-ico" aria-hidden="true">🎮</span><span class="tab-label">2D</span></button>
-        <a class="tab-link tab-3d" href="/bambam/"><span class="tab-ico" aria-hidden="true">🎬</span><span class="tab-label">3D</span><span class="tab-new">New</span></a>
-        <button type="button" data-view="models"><span class="tab-ico" aria-hidden="true">🏛️</span><span class="tab-label">Models</span></button>
-        <button type="button" data-view="radio"><span class="tab-ico" aria-hidden="true">📻</span><span class="tab-label">FM</span></button>
-        <button type="button" data-view="maps"><span class="tab-ico" aria-hidden="true">🗺️</span><span class="tab-label">Maps</span></button>
+        <button type="button" data-view="game" class="on"><span class="tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M7 10.5v4M5 12.5h4"/><circle cx="15.5" cy="11.2" r=".6"/><circle cx="18" cy="13.8" r=".6"/></svg></span><span class="tab-label">2D</span></button>
+        <a class="tab-link tab-3d" href="/bambam/"><span class="tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2.8 20.5 7.5v9L12 21.2 3.5 16.5v-9z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9.2"/></svg></span><span class="tab-label">3D</span><span class="tab-new">New</span></a>
+        <button type="button" data-view="models"><span class="tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 21h18M5 18h14M12 3 3.5 8h17z"/><path d="M6.5 10.5v5M10 10.5v5M14 10.5v5M17.5 10.5v5"/></svg></span><span class="tab-label">Models</span></button>
+        <button type="button" data-view="radio"><span class="tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2.5" y="8" width="19" height="13" rx="2.5"/><path d="M6.5 8 17 3.5"/><circle cx="15.5" cy="14.5" r="3"/><path d="M5.8 12.5h3.6M5.8 15.5h3.6M5.8 18.2h3.6"/></svg></span><span class="tab-label">FM</span></button>
+        <button type="button" data-view="maps"><span class="tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 4 3 6.5V20l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg></span><span class="tab-label">Maps</span></button>
       </nav>
     </header>
 
     <section id="view-radio" class="showcase" hidden>
       <div class="sc-inner radio-inner">
 
+        <!-- The Cannoli head unit (polish pass 2026-11-23): an in-dash
+             faceplate — amber VFD with the unlit segments ghosted
+             behind the digits, an 88–108 MHz tuning scale whose needle
+             slides to the station, LED presets, transport + volume.
+             Wired by the radio script at the bottom of this file. -->
         <div class="headunit" role="group" aria-label="Car radio">
-            <div class="hu-lcd">
-              <div class="hu-lcd-top"><span id="hu-freq">98.5</span><span class="hu-band">FM</span><span id="hu-call">CROC</span><span id="hu-clock">--:--</span></div>
-              <div class="hu-lcd-track" id="hu-track">Callie (506-555-0169)</div>
-              <div class="hu-lcd-sub"><span id="hu-pos">1 / 6</span><span id="hu-state">PAUSED</span></div>
-              <div class="hu-prog"><div id="hu-prog-fill"></div></div>
+          <div class="hu-face">
+            <div class="hu-display">
+              <div class="hu-row1">
+                <span class="hu-band">FM</span>
+                <span class="hu-freq" aria-hidden="true"><span class="hu-ghost">188.8</span><span id="hu-freq">98.5</span></span>
+                <span class="hu-mhz">MHz</span>
+                <span class="hu-st" id="hu-st">ST</span>
+                <span class="hu-time" id="hu-clock">0:00</span>
+              </div>
+              <div class="hu-row2"><span id="hu-call">CROC</span><span class="hu-sep" aria-hidden="true">·</span><span id="hu-genre">Classic Rock</span></div>
+              <div class="hu-track" id="hu-track-wrap"><span id="hu-track">Callie (506-555-0169)</span></div>
+              <div class="hu-meta"><span id="hu-pos">TRK 1/5</span><span id="hu-state">PAUSED</span><span id="hu-dur">-:--</span></div>
+              <div class="hu-prog" id="hu-prog" role="slider" tabindex="0" aria-label="Track position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="hu-prog-fill"></div></div>
+              <div class="hu-dial" id="hu-dial" aria-hidden="true">
+                <div class="hu-scale"></div>
+                <div class="hu-dial-marks" id="hu-dial-marks"></div>
+                <div class="hu-needle" id="hu-needle"></div>
+              </div>
             </div>
             <div class="hu-presets" id="hu-presets" role="group" aria-label="Station presets"></div>
             <div class="hu-controls">
-              <button type="button" id="hu-prev" class="hu-btn" aria-label="Previous track">⏮</button>
-              <button type="button" id="hu-play" class="hu-btn hu-play" aria-label="Play or pause">▶</button>
-              <button type="button" id="hu-next" class="hu-btn" aria-label="Next track">⏭</button>
-              <label class="hu-vol"><span aria-hidden="true">🔊</span><input type="range" id="hu-volume" min="0" max="100" value="80" aria-label="Volume"></label>
+              <button type="button" id="hu-prev" class="hu-btn" aria-label="Previous track"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M19 5 9 12l10 7z"/></svg></button>
+              <button type="button" id="hu-play" class="hu-btn hu-play" aria-label="Play"><svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg></button>
+              <button type="button" id="hu-next" class="hu-btn" aria-label="Next track"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M5 5l10 7-10 7z"/></svg></button>
+              <label class="hu-vol" id="hu-vol"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="w" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg><input type="range" id="hu-volume" min="0" max="100" value="80" aria-label="Volume"></label>
             </div>
-            <audio id="radio-audio" preload="none"></audio>
+          </div>
+          <audio id="radio-audio" preload="none"></audio>
         </div>
-        <ol class="hu-playlist" id="hu-playlist"></ol>
-        <p class="sc-foot">Every track is an original MVT Fredericton song — written in-house, generated on Suno, banked in the audio pipeline. The stations mirror the dial in MVTF6's cars. Sketch music videos for the head unit are coming; the <a href="/bambam/">Bam Bam</a> and <a href="/callie/">Callie</a> videos are already up.</p>
+
+        <section class="hu-list" aria-labelledby="hu-list-title">
+          <header class="hu-list-head">
+            <h2 id="hu-list-title">Now on <span id="hu-list-call">CROC 98.5</span></h2>
+            <span class="hu-list-count" id="hu-list-count">5 tracks</span>
+          </header>
+          <ol class="hu-playlist" id="hu-playlist"></ol>
+        </section>
+        <p class="sc-foot">Every track is an original MVT Fredericton song — written in-house, generated on Suno, banked in the audio pipeline. The stations mirror the dial in MVTF6's cars. Sketch music videos for the head unit are coming; the <a href="/bambam/">Bam Bam</a> video is already up.</p>
       </div>
     </section>
 
     <section id="view-models" class="showcase" hidden>
-      <div class="sc-inner">
-        <h1>The models</h1>
-        <p class="sc-sub">Custom Fredericton landmarks, vehicles and the game's cast, hand-built for MVT Fredericton in the model pipeline. Drag to orbit, scroll or pinch to zoom — these are the real game GLBs, streamed from the assets host. Every church has an interior too.</p>
+      <div class="sc-inner models-inner">
+        <header class="sc-hero">
+          <h1>The models</h1>
+          <p class="sc-sub">Custom Fredericton landmarks and vehicles, hand-built for MVT Fredericton in the model pipeline — the real game GLBs, streamed from the assets host. Drag to orbit, pinch or scroll to zoom. Every church has an interior too.</p>
+          <nav class="sc-jump" aria-label="Jump to a group">
+            <button type="button" data-jump="mg-vehicles">Vehicles &amp; aircraft</button>
+            <button type="button" data-jump="mg-churches">Churches</button>
+            <button type="button" data-jump="mg-landmarks">Landmarks</button>
+          </nav>
+        </header>
 
-        <article class="sc-card" data-model="bus">
-          <h2>Fredericton Transit Bus — New Flyer XDE40, fleet 8265</h2>
-          <model-viewer src="https://mvtf-assets.vercel.app/models/bus/exterior.glb" poster="https://mvtf-assets.vercel.app/models/bus/renders/frontclose.jpg" alt="Fredericton Transit XDE40 hybrid bus, fleet 8265" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
-          <p class="sc-facts">12.50 × 2.59 × 3.30 m · 23,760 tris · destination 11S PROSPECT · bike rack, bilingual hybrid livery. Drives in MVTF6 as Fredericton Transit.</p>
-          <div class="sc-renders">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/bus/renders/frontclose.jpg" alt="Bus, front close">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/bus/renders/front3q.jpg" alt="Bus, front three-quarter">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/bus/renders/side.jpg" alt="Bus, side profile">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/bus/renders/rear3q.jpg" alt="Bus, rear three-quarter">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/bus/renders/front.jpg" alt="Bus, straight front">
-          </div>
-        </article>
+        <h2 class="sc-group" id="mg-vehicles">Vehicles &amp; aircraft</h2>
+        <div class="sc-grid">
+          <article class="sc-card" data-model="bus">
+            <header class="sc-card-head"><h3>Fredericton Transit Bus</h3><p class="sc-meta">New Flyer XDE40 · fleet 8265</p></header>
+            <div class="sc-stage">
+              <model-viewer data-src="https://mvtf-assets.vercel.app/models/bus/exterior.glb" poster="https://mvtf-assets.vercel.app/models/bus/renders/frontclose.jpg" alt="Fredericton Transit XDE40 hybrid bus, fleet 8265" camera-controls auto-rotate shadow-intensity="0.6" loading="lazy" interaction-prompt="none"></model-viewer>
+            </div>
+            <p class="sc-facts">12.50 × 2.59 × 3.30 m · 23,760 tris · destination 11S PROSPECT · bike rack, bilingual hybrid livery. Drives in MVTF6 as Fredericton Transit.</p>
+            <div class="sc-renders">
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/bus/renders/frontclose.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/bus/renders/frontclose.jpg" alt="Bus, front close"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/bus/renders/front3q.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/bus/renders/front3q.jpg" alt="Bus, front three-quarter"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/bus/renders/side.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/bus/renders/side.jpg" alt="Bus, side profile"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/bus/renders/rear3q.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/bus/renders/rear3q.jpg" alt="Bus, rear three-quarter"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/bus/renders/front.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/bus/renders/front.jpg" alt="Bus, straight front"></button>
+            </div>
+          </article>
+          <article class="sc-card" data-model="cannoli">
+            <header class="sc-card-head"><h3>Yotola Cannoli</h3><p class="sc-meta">The 2018 Corolla · hero car</p></header>
+            <div class="sc-stage">
+              <model-viewer data-src="https://mvtf-assets.vercel.app/models/cannoli/exterior.glb" poster="https://mvtf-assets.vercel.app/models/cannoli/renders/frontclose.jpg" alt="Yotola Cannoli — the game&#x27;s 2018 Toyota Corolla" camera-controls auto-rotate shadow-intensity="0.6" loading="lazy" interaction-prompt="none"></model-viewer>
+            </div>
+            <p class="sc-facts">4.63 × 2.01 × 1.38 m · 47,366 tris · a 2018 Toyota Corolla, modelled in-house as the game's hero car — the Cannoli that headlines the Bam Bam video.</p>
+            <div class="sc-renders">
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/cannoli/renders/frontclose.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/cannoli/renders/frontclose.jpg" alt="Cannoli, front close"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/cannoli/renders/front3q.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/cannoli/renders/front3q.jpg" alt="Cannoli, front three-quarter"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/cannoli/renders/side.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/cannoli/renders/side.jpg" alt="Cannoli, side profile"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/cannoli/renders/rear3q.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/cannoli/renders/rear3q.jpg" alt="Cannoli, rear three-quarter"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/cannoli/renders/front.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/cannoli/renders/front.jpg" alt="Cannoli, straight front"></button>
+            </div>
+          </article>
+          <article class="sc-card sc-card--stills" data-model="f22">
+            <header class="sc-card-head"><h3>F-22 Raptor</h3><p class="sc-meta">The MVTF6 jet · Bam Bam set-piece</p></header>
+            <div class="sc-stage">
+              <button type="button" class="sc-still" data-full="/models/f22/hero.jpg"><img src="/models/f22/hero.jpg" alt="F-22 Raptor from MVTF6, front three-quarter" width="1280" height="720" loading="lazy" decoding="async"></button>
+              <span class="sc-badge">Renders</span>
+            </div>
+            <p class="sc-facts">13.6 m span × 18.9 m long · 17,788 tris, 28 separated parts — nozzles, stabilators and flaps move in flight. The fighter you fly in MVTF6, and the jet in <a href="/bambam/#t=84">the Bam Bam video at 1:24</a>. A licensed model (CGTrader, royalty-free), so it's shown here as renders from the game's own GLB rather than as a downloadable 3D file.</p>
+            <div class="sc-renders">
+              <button type="button" class="sc-thumb" data-full="/models/f22/hero.jpg"><img loading="lazy" decoding="async" src="/models/f22/hero.jpg" alt="F-22, front three-quarter"></button>
+              <button type="button" class="sc-thumb" data-full="/models/f22/rear3q.jpg"><img loading="lazy" decoding="async" src="/models/f22/rear3q.jpg" alt="F-22, rear three-quarter from above"></button>
+              <button type="button" class="sc-thumb" data-full="/models/f22/side.jpg"><img loading="lazy" decoding="async" src="/models/f22/side.jpg" alt="F-22, side profile"></button>
+              <button type="button" class="sc-thumb" data-full="/models/f22/front.jpg"><img loading="lazy" decoding="async" src="/models/f22/front.jpg" alt="F-22, head-on"></button>
+              <button type="button" class="sc-thumb" data-full="/models/f22/top.jpg"><img loading="lazy" decoding="async" src="/models/f22/top.jpg" alt="F-22, top plan"></button>
+            </div>
+          </article>
+        </div>
 
-        <article class="sc-card" data-model="cannoli">
-          <h2>Yotola Cannoli — the 2018 Corolla</h2>
-          <model-viewer src="https://mvtf-assets.vercel.app/models/cannoli/exterior.glb" poster="https://mvtf-assets.vercel.app/models/cannoli/renders/frontclose.jpg" alt="Yotola Cannoli — the game's 2018 Toyota Corolla" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
-          <p class="sc-facts">4.63 × 2.01 × 1.38 m · 47,366 tris · a 2018 Toyota Corolla, modelled in-house as the game's hero car — the Cannoli that headlines the Bam Bam video.</p>
-          <div class="sc-renders">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cannoli/renders/frontclose.jpg" alt="Cannoli, front close">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cannoli/renders/front3q.jpg" alt="Cannoli, front three-quarter">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cannoli/renders/side.jpg" alt="Cannoli, side profile">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cannoli/renders/rear3q.jpg" alt="Cannoli, rear three-quarter">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cannoli/renders/front.jpg" alt="Cannoli, straight front">
-          </div>
-        </article>
+        <h2 class="sc-group" id="mg-churches">Churches</h2>
+        <div class="sc-grid">
+          <article class="sc-card" data-model="cathedral">
+            <header class="sc-card-head"><h3>Christ Church Cathedral</h3><p class="sc-meta">150 Church St</p></header>
+            <div class="sc-stage">
+              <model-viewer data-src="https://mvtf-assets.vercel.app/models/cathedral/exterior.glb" poster="https://mvtf-assets.vercel.app/models/cathedral/renders/sw3q.jpg" alt="Christ Church Cathedral, Fredericton" camera-controls auto-rotate shadow-intensity="0.6" loading="lazy" interaction-prompt="none"></model-viewer>
+            <div class="sc-toggle" role="group" aria-label="Christ Church Cathedral view">
+              <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/cathedral/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/cathedral/renders/sw3q.jpg" data-mode="exterior">Exterior</button>
+              <button type="button" data-glb="https://mvtf-assets.vercel.app/models/cathedral/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/cathedral/renders/int-nave-east.jpg" data-mode="interior" data-orbit="-90deg 94deg 6m" data-target="-13m 2.8m 0m" data-fov="55deg" data-min-polar="50deg" data-max-polar="102deg">Interior</button>
+            </div>
+            </div>
+            <p class="sc-facts">52.4 × 20.4 m footprint, spire top 60.4 m · 3,940 tris. Interior fitted on the exterior's origin; home of the Anglican hymn playlist in game.</p>
+            <div class="sc-renders">
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/cathedral/renders/sw3q.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/cathedral/renders/sw3q.jpg" alt="Cathedral, southwest three-quarter"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/cathedral/renders/south.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/cathedral/renders/south.jpg" alt="Cathedral, south side"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/cathedral/renders/east3q.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/cathedral/renders/east3q.jpg" alt="Cathedral, east three-quarter"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/cathedral/renders/aerial.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/cathedral/renders/aerial.jpg" alt="Cathedral, aerial"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/cathedral/renders/int-nave-east.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/cathedral/renders/int-nave-east.jpg" alt="Cathedral interior, nave looking east"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/cathedral/renders/int-sanctuary.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/cathedral/renders/int-sanctuary.jpg" alt="Cathedral interior, sanctuary"></button>
+            </div>
+          </article>
+          <article class="sc-card" data-model="parish">
+            <header class="sc-card-head"><h3>Christ Church (Parish Church)</h3><p class="sc-meta">245 Westmorland St</p></header>
+            <div class="sc-stage">
+              <model-viewer data-src="https://mvtf-assets.vercel.app/models/parish/exterior.glb" poster="https://mvtf-assets.vercel.app/models/parish/renders/front.jpg" alt="Christ Church (Parish Church), Fredericton" camera-controls auto-rotate shadow-intensity="0.6" loading="lazy" interaction-prompt="none"></model-viewer>
+            <div class="sc-toggle" role="group" aria-label="Christ Church (Parish Church) view">
+              <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/parish/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/parish/renders/front.jpg" data-mode="exterior">Exterior</button>
+              <button type="button" data-glb="https://mvtf-assets.vercel.app/models/parish/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/parish/renders/nave-east.jpg" data-mode="interior" data-orbit="-90deg 95deg 6m" data-target="-7.5m 2.5m 16.8m" data-fov="55deg" data-min-polar="50deg" data-max-polar="102deg">Interior</button>
+            </div>
+            </div>
+            <p class="sc-facts">3,330 tris, lattice tower top 18.05 m · church + chapel, full interior (nave, sanctuary, chapel).</p>
+            <div class="sc-renders">
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/parish/renders/front.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/parish/renders/front.jpg" alt="Parish Church, front"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/parish/renders/drive.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/parish/renders/drive.jpg" alt="Parish Church, from the drive"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/parish/renders/nave-east.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/parish/renders/nave-east.jpg" alt="Parish Church interior, nave east"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/parish/renders/sanctuary.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/parish/renders/sanctuary.jpg" alt="Parish Church interior, sanctuary"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/parish/renders/chapel.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/parish/renders/chapel.jpg" alt="Parish Church, chapel"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/parish/renders/yard.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/parish/renders/yard.jpg" alt="Parish Church, yard"></button>
+            </div>
+          </article>
+          <article class="sc-card" data-model="wilmot">
+            <header class="sc-card-head"><h3>Wilmot United Church</h3><p class="sc-meta">473 King St</p></header>
+            <div class="sc-stage">
+              <model-viewer data-src="https://mvtf-assets.vercel.app/models/wilmot/exterior.glb" poster="https://mvtf-assets.vercel.app/models/wilmot/renders/three-quarter.jpg" alt="Wilmot United Church, Fredericton" camera-controls auto-rotate shadow-intensity="0.6" loading="lazy" interaction-prompt="none"></model-viewer>
+            <div class="sc-toggle" role="group" aria-label="Wilmot United Church view">
+              <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/wilmot/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/wilmot/renders/three-quarter.jpg" data-mode="exterior">Exterior</button>
+              <button type="button" data-glb="https://mvtf-assets.vercel.app/models/wilmot/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/wilmot/renders/int-nave-organ.jpg" data-mode="interior" data-orbit="-90deg 95deg 6m" data-target="-0.5m 2.5m 0m" data-fov="55deg" data-min-polar="50deg" data-max-polar="102deg">Interior</button>
+            </div>
+            </div>
+            <p class="sc-facts">39.0 × 24.2 m, 62.8 m to the gilt hand's fingertip · 15,567 tris. Restores the 1852–1973 silhouette: square spire, four pinnacles, gilt carved hand.</p>
+            <div class="sc-renders">
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/wilmot/renders/three-quarter.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/wilmot/renders/three-quarter.jpg" alt="Wilmot, three-quarter"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/wilmot/renders/front.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/wilmot/renders/front.jpg" alt="Wilmot, front"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/wilmot/renders/side.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/wilmot/renders/side.jpg" alt="Wilmot, side"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/wilmot/renders/int-nave-organ.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/wilmot/renders/int-nave-organ.jpg" alt="Wilmot interior, nave and organ"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/wilmot/renders/int-gallery.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/wilmot/renders/int-gallery.jpg" alt="Wilmot interior, gallery"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/wilmot/renders/int-nave-west.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/wilmot/renders/int-nave-west.jpg" alt="Wilmot interior, nave west"></button>
+            </div>
+          </article>
+          <article class="sc-card" data-model="st-dunstans">
+            <header class="sc-card-head"><h3>St. Dunstan&#x27;s Roman Catholic Church</h3><p class="sc-meta">120 Regent St</p></header>
+            <div class="sc-stage">
+              <model-viewer data-src="https://mvtf-assets.vercel.app/models/st-dunstans/exterior.glb" poster="https://mvtf-assets.vercel.app/models/st-dunstans/renders/front.jpg" alt="St. Dunstan&#x27;s RC Church, Fredericton" camera-controls auto-rotate shadow-intensity="0.6" loading="lazy" interaction-prompt="none"></model-viewer>
+            <div class="sc-toggle" role="group" aria-label="St. Dunstan&#x27;s Roman Catholic Church view">
+              <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/st-dunstans/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/st-dunstans/renders/front.jpg" data-mode="exterior">Exterior</button>
+              <button type="button" data-glb="https://mvtf-assets.vercel.app/models/st-dunstans/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/st-dunstans/renders/int-nave.jpg" data-mode="interior" data-orbit="-90deg 94deg 8m" data-target="-13m 2.6m 0m" data-fov="60deg" data-min-polar="50deg" data-max-polar="102deg">Interior</button>
+            </div>
+            </div>
+            <p class="sc-facts">Church proper 60.0 × 19.0 m, 33.7 m high · the modernist pylon church, exterior + interior.</p>
+            <div class="sc-renders">
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/st-dunstans/renders/front.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/front.jpg" alt="St. Dunstan&#x27;s, front"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/st-dunstans/renders/aerial.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/aerial.jpg" alt="St. Dunstan&#x27;s, aerial"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/st-dunstans/renders/brunswick.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/brunswick.jpg" alt="St. Dunstan&#x27;s, from Brunswick St"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/st-dunstans/renders/ne_side.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/ne_side.jpg" alt="St. Dunstan&#x27;s, northeast side"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/st-dunstans/renders/int-nave.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/int-nave.jpg" alt="St. Dunstan&#x27;s interior, nave"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/st-dunstans/renders/int-sanctuary.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/int-sanctuary.jpg" alt="St. Dunstan&#x27;s interior, sanctuary"></button>
+            </div>
+          </article>
+        </div>
 
-        <article class="sc-card" data-model="cathedral">
-          <h2>Christ Church Cathedral</h2>
-          <div class="sc-toggle" role="group" aria-label="Cathedral view">
-            <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/cathedral/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/cathedral/renders/sw3q.jpg" data-mode="exterior">Exterior</button>
-            <button type="button" data-glb="https://mvtf-assets.vercel.app/models/cathedral/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/cathedral/renders/int-nave-east.jpg" data-mode="interior" data-orbit="-90deg 94deg 6m" data-target="-13m 2.8m 0m" data-fov="55deg" data-min-polar="50deg" data-max-polar="102deg">Interior</button>
-          </div>
-          <model-viewer src="https://mvtf-assets.vercel.app/models/cathedral/exterior.glb" poster="https://mvtf-assets.vercel.app/models/cathedral/renders/sw3q.jpg" alt="Christ Church Cathedral, Fredericton" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
-          <p class="sc-facts">150 Church St · 52.4 × 20.4 m footprint, spire top 60.4 m · 3,940 tris. Interior fitted on the exterior's origin; home of the Anglican hymn playlist in game.</p>
-          <div class="sc-renders">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cathedral/renders/sw3q.jpg" alt="Cathedral, southwest three-quarter">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cathedral/renders/south.jpg" alt="Cathedral, south side">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cathedral/renders/east3q.jpg" alt="Cathedral, east three-quarter">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cathedral/renders/aerial.jpg" alt="Cathedral, aerial">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cathedral/renders/int-nave-east.jpg" alt="Cathedral interior, nave looking east">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/cathedral/renders/int-sanctuary.jpg" alt="Cathedral interior, sanctuary">
-          </div>
-        </article>
+        <h2 class="sc-group" id="mg-landmarks">Landmarks</h2>
+        <div class="sc-grid">
+          <article class="sc-card" data-model="beaverbrook">
+            <header class="sc-card-head"><h3>Beaverbrook Art Gallery</h3><p class="sc-meta">703 Queen St · opened 1959</p></header>
+            <div class="sc-stage">
+              <model-viewer data-src="https://mvtf-assets.vercel.app/models/beaverbrook/exterior.glb" poster="https://mvtf-assets.vercel.app/models/beaverbrook/renders/queen_front.jpg" alt="Beaverbrook Art Gallery — 3D model" camera-controls auto-rotate shadow-intensity="0.6" loading="lazy" interaction-prompt="none"></model-viewer>
+            <div class="sc-toggle" role="group" aria-label="Beaverbrook Art Gallery view">
+              <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/beaverbrook/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/beaverbrook/renders/queen_front.jpg" data-mode="exterior">Exterior</button>
+              <button type="button" data-glb="https://mvtf-assets.vercel.app/models/beaverbrook/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/beaverbrook/renders/lobby-axis.jpg" data-mode="interior" data-orbit="0deg 95deg 9m" data-target="-7.2m 3.8m 14.5m" data-fov="60deg" data-min-polar="60deg" data-max-polar="100deg">Interior</button>
+            </div>
+            </div>
+            <p class="sc-facts">Lord Beaverbrook's gift · Neil Stewart's 1959 original, the 2017 MacKay-Lyons Sweetapple stone-box pavilion, and KPMB's curved Harrison McCain Pavilion (2022). Building 108.5 m long · exterior 5,467 tris, interior 11,442 tris. First pass: the art inside is stand-in canvases — the real collection stays the gallery's.</p>
+            <div class="sc-renders">
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/beaverbrook/renders/queen_front.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/queen_front.jpg" alt="Beaverbrook Art Gallery — Queen Street front"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/beaverbrook/renders/queen_east.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/queen_east.jpg" alt="Beaverbrook Art Gallery — from Queen Street east"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/beaverbrook/renders/aerial.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/aerial.jpg" alt="Beaverbrook Art Gallery — aerial"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/beaverbrook/renders/entrance.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/entrance.jpg" alt="Beaverbrook Art Gallery — entrance"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/beaverbrook/renders/river.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/river.jpg" alt="Beaverbrook Art Gallery — river side"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/beaverbrook/renders/pavilion2017-river.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/pavilion2017-river.jpg" alt="Beaverbrook Art Gallery — the 2017 pavilion from the river"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/beaverbrook/renders/lobby-axis.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/lobby-axis.jpg" alt="Beaverbrook Art Gallery — lobby axis to the river room"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/beaverbrook/renders/lobby-cafe.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/lobby-cafe.jpg" alt="Beaverbrook Art Gallery — lobby café"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/beaverbrook/renders/river-room.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/river-room.jpg" alt="Beaverbrook Art Gallery — river room"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/beaverbrook/renders/east-wing-china.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/east-wing-china.jpg" alt="Beaverbrook Art Gallery — east wing, china gallery"></button>
+            </div>
+          </article>
+          <article class="sc-card" data-model="charlotte">
+            <header class="sc-card-head"><h3>Charlotte Street Arts Centre</h3><p class="sc-meta">732 Charlotte St · built 1884–85</p></header>
+            <div class="sc-stage">
+              <model-viewer data-src="https://mvtf-assets.vercel.app/models/charlotte/exterior.glb" poster="https://mvtf-assets.vercel.app/models/charlotte/renders/front.jpg" alt="Charlotte Street Arts Centre — 3D model" camera-controls auto-rotate shadow-intensity="0.6" loading="lazy" interaction-prompt="none"></model-viewer>
+            <div class="sc-toggle" role="group" aria-label="Charlotte Street Arts Centre view">
+              <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/charlotte/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/charlotte/renders/front.jpg" data-mode="exterior">Exterior</button>
+              <button type="button" data-glb="https://mvtf-assets.vercel.app/models/charlotte/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/charlotte/renders/auditorium-stage.jpg" data-mode="interior" data-orbit="-90deg 92deg 8m" data-target="-4.6m 8.7m -14.2m" data-fov="60deg" data-min-polar="70deg" data-max-polar="99deg">Interior</button>
+            </div>
+            </div>
+            <p class="sc-facts">Built as Charlotte Street School (Dumaresq &amp; Mott, Italianate red brick, bellcast-roof cupola — cousin to their Legislature dome), restored 2005 as the city's arts centre. The Interior view stands at the back of the 1917 annex's top-floor auditorium, looking to the stage. 31.5 × 45.0 m, 22.7 m to the finial · exterior 12,172 tris, interior 11,500 tris. First pass.</p>
+            <div class="sc-renders">
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/charlotte/renders/front.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/charlotte/renders/front.jpg" alt="Charlotte Street Arts Centre — Charlotte Street front"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/charlotte/renders/front_oblique.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/charlotte/renders/front_oblique.jpg" alt="Charlotte Street Arts Centre — front oblique"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/charlotte/renders/aerial.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/charlotte/renders/aerial.jpg" alt="Charlotte Street Arts Centre — aerial"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/charlotte/renders/entrance.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/charlotte/renders/entrance.jpg" alt="Charlotte Street Arts Centre — entrance bay"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/charlotte/renders/cupola.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/charlotte/renders/cupola.jpg" alt="Charlotte Street Arts Centre — cupola"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/charlotte/renders/auditorium-stage.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/charlotte/renders/auditorium-stage.jpg" alt="Charlotte Street Arts Centre — auditorium, toward the stage"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/charlotte/renders/auditorium-back.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/charlotte/renders/auditorium-back.jpg" alt="Charlotte Street Arts Centre — auditorium, from the stage"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/charlotte/renders/foyer.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/charlotte/renders/foyer.jpg" alt="Charlotte Street Arts Centre — foyer (Charlotte Glencross Gallery)"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/charlotte/renders/cafe.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/charlotte/renders/cafe.jpg" alt="Charlotte Street Arts Centre — café"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/charlotte/renders/penny-gallery.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/charlotte/renders/penny-gallery.jpg" alt="Charlotte Street Arts Centre — Penny gallery"></button>
+            </div>
+          </article>
+          <article class="sc-card" data-model="legislature">
+            <header class="sc-card-head"><h3>Legislative Assembly Building</h3><p class="sc-meta">706 Queen St · opened 1882</p></header>
+            <div class="sc-stage">
+              <model-viewer data-src="https://mvtf-assets.vercel.app/models/legislature/exterior.glb" poster="https://mvtf-assets.vercel.app/models/legislature/renders/front.jpg" alt="Legislative Assembly Building — 3D model" camera-controls auto-rotate shadow-intensity="0.6" loading="lazy" interaction-prompt="none"></model-viewer>
+            <div class="sc-toggle" role="group" aria-label="Legislative Assembly Building view">
+              <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/legislature/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/legislature/renders/front.jpg" data-mode="exterior">Exterior</button>
+              <button type="button" data-glb="https://mvtf-assets.vercel.app/models/legislature/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/legislature/renders/chamber-floor.jpg" data-mode="interior" data-orbit="0deg 95deg 7m" data-target="11.5m 4.1m -8.2m" data-fov="60deg" data-min-polar="45deg" data-max-polar="101deg">Interior</button>
+            </div>
+            </div>
+            <p class="sc-facts">J. C. Dumaresq's Second Empire seat of the Legislative Assembly — Dorchester sandstone, corner towers, Britannia on the roof, 41 m to the top of the dome. The Interior view stands on the chamber floor looking down the green desks to the Speaker's chair. 45.0 × 48.6 m · exterior 13,493 tris, interior 15,366 tris. First pass.</p>
+            <div class="sc-renders">
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/legislature/renders/front.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/legislature/renders/front.jpg" alt="Legislative Assembly Building — Queen Street front"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/legislature/renders/front_oblique.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/legislature/renders/front_oblique.jpg" alt="Legislative Assembly Building — front oblique"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/legislature/renders/aerial.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/legislature/renders/aerial.jpg" alt="Legislative Assembly Building — aerial"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/legislature/renders/portico.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/legislature/renders/portico.jpg" alt="Legislative Assembly Building — entrance portico"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/legislature/renders/dome.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/legislature/renders/dome.jpg" alt="Legislative Assembly Building — the dome"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/legislature/renders/entrance-hall.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/legislature/renders/entrance-hall.jpg" alt="Legislative Assembly Building — entrance hall"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/legislature/renders/chamber-floor.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/legislature/renders/chamber-floor.jpg" alt="Legislative Assembly Building — the chamber from the floor"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/legislature/renders/chamber-throne.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/legislature/renders/chamber-throne.jpg" alt="Legislative Assembly Building — the Speaker&#x27;s chair"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/legislature/renders/chamber-gallery.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/legislature/renders/chamber-gallery.jpg" alt="Legislative Assembly Building — the chamber from the gallery"></button>
+              <button type="button" class="sc-thumb" data-full="https://mvtf-assets.vercel.app/models/legislature/renders/library.jpg"><img loading="lazy" decoding="async" src="https://mvtf-assets.vercel.app/models/legislature/renders/library.jpg" alt="Legislative Assembly Building — the legislative library"></button>
+            </div>
+          </article>
+        </div>
 
-        <article class="sc-card" data-model="parish">
-          <h2>Christ Church (Parish Church)</h2>
-          <div class="sc-toggle" role="group" aria-label="Parish Church view">
-            <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/parish/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/parish/renders/front.jpg" data-mode="exterior">Exterior</button>
-            <button type="button" data-glb="https://mvtf-assets.vercel.app/models/parish/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/parish/renders/nave-east.jpg" data-mode="interior" data-orbit="-90deg 95deg 6m" data-target="-7.5m 2.5m 16.8m" data-fov="55deg" data-min-polar="50deg" data-max-polar="102deg">Interior</button>
-          </div>
-          <model-viewer src="https://mvtf-assets.vercel.app/models/parish/exterior.glb" poster="https://mvtf-assets.vercel.app/models/parish/renders/front.jpg" alt="Christ Church (Parish Church), Fredericton" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
-          <p class="sc-facts">245 Westmorland St · 3,330 tris, lattice tower top 18.05 m · church + chapel, full interior (nave, sanctuary, chapel).</p>
-          <div class="sc-renders">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/parish/renders/front.jpg" alt="Parish Church, front">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/parish/renders/drive.jpg" alt="Parish Church, from the drive">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/parish/renders/nave-east.jpg" alt="Parish Church interior, nave east">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/parish/renders/sanctuary.jpg" alt="Parish Church interior, sanctuary">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/parish/renders/chapel.jpg" alt="Parish Church, chapel">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/parish/renders/yard.jpg" alt="Parish Church, yard">
-          </div>
-        </article>
-
-        <article class="sc-card" data-model="wilmot">
-          <h2>Wilmot United Church</h2>
-          <div class="sc-toggle" role="group" aria-label="Wilmot view">
-            <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/wilmot/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/wilmot/renders/three-quarter.jpg" data-mode="exterior">Exterior</button>
-            <button type="button" data-glb="https://mvtf-assets.vercel.app/models/wilmot/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/wilmot/renders/int-nave-organ.jpg" data-mode="interior" data-orbit="-90deg 95deg 6m" data-target="-0.5m 2.5m 0m" data-fov="55deg" data-min-polar="50deg" data-max-polar="102deg">Interior</button>
-          </div>
-          <model-viewer src="https://mvtf-assets.vercel.app/models/wilmot/exterior.glb" poster="https://mvtf-assets.vercel.app/models/wilmot/renders/three-quarter.jpg" alt="Wilmot United Church, Fredericton" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
-          <p class="sc-facts">473 King St · 39.0 × 24.2 m, 62.8 m to the gilt hand's fingertip · 15,567 tris. Restores the 1852–1973 silhouette: square spire, four pinnacles, gilt carved hand.</p>
-          <div class="sc-renders">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/wilmot/renders/three-quarter.jpg" alt="Wilmot, three-quarter">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/wilmot/renders/front.jpg" alt="Wilmot, front">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/wilmot/renders/side.jpg" alt="Wilmot, side">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/wilmot/renders/int-nave-organ.jpg" alt="Wilmot interior, nave and organ">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/wilmot/renders/int-gallery.jpg" alt="Wilmot interior, gallery">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/wilmot/renders/int-nave-west.jpg" alt="Wilmot interior, nave west">
-          </div>
-        </article>
-
-        <article class="sc-card" data-model="st-dunstans">
-          <h2>St. Dunstan's Roman Catholic Church</h2>
-          <div class="sc-toggle" role="group" aria-label="St. Dunstan's view">
-            <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/st-dunstans/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/st-dunstans/renders/front.jpg" data-mode="exterior">Exterior</button>
-            <button type="button" data-glb="https://mvtf-assets.vercel.app/models/st-dunstans/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/st-dunstans/renders/int-nave.jpg" data-mode="interior" data-orbit="-90deg 94deg 8m" data-target="-13m 2.6m 0m" data-fov="60deg" data-min-polar="50deg" data-max-polar="102deg">Interior</button>
-          </div>
-          <model-viewer src="https://mvtf-assets.vercel.app/models/st-dunstans/exterior.glb" poster="https://mvtf-assets.vercel.app/models/st-dunstans/renders/front.jpg" alt="St. Dunstan's RC Church, Fredericton" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
-          <p class="sc-facts">120 Regent St · church proper 60.0 × 19.0 m, 33.7 m high · the modernist pylon church, exterior + interior.</p>
-          <div class="sc-renders">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/front.jpg" alt="St. Dunstan's, front">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/aerial.jpg" alt="St. Dunstan's, aerial">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/brunswick.jpg" alt="St. Dunstan's, from Brunswick St">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/ne_side.jpg" alt="St. Dunstan's, northeast side">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/int-nave.jpg" alt="St. Dunstan's interior, nave">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/st-dunstans/renders/int-sanctuary.jpg" alt="St. Dunstan's interior, sanctuary">
-          </div>
-        </article>
-        <article class="sc-card" data-model="beaverbrook">
-          <h3>Beaverbrook Art Gallery</h3>
-          <div class="sc-toggle" role="group" aria-label="Beaverbrook Art Gallery view">
-            <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/beaverbrook/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/beaverbrook/renders/queen_front.jpg" data-mode="exterior">Exterior</button>
-            <button type="button" data-glb="https://mvtf-assets.vercel.app/models/beaverbrook/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/beaverbrook/renders/lobby-axis.jpg" data-mode="interior" data-orbit="0deg 95deg 9m" data-target="-7.2m 3.8m 14.5m" data-fov="60deg" data-min-polar="60deg" data-max-polar="100deg">Interior</button>
-          </div>
-          <model-viewer src="https://mvtf-assets.vercel.app/models/beaverbrook/exterior.glb" poster="https://mvtf-assets.vercel.app/models/beaverbrook/renders/queen_front.jpg" alt="Beaverbrook Art Gallery — 3D model" camera-controls auto-rotate shadow-intensity="0.6" loading="lazy"></model-viewer>
-          <p>703 Queen St · opened 1959, Lord Beaverbrook's gift · Neil Stewart's 1959 original, the 2017 MacKay-Lyons Sweetapple stone-box pavilion, and KPMB's curved Harrison McCain Pavilion (2022). Building 108.5 m long · exterior 5,467 tris, interior 11,442 tris. First pass: the art inside is stand-in canvases — the real collection stays the gallery's.</p>
-          <div class="sc-renders">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/queen_front.jpg" alt="Beaverbrook Art Gallery — Queen Street front">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/queen_east.jpg" alt="Beaverbrook Art Gallery — from Queen Street east">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/entrance.jpg" alt="Beaverbrook Art Gallery — entrance">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/river.jpg" alt="Beaverbrook Art Gallery — river side">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/lobby-axis.jpg" alt="Beaverbrook Art Gallery — lobby axis to the river room">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/beaverbrook/renders/river-room.jpg" alt="Beaverbrook Art Gallery — river room">
-          </div>
-        </article>
-        <article class="sc-card" data-model="charlotte">
-          <h3>Charlotte Street Arts Centre</h3>
-          <div class="sc-toggle" role="group" aria-label="Charlotte Street Arts Centre view">
-            <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/charlotte/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/charlotte/renders/front.jpg" data-mode="exterior">Exterior</button>
-            <button type="button" data-glb="https://mvtf-assets.vercel.app/models/charlotte/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/charlotte/renders/auditorium-stage.jpg" data-mode="interior" data-orbit="-90deg 92deg 8m" data-target="-4.6m 8.7m -14.2m" data-fov="60deg" data-min-polar="70deg" data-max-polar="99deg">Interior</button>
-          </div>
-          <model-viewer src="https://mvtf-assets.vercel.app/models/charlotte/exterior.glb" poster="https://mvtf-assets.vercel.app/models/charlotte/renders/front.jpg" alt="Charlotte Street Arts Centre — 3D model" camera-controls auto-rotate shadow-intensity="0.6" loading="lazy"></model-viewer>
-          <p>732 Charlotte St · built 1884–85 as Charlotte Street School (Dumaresq &amp; Mott, Italianate red brick, bellcast-roof cupola — cousin to their Legislature dome), restored 2005 as the city's arts centre. The Interior view stands at the back of the 1917 annex's top-floor auditorium, looking to the stage. 31.5 × 45.0 m, 22.7 m to the finial · exterior 12,172 tris, interior 11,500 tris. First pass.</p>
-          <div class="sc-renders">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/charlotte/renders/front.jpg" alt="Charlotte Street Arts Centre — Charlotte Street front">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/charlotte/renders/front_oblique.jpg" alt="Charlotte Street Arts Centre — front oblique">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/charlotte/renders/entrance.jpg" alt="Charlotte Street Arts Centre — entrance bay">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/charlotte/renders/cupola.jpg" alt="Charlotte Street Arts Centre — cupola">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/charlotte/renders/auditorium-stage.jpg" alt="Charlotte Street Arts Centre — auditorium, toward the stage">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/charlotte/renders/foyer.jpg" alt="Charlotte Street Arts Centre — foyer (Charlotte Glencross Gallery)">
-          </div>
-        </article>
-        <article class="sc-card" data-model="legislature">
-          <h3>Legislative Assembly Building</h3>
-          <div class="sc-toggle" role="group" aria-label="Legislative Assembly Building view">
-            <button type="button" class="on" data-glb="https://mvtf-assets.vercel.app/models/legislature/exterior.glb" data-poster="https://mvtf-assets.vercel.app/models/legislature/renders/front.jpg" data-mode="exterior">Exterior</button>
-            <button type="button" data-glb="https://mvtf-assets.vercel.app/models/legislature/interior.glb" data-poster="https://mvtf-assets.vercel.app/models/legislature/renders/chamber-floor.jpg" data-mode="interior" data-orbit="0deg 95deg 7m" data-target="11.5m 4.1m -8.2m" data-fov="60deg" data-min-polar="45deg" data-max-polar="101deg">Interior</button>
-          </div>
-          <model-viewer src="https://mvtf-assets.vercel.app/models/legislature/exterior.glb" poster="https://mvtf-assets.vercel.app/models/legislature/renders/front.jpg" alt="Legislative Assembly Building — 3D model" camera-controls auto-rotate shadow-intensity="0.6" loading="lazy"></model-viewer>
-          <p>706 Queen St · opened 1882, J. C. Dumaresq's Second Empire seat of the Legislative Assembly — Dorchester sandstone, corner towers, Britannia on the roof, 41 m to the top of the dome. The Interior view stands on the chamber floor looking down the green desks to the Speaker's chair. 45.0 × 48.6 m · exterior 13,493 tris, interior 15,366 tris. First pass.</p>
-          <div class="sc-renders">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/legislature/renders/front.jpg" alt="Legislative Assembly Building — Queen Street front">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/legislature/renders/front_oblique.jpg" alt="Legislative Assembly Building — front oblique">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/legislature/renders/portico.jpg" alt="Legislative Assembly Building — entrance portico">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/legislature/renders/dome.jpg" alt="Legislative Assembly Building — the dome">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/legislature/renders/chamber-floor.jpg" alt="Legislative Assembly Building — the chamber from the floor">
-            <img loading="lazy" src="https://mvtf-assets.vercel.app/models/legislature/renders/library.jpg" alt="Legislative Assembly Building — the legislative library">
-          </div>
-        </article>
-
-
-        <p class="sc-foot">Models © the MVT Fredericton project — original in-house builds from published dimensions and reference photos. GLBs and renders stream from the project assets host; the pipeline repos stay the source of truth.</p>
+        <p class="sc-foot">Models © the MVT Fredericton project — original in-house builds from published dimensions and reference photos (the F-22 is the one licensed exception, shown as renders). GLBs and renders stream from the project assets host; the pipeline repos stay the source of truth.</p>
       </div>
     </section>
+
+    <!-- Render lightbox: any .sc-thumb / .sc-still opens its image full
+         screen; arrows or swipe step through that card's renders. -->
+    <dialog id="lightbox" aria-label="Render viewer">
+      <img id="lb-img" alt="">
+      <p id="lb-cap"></p>
+      <button type="button" class="lb-btn lb-close" aria-label="Close">✕</button>
+      <button type="button" class="lb-btn lb-prev" aria-label="Previous image">‹</button>
+      <button type="button" class="lb-btn lb-next" aria-label="Next image">›</button>
+    </dialog>
 
 
     <section id="view-maps" class="showcase" hidden>
@@ -564,99 +658,127 @@
           <span class="ctl-note">TILT (v0.31): roll the phone like a steering wheel to steer — the on-screen wheel mirrors your tilt. Hold the phone how you'll play, then Calibrate: that pose becomes "straight". GAS/BRK stay on screen; on foot you still walk with the stick. iOS asks permission to use motion sensors when you tap Tilt.</span>
         </span>
       </span>
-      WASD drive/walk · S reverse · E interact · Space handbrake · on foot: Space/F FIRE, Q weapon · <span id="help-toggle">?</span>
+      <span class="help-row"><span class="help-keys"><kbd>WASD</kbd> drive/walk <kbd>S</kbd> reverse <kbd>E</kbd> interact <kbd>Space</kbd> handbrake · on foot <kbd>F</kbd> fire <kbd>Q</kbd> weapon</span><span id="help-toggle" role="button" tabindex="0" aria-label="Controls and settings">?</span></span>
     </div>
 
     <script>
-      // Site tabs: the Radio is the landing view; Models / Maps are
-      // fixed overlays under the header, and the game is the map +
-      // HUD underneath. Leaving the Radio pauses its track. (The
-      // old Songs tab was removed 2026-11-23 at Daniel's order —
-      // every song lives on the radio dial now.) The Maps view's
-      // MapLibre map is created
-      // lazily by src/maps-view.ts when the panel is first unhidden.
-      // (The 3D pill is an <a>, not a button, so it is not
-      // wired here at all — it navigates to /bambam/.) Exterior /
-      // Interior toggles swap the card's GLB.
+      // Site tabs: the game is the landing view; Models / FM / Maps are
+      // fixed panels under the header (the game pauses underneath —
+      // src/main.ts watches body.showcase-open), and the 3D pill is a
+      // plain link to /bambam/. Leaving the FM panel pauses its track.
+      // The Maps view's MapLibre map is created lazily by
+      // src/maps-view.ts when its panel is first unhidden.
       (function () {
-        // Keep --header-h synced to the header's real height: the CSS
-        // default is 92px, but a text-scaling webview (Messenger's
-        // in-app browser) grows the header, and every HUD/showcase
-        // offset hangs off the variable.
+        // Keep --header-h synced to the header's real height: a text-
+        // scaling webview (Messenger's in-app browser) grows the
+        // header, and every HUD/showcase offset hangs off the variable.
         var header = document.getElementById('site-header');
         function syncHeaderH() {
           document.documentElement.style.setProperty('--header-h', header.offsetHeight + 'px');
         }
         syncHeaderH();
         if (window.ResizeObserver) new ResizeObserver(syncHeaderH).observe(header);
+
+        // model-viewer (~1 MB) only loads the first time the Models
+        // panel opens — it used to download on every visit, ahead of
+        // the game, on phones too. Pinned: an unversioned URL is a
+        // different library whenever upstream ships.
+        var MV_SRC = 'https://unpkg.com/@google/model-viewer@4.4.0/dist/model-viewer.min.js';
+        var touch = window.matchMedia('(pointer: coarse)').matches;
+        var mvRequested = false;
+        function wakeModels() {
+          if (mvRequested) return;
+          mvRequested = true;
+          var sc = document.createElement('script');
+          sc.type = 'module'; sc.src = MV_SRC;
+          document.head.appendChild(sc);
+          // Mouse visitors get live viewers (loading="lazy" fetches each
+          // GLB as it nears the viewport). Touch visitors keep the
+          // render poster until they tap "Tap to spin" — scrolling the
+          // panel no longer pulls ~15 MB of GLBs over mobile data.
+          if (!touch) {
+            document.querySelectorAll('#view-models model-viewer[data-src]').forEach(function (v) {
+              v.setAttribute('src', v.dataset.src);
+            });
+          }
+        }
+
         var buttons = document.querySelectorAll('#site-tabs button');
         var panels = { radio: document.getElementById('view-radio'), models: document.getElementById('view-models'), maps: document.getElementById('view-maps') };
         function show(view) {
           buttons.forEach(function (b) { b.classList.toggle('on', b.dataset.view === view); });
           Object.keys(panels).forEach(function (k) { panels[k].hidden = k !== view; });
           if (view !== 'radio') { var ra = document.getElementById('radio-audio'); if (ra) ra.pause(); }
+          if (view === 'models') wakeModels();
           document.body.classList.toggle('showcase-open', view !== 'game');
+          // Shareable: the address bar names the open panel.
+          var want = view === 'game' ? '' : '#' + view;
+          if (window.location.hash !== want && window.history.replaceState) {
+            window.history.replaceState(null, '', want || window.location.pathname + window.location.search);
+          }
         }
         buttons.forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.view); }); });
-        // Deep links from the standalone pages' headers (e.g. /bambam/ links to /#models).
-        // The game is the landing view; the radio sits in the old Songs tab slot.
+        // Deep links (/#models, /#radio, /#maps) from the 3D page's
+        // header and from shared links.
         var hashView = window.location.hash.replace('#', '');
-        if (hashView && panels[hashView]) show(hashView); else show('game');
+        show(panels[hashView] ? hashView : 'game');
+
+        // Jump chips at the top of the Models panel.
+        document.querySelectorAll('.sc-jump [data-jump]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            var t = document.getElementById(b.dataset.jump);
+            if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+        });
+
+        // Exterior / Interior: swap the card's GLB and camera rig.
         document.querySelectorAll('.sc-toggle').forEach(function (tg) {
           var card = tg.closest('.sc-card');
           var viewer = card.querySelector('model-viewer');
           tg.querySelectorAll('button').forEach(function (b) {
             b.addEventListener('click', function () {
+              if (b.classList.contains('on')) return;
               tg.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
               viewer.setAttribute('poster', b.dataset.poster);
               if (b.dataset.mode === 'interior') {
-                // Stand the camera inside, at the west end of the nave,
-                // looking down its axis to the sanctuary (positions
-                // measured from each interior GLB's own geometry).
+                // Stand the camera inside, looking down the room's axis
+                // (positions measured from each interior GLB), with
+                // polar clamps from each room's floor/ceiling so the
+                // camera can't exit through either (reported 2026-11-13).
                 viewer.setAttribute('camera-orbit', b.dataset.orbit);
                 viewer.setAttribute('camera-target', b.dataset.target);
                 viewer.setAttribute('field-of-view', b.dataset.fov);
-                // Keep the camera inside the room vertically: without
-                // polar clamps it exits through the floor when tipped
-                // down to look at the ceiling, and through the ceiling
-                // when tipped up (reported 2026-11-13). Ranges
-                // are per building, from each interior's floor/ceiling
-                // heights; the defaults suit the church naves.
                 viewer.setAttribute('min-camera-orbit', 'auto ' + (b.dataset.minPolar || '55deg') + ' 3m');
                 viewer.setAttribute('max-camera-orbit', 'auto ' + (b.dataset.maxPolar || '102deg') + ' 10m');
                 viewer.setAttribute('disable-pan', '');
                 viewer.removeAttribute('auto-rotate');
-                // Snap straight inside when the interior lands — no
-                // swing in from the exterior framing.
+                // Snap straight inside when the interior lands.
                 viewer.addEventListener('load', function snap() {
                   viewer.removeEventListener('load', snap);
-                  if (viewer.getAttribute('camera-orbit')) viewer.jumpCameraToGoal();
+                  if (viewer.getAttribute('camera-orbit') && viewer.jumpCameraToGoal) viewer.jumpCameraToGoal();
                 });
               } else {
-                viewer.removeAttribute('camera-orbit');
-                viewer.removeAttribute('camera-target');
-                viewer.removeAttribute('field-of-view');
-                viewer.removeAttribute('min-camera-orbit');
-                viewer.removeAttribute('max-camera-orbit');
-                viewer.removeAttribute('disable-pan');
+                ['camera-orbit', 'camera-target', 'field-of-view', 'min-camera-orbit', 'max-camera-orbit', 'disable-pan'].forEach(function (a) { viewer.removeAttribute(a); });
                 viewer.setAttribute('auto-rotate', '');
               }
-              viewer.setAttribute('src', b.dataset.glb);
+              viewer.dataset.src = b.dataset.glb;
+              // A gated (not yet tapped) touch viewer just changes its
+              // poster; the tap loads whichever view is selected.
+              if (viewer.hasAttribute('src') || !touch) viewer.setAttribute('src', b.dataset.glb);
             });
           });
         });
       })();
     </script>
     <script>
-      // Model-viewer touch gate — the McFam Monument Hunt fix
-      // (mcfam PR #70, 2026-11-14) carried over: on touch devices a
-      // live 3D viewer swallows every scroll swipe that starts on it,
-      // so each viewer in the Models panel is inert until tapped
-      // ("Tap to spin the model"); its "Done" button hands scrolling
-      // back to the panel. Mouse visitors keep the always-live
-      // viewer. Styles live in src/style.css under .mv-gate.
+      // Model-viewer touch gate — the McFam Monument Hunt fix (mcfam
+      // PR #70) carried over: on touch devices a live 3D viewer
+      // swallows every scroll swipe that starts on it, so each viewer
+      // is inert until tapped ("Tap to spin"), which is also what
+      // loads its GLB; "Done" hands scrolling back to the panel.
+      // Mouse visitors keep always-live viewers. Styles: .mv-gate.
       if (window.matchMedia('(pointer: coarse)').matches) {
-        document.querySelectorAll('.sc-card model-viewer, model-viewer.dash-car').forEach(function (viewer) {
+        document.querySelectorAll('.sc-card model-viewer').forEach(function (viewer) {
           var gate = document.createElement('div');
           gate.className = 'mv-gate mv-gate--gated';
           viewer.parentNode.insertBefore(gate, viewer);
@@ -664,16 +786,15 @@
           var activate = document.createElement('button');
           activate.type = 'button';
           activate.className = 'mv-gate__activate';
-          activate.setAttribute('aria-label', 'Use the 3D model viewer');
-          var label = document.createElement('span');
-          label.textContent = 'Tap to spin the model';
-          activate.append(label);
+          activate.setAttribute('aria-label', 'Load and spin the 3D model');
+          activate.innerHTML = '<span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.5 7.5v9L12 21.2 3.5 16.5v-9z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9.2"/></svg>Tap to spin in 3D</span>';
           var release = document.createElement('button');
           release.type = 'button';
           release.className = 'mv-gate__release';
-          release.textContent = '✕ Done';
+          release.textContent = 'Done';
           release.setAttribute('aria-label', 'Stop using the model viewer and scroll the page again');
           activate.addEventListener('click', function () {
+            if (!viewer.hasAttribute('src') && viewer.dataset.src) viewer.setAttribute('src', viewer.dataset.src);
             gate.classList.add('mv-gate--active');
             gate.classList.remove('mv-gate--gated');
           });
@@ -684,6 +805,46 @@
           gate.append(activate, release);
         });
       }
+    </script>
+    <script>
+      // Render lightbox: tap any render thumbnail (or the F-22 still) to
+      // see it full screen; arrow keys / buttons / a swipe step through
+      // that card's renders; Esc, ✕ or a tap on the backdrop closes.
+      (function () {
+        var dlg = document.getElementById('lightbox');
+        if (!dlg || !dlg.showModal) return;
+        var img = document.getElementById('lb-img'), cap = document.getElementById('lb-cap');
+        var list = [], idx = 0;
+        function paint() {
+          var b = list[idx]; var t = b.querySelector('img');
+          img.src = b.dataset.full; img.alt = t ? t.alt : '';
+          cap.textContent = (t ? t.alt : '') + (list.length > 1 ? '  ·  ' + (idx + 1) + ' / ' + list.length : '');
+        }
+        function stepLb(d) { if (list.length > 1) { idx = (idx + d + list.length) % list.length; paint(); } }
+        document.addEventListener('click', function (e) {
+          var b = e.target.closest && e.target.closest('.sc-thumb, .sc-still');
+          if (!b) return;
+          var card = b.closest('.sc-card');
+          list = Array.prototype.slice.call(card.querySelectorAll('.sc-thumb'));
+          idx = Math.max(0, list.findIndex(function (x) { return x.dataset.full === b.dataset.full; }));
+          paint(); dlg.showModal();
+        });
+        dlg.querySelector('.lb-close').addEventListener('click', function () { dlg.close(); });
+        dlg.querySelector('.lb-prev').addEventListener('click', function () { stepLb(-1); });
+        dlg.querySelector('.lb-next').addEventListener('click', function () { stepLb(1); });
+        dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+        dlg.addEventListener('keydown', function (e) {
+          if (e.key === 'ArrowRight') stepLb(1);
+          if (e.key === 'ArrowLeft') stepLb(-1);
+        });
+        var x0 = null;
+        dlg.addEventListener('touchstart', function (e) { x0 = e.touches[0].clientX; }, { passive: true });
+        dlg.addEventListener('touchend', function (e) {
+          if (x0 === null) return;
+          var dx = e.changedTouches[0].clientX - x0; x0 = null;
+          if (Math.abs(dx) > 40) stepLb(dx < 0 ? 1 : -1);
+        });
+      })();
     </script>
     <script>
       // The Cannoli head unit: six stations, each a playlist of banked
@@ -734,60 +895,183 @@
             ['Bless Me Father', 'bless-me-father.ogg']
           ]}
         ];
+        var BAND_MIN = 88, BAND_MAX = 108;
         var audio = document.getElementById('radio-audio');
+        function $(id) { return document.getElementById(id); }
         var el = {
-          freq: document.getElementById('hu-freq'), call: document.getElementById('hu-call'),
-          track: document.getElementById('hu-track'), pos: document.getElementById('hu-pos'),
-          state: document.getElementById('hu-state'), clock: document.getElementById('hu-clock'),
-          fill: document.getElementById('hu-prog-fill'), presets: document.getElementById('hu-presets'),
-          playlist: document.getElementById('hu-playlist'), play: document.getElementById('hu-play')
+          freq: $('hu-freq'), call: $('hu-call'), genre: $('hu-genre'), track: $('hu-track'),
+          trackWrap: $('hu-track-wrap'), pos: $('hu-pos'), state: $('hu-state'), clock: $('hu-clock'),
+          dur: $('hu-dur'), st: $('hu-st'), prog: $('hu-prog'), fill: $('hu-prog-fill'),
+          presets: $('hu-presets'), playlist: $('hu-playlist'), play: $('hu-play'),
+          needle: $('hu-needle'), marks: $('hu-dial-marks'), dial: $('hu-dial'),
+          listCall: $('hu-list-call'), listCount: $('hu-list-count'), vol: $('hu-volume')
         };
-        var si = 0, ti = 0;
-        function fmt(s) { if (!isFinite(s)) return '--:--'; s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+        // Per-viewer conveniences only: the last station and volume.
+        function recall(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+        function remember(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+        var si = Math.max(0, Math.min(STATIONS.length - 1, parseInt(recall('mvt-radio-station') || '0', 10) || 0));
+        var ti = 0, failed = false;
+        function fmt(s) { if (!isFinite(s)) return '-:--'; s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+        function bandPct(freq) { return 100 * (parseFloat(freq) - BAND_MIN) / (BAND_MAX - BAND_MIN); }
+        function playing() { return !audio.paused && !audio.ended; }
+        function tryPlay() {
+          var p = audio.play();
+          if (p && p.catch) p.catch(function () { render(); });
+        }
+        // Long titles scroll across the display like a real head unit;
+        // short ones sit still.
+        function fitTrack() {
+          el.trackWrap.classList.remove('marquee');
+          el.track.style.removeProperty('--shift');
+          var over = el.track.scrollWidth - el.trackWrap.clientWidth;
+          if (over > 4) {
+            el.track.style.setProperty('--shift', (-over - 8) + 'px');
+            el.trackWrap.classList.add('marquee');
+          }
+        }
         function render() {
           var st = STATIONS[si];
-          el.freq.textContent = st.freq; el.call.textContent = st.call + ' · ' + st.name;
-          el.track.textContent = st.tracks[ti][0];
-          el.pos.textContent = (ti + 1) + ' / ' + st.tracks.length;
-          el.state.textContent = audio.paused ? 'PAUSED' : 'PLAYING';
-          el.play.textContent = audio.paused ? '▶' : '⏸';
-          el.clock.textContent = fmt(audio.currentTime) + ' / ' + fmt(audio.duration);
-          el.fill.style.width = (audio.duration ? (100 * audio.currentTime / audio.duration) : 0) + '%';
-          el.presets.querySelectorAll('button').forEach(function (b, i) { b.classList.toggle('on', i === si); });
-          el.playlist.querySelectorAll('li').forEach(function (li, i) { li.classList.toggle('on', i === ti); });
+          el.freq.textContent = st.freq;
+          el.call.textContent = st.call; el.genre.textContent = st.name;
+          if (el.track.textContent !== st.tracks[ti][0]) { el.track.textContent = st.tracks[ti][0]; fitTrack(); }
+          el.pos.textContent = 'TRK ' + (ti + 1) + '/' + st.tracks.length;
+          var on = playing();
+          el.state.textContent = failed ? 'NO SIGNAL' : (on ? (audio.readyState < 3 ? 'TUNING…' : 'PLAYING') : 'PAUSED');
+          el.st.classList.toggle('lit', on && !failed);
+          el.play.classList.toggle('is-playing', on);
+          el.play.setAttribute('aria-label', on ? 'Pause' : 'Play');
+          el.clock.textContent = fmt(audio.currentTime || 0);
+          el.dur.textContent = fmt(audio.duration);
+          var pct = audio.duration ? (100 * audio.currentTime / audio.duration) : 0;
+          el.fill.style.width = pct + '%';
+          el.prog.setAttribute('aria-valuenow', String(Math.round(pct)));
+          el.needle.style.left = bandPct(st.freq) + '%';
+          el.presets.querySelectorAll('button').forEach(function (b, i) {
+            b.classList.toggle('on', i === si); b.setAttribute('aria-pressed', i === si ? 'true' : 'false');
+          });
+          el.playlist.querySelectorAll('li').forEach(function (li, i) {
+            li.classList.toggle('on', i === ti); li.classList.toggle('live', i === ti && on);
+          });
+          document.querySelector('.headunit').classList.toggle('is-playing', on);
         }
         function buildPlaylist() {
+          var st = STATIONS[si];
           el.playlist.innerHTML = '';
-          STATIONS[si].tracks.forEach(function (t, i) {
+          el.listCall.textContent = st.call + ' ' + st.freq;
+          el.listCount.textContent = st.tracks.length + (st.tracks.length === 1 ? ' track' : ' tracks');
+          st.tracks.forEach(function (t, i) {
             var li = document.createElement('li');
             var b = document.createElement('button');
-            b.type = 'button'; b.textContent = t[0];
-            b.addEventListener('click', function () { ti = i; load(true); });
+            b.type = 'button';
+            b.innerHTML = '<span class="n">' + (i + 1) + '</span><span class="t"></span><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>';
+            b.querySelector('.t').textContent = t[0];
+            b.addEventListener('click', function () {
+              if (i === ti && !failed && audio.src) { if (audio.paused) tryPlay(); else audio.pause(); return; }
+              ti = i; load(true);
+            });
             li.appendChild(b); el.playlist.appendChild(li);
           });
         }
+        function setMediaSession() {
+          if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
+          var st = STATIONS[si];
+          try {
+            navigator.mediaSession.metadata = new MediaMetadata({
+              title: st.tracks[ti][0], artist: 'MVT Fredericton',
+              album: st.call + ' ' + st.freq + ' FM · ' + st.name,
+              artwork: [{ src: '/bambam/poster-720.jpg', sizes: '1280x720', type: 'image/jpeg' }]
+            });
+          } catch (e) { /* older engines */ }
+        }
         function load(play) {
+          failed = false;
           audio.src = BASE + STATIONS[si].tracks[ti][1];
-          if (play) audio.play();
+          setMediaSession();
+          if (play) tryPlay();
           render();
         }
-        function tune(i, play) { si = (i + STATIONS.length) % STATIONS.length; ti = 0; buildPlaylist(); load(play); }
+        function tune(i, play) {
+          si = (i + STATIONS.length) % STATIONS.length; ti = 0;
+          remember('mvt-radio-station', String(si));
+          buildPlaylist(); load(play);
+        }
+        function step(d) { ti = (ti + d + STATIONS[si].tracks.length) % STATIONS[si].tracks.length; load(true); }
+
+        [88, 92, 96, 100, 104, 108].forEach(function (f) {
+          var t = document.createElement('span');
+          t.className = 'hu-tlabel'; t.style.left = bandPct(f) + '%'; t.textContent = f;
+          el.marks.appendChild(t);
+        });
         STATIONS.forEach(function (st, i) {
           var b = document.createElement('button');
           b.type = 'button'; b.className = 'hu-preset';
-          b.innerHTML = '<b>' + (i + 1) + '</b><span>' + st.call + '</span><small>' + st.freq + '</small>';
-          b.addEventListener('click', function () { tune(i, true); });
+          b.setAttribute('aria-label', 'Preset ' + (i + 1) + ': ' + st.call + ' ' + st.freq + ', ' + st.name);
+          b.innerHTML = '<span class="led" aria-hidden="true"></span><b>' + (i + 1) + '</b><span class="c">' + st.call + '</span><small>' + st.freq + '</small>';
+          b.addEventListener('click', function () { if (i === si && playing()) return; tune(i, true); });
           el.presets.appendChild(b);
+          var m = document.createElement('span');
+          m.className = 'hu-mark'; m.style.left = bandPct(st.freq) + '%';
+          el.marks.appendChild(m);
         });
-        el.play.addEventListener('click', function () { if (audio.paused) audio.play(); else audio.pause(); });
-        document.getElementById('hu-next').addEventListener('click', function () { ti = (ti + 1) % STATIONS[si].tracks.length; load(true); });
-        document.getElementById('hu-prev').addEventListener('click', function () { ti = (ti - 1 + STATIONS[si].tracks.length) % STATIONS[si].tracks.length; load(true); });
-        document.getElementById('hu-volume').addEventListener('input', function (e) { audio.volume = e.target.value / 100; });
-        audio.addEventListener('ended', function () { ti = (ti + 1) % STATIONS[si].tracks.length; load(true); });
-        audio.addEventListener('play', render); audio.addEventListener('pause', render);
-        audio.addEventListener('loadedmetadata', render); audio.addEventListener('timeupdate', render);
-        audio.volume = 0.8;
+        // The tuning scale: tap anywhere on it to tune to the nearest
+        // station, like spinning the dial onto a strong signal.
+        el.dial.addEventListener('click', function (e) {
+          var r = el.dial.getBoundingClientRect();
+          var f = BAND_MIN + (BAND_MAX - BAND_MIN) * (e.clientX - r.left) / r.width;
+          var best = 0;
+          STATIONS.forEach(function (st, i) { if (Math.abs(parseFloat(st.freq) - f) < Math.abs(parseFloat(STATIONS[best].freq) - f)) best = i; });
+          if (best !== si) tune(best, true);
+        });
+        el.play.addEventListener('click', function () {
+          if (failed) { load(true); return; }
+          if (audio.paused) tryPlay(); else audio.pause();
+        });
+        $('hu-next').addEventListener('click', function () { step(1); });
+        $('hu-prev').addEventListener('click', function () {
+          // Like every car stereo: back restarts the song unless you're
+          // in its first few seconds.
+          if (audio.currentTime > 4) { audio.currentTime = 0; return; }
+          step(-1);
+        });
+        function seekTo(clientX) {
+          if (!audio.duration) return;
+          var r = el.prog.getBoundingClientRect();
+          audio.currentTime = audio.duration * Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+        }
+        el.prog.addEventListener('click', function (e) { seekTo(e.clientX); });
+        el.prog.addEventListener('keydown', function (e) {
+          if (!audio.duration) return;
+          if (e.key === 'ArrowRight') { audio.currentTime = Math.min(audio.duration, audio.currentTime + 10); e.preventDefault(); }
+          if (e.key === 'ArrowLeft') { audio.currentTime = Math.max(0, audio.currentTime - 10); e.preventDefault(); }
+        });
+        var savedVol = parseInt(recall('mvt-radio-volume') || '80', 10);
+        if (!(savedVol >= 0 && savedVol <= 100)) savedVol = 80;
+        el.vol.value = String(savedVol);
+        audio.volume = savedVol / 100;
+        // iOS ignores element volume (hardware buttons only) — don't
+        // show a slider that does nothing there.
+        if (Math.abs(audio.volume - savedVol / 100) > 0.01) $('hu-vol').hidden = true;
+        el.vol.addEventListener('input', function () {
+          audio.volume = el.vol.value / 100; remember('mvt-radio-volume', el.vol.value);
+        });
+        audio.addEventListener('ended', function () { step(1); });
+        audio.addEventListener('error', function () { if (audio.getAttribute('src')) { failed = true; render(); } });
+        ['play', 'pause', 'playing', 'waiting', 'loadedmetadata', 'timeupdate', 'durationchange'].forEach(function (ev) {
+          audio.addEventListener(ev, render);
+        });
+        if ('mediaSession' in navigator) {
+          try {
+            navigator.mediaSession.setActionHandler('play', function () { tryPlay(); });
+            navigator.mediaSession.setActionHandler('pause', function () { audio.pause(); });
+            navigator.mediaSession.setActionHandler('nexttrack', function () { step(1); });
+            navigator.mediaSession.setActionHandler('previoustrack', function () { step(-1); });
+          } catch (e) { /* unsupported action */ }
+        }
+        window.addEventListener('resize', fitTrack);
         buildPlaylist(); load(false);
+        // The display measures its title once it is actually visible.
+        new MutationObserver(function () { if (!$('view-radio').hidden) fitTrack(); })
+          .observe($('view-radio'), { attributes: true, attributeFilter: ['hidden'] });
       })();
     </script>
     <script type="module" src="/src/main.ts"></script>

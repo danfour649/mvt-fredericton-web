@@ -157,7 +157,7 @@ body { font-family: system-ui, sans-serif; }
   position: fixed; left: 8px; bottom: 6px; z-index: 15;
   font-size: 10px; color: rgba(255,255,255,0.85);
   text-shadow: 0 1px 2px rgba(0,0,0,0.7); pointer-events: none;
-  max-width: calc(100vw - 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: calc(100vw - 96px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 #help {
   position: fixed;
@@ -169,7 +169,7 @@ body { font-family: system-ui, sans-serif; }
   z-index: 34; /* above the touch layer (22) and the follow marker (21) */
   font-size: 10.5px; color: rgba(255,255,255,0.9);
   text-shadow: 0 1px 2px rgba(0,0,0,0.7);
-  max-width: min(520px, calc(100vw - 20px)); text-align: right;
+  max-width: calc(100vw - 20px); text-align: right;
   pointer-events: none; /* the container never eats a world tap… */
 }
 /* …only the toggle (and the open panel) take touches. FOLLOW
@@ -187,6 +187,25 @@ body { font-family: system-ui, sans-serif; }
   text-shadow: none; text-decoration: none; vertical-align: bottom;
 }
 #help #help-toggle:active { transform: translateY(2px); }
+#help #help-toggle:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+/* Polish pass: the desktop key line was a bare text node that ran
+   under the 60px disc. It is a pill beside the disc now, with real
+   key caps, and it only shows where a keyboard is the likely input
+   and there is room for it (touch screens get the ? alone). */
+#help .help-row { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+#help .help-keys {
+  font-size: 12px; color: rgba(255,255,255,0.92); white-space: nowrap;
+  background: rgba(10, 14, 8, 0.74); border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 999px; padding: 6px 13px; text-shadow: none;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+}
+#help kbd {
+  display: inline-block; font: 800 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #20180a; background: #f1ecdc; border-radius: 4px; padding: 0 5px;
+  box-shadow: inset 0 -1.5px 0 rgba(0,0,0,0.28); margin: 0 3px 0 8px;
+}
+#help .help-keys kbd:first-child { margin-left: 0; }
+@media (pointer: coarse), (max-width: 1000px) { #help .help-keys { display: none; } }
 /* The expanded help is a readable panel (it's the only teacher the
    gesture vocabulary has): dark card, real type, above everything
    but the stamps/overlay/loading layers. */
@@ -500,13 +519,25 @@ body.car-burning #ctl-buttons [data-action="interact"] {
      the same amount or its top leaves the screen (see base rule). */
   #help #help-full:not([hidden]) { max-height: calc(100dvh - var(--header-h) - 356px); }
 }
+/* Short landscape phones (polish pass): 238px up from the bottom is
+   the TOP of a 390px-tall screen — the disc sat on the wanted stars,
+   and the panel's height budget went negative so it could not open.
+   Here the disc parks under the top-right HUD instead (clear of the
+   control cluster, whose top edge is ≥172px down at 390px tall) and
+   the panel opens DOWNWARD from it. */
+@media (pointer: coarse) and (max-height: 500px) and (orientation: landscape) {
+  #help {
+    bottom: auto; top: calc(var(--header-h) + 50px);
+    display: flex; flex-direction: column-reverse; align-items: flex-end;
+  }
+  #help #help-toggle { width: 48px; height: 48px; font-size: 22px; }
+  #help #help-full:not([hidden]) {
+    margin: 8px 0 0 auto;
+    max-height: calc(100dvh - var(--header-h) - 150px);
+  }
+}
 @media (max-width: 560px) {
-  /* The one-line help crowds the corner on narrow screens (its text
-     is a bare text node, so shrink the line away); the ? toggle —
-     which expands the full controls text — stays readable. */
-  #help { font-size: 0; }
   #help .ctl-settings, #help .ctl-settings button { font-size: 11px; }
-  #help-toggle { font-size: 0.85rem; }
   #hud-score { font-size: 1.35rem; }
 }
 
@@ -525,40 +556,9 @@ body.car-burning #ctl-buttons [data-action="interact"] {
    number — every HUD/showcase offset below hangs off this variable so
    nothing can slide under or be sliced by the header again. */
 :root { --header-h: 92px; }
-#site-header {
-  position: fixed; top: 0; left: 0; right: 0; min-height: 92px; z-index: 55;
-  display: flex; flex-direction: column; align-items: stretch;
-  justify-content: center; gap: 7px;
-  padding: 6px 12px; background: rgba(10, 16, 8, 0.96);
-  border-bottom: 2px solid #ffd23f;
-}
-.site-brand {
-  font-weight: 900; letter-spacing: 0.06em; color: #fff; font-size: 27px;
-  line-height: 1.1; white-space: nowrap;
-}
-.site-brand span { color: #ffd23f; }
-#site-tabs {
-  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-#site-tabs::-webkit-scrollbar { display: none; }
-#site-tabs button, #site-tabs a.tab-link {
-  font: 800 14px system-ui, sans-serif; cursor: pointer;
-  color: #dfe8d8; background: rgba(255,255,255,0.08);
-  border: 1.5px solid rgba(255,255,255,0.25); border-radius: 999px;
-  padding: 6px 13px; flex: 0 0 auto; white-space: nowrap;
-  display: inline-flex; align-items: center; gap: 6px;
-}
-#site-tabs a.tab-link { text-decoration: none; }
-#site-tabs button.on { background: #ffd23f; color: #20180a; border-color: #ffd23f; }
-/* 3D tab accent (Daniel, 2026-11-19): a little "New" badge on
-   the 3D preview pill — inline on desktop, corner-pinned on mobile so
-   it adds no height to the stacked pill. */
-.tab-new {
-  font-size: 8.5px; font-weight: 900; letter-spacing: 0.05em;
-  text-transform: uppercase; line-height: 1.25; white-space: nowrap;
-  color: #fff; background: #e2481d; border-radius: 999px; padding: 2px 6px;
-}
+/* The header's look lives in /site.css (shared with the 3D page);
+   here it is only pinned over the game. */
+#site-header { position: fixed; }
 
 /* Game HUD offset by the header height. */
 #goalbar { top: var(--header-h); }
@@ -581,29 +581,92 @@ body.car-burning #ctl-buttons [data-action="interact"] {
 
 .showcase {
   position: fixed; left: 0; right: 0; top: var(--header-h); bottom: 0; z-index: 48;
-  overflow-y: auto; -webkit-overflow-scrolling: touch;
-  background: #141a10; color: #eef3e6;
+  overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  background: radial-gradient(140% 60% at 50% 0%, #1a2314 0%, #11160e 60%) fixed, #11160e;
+  color: #eef3e6;
 }
 .showcase[hidden] { display: none; }
-.sc-inner { max-width: 860px; margin: 0 auto; padding: 22px 16px 56px; }
-.sc-inner h1 { font-size: 30px; margin: 4px 0 8px; letter-spacing: 0.01em; }
-.sc-sub { color: #b9c8ab; line-height: 1.55; margin: 0 0 22px; }
+.sc-inner { max-width: 880px; margin: 0 auto; padding: 22px 16px 56px; }
+.sc-inner h1 { font-size: 30px; line-height: 1.1; margin: 4px 0 8px; letter-spacing: -0.005em; }
+.sc-sub { color: #b9c8ab; line-height: 1.55; margin: 0 0 18px; max-width: 46em; }
 .sc-group { font-size: 19px; margin: 28px 0 12px; color: #ffd23f; }
-.sc-card, .sc-track {
-  background: #1d2716; border: 1px solid #37492a; border-radius: 14px;
-  padding: 16px; margin: 0 0 20px;
+.sc-foot { color: #8fa382; font-size: 13px; line-height: 1.55; margin-top: 26px; }
+.sc-foot a, .sc-sub a, .sc-facts a { color: #ffd23f; }
+
+/* --- Models (polish pass 2026-11-23): grouped cards, one structure
+   for all — title + meta, a full-bleed stage (3D viewer or still)
+   with the Exterior/Interior switch floating on it, facts, and a
+   strip of renders that open in the lightbox. Two columns on wide
+   screens. */
+.models-inner { max-width: 1240px; }
+.sc-jump { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 2px 16px 4px; scrollbar-width: none; }
+.sc-jump::-webkit-scrollbar { display: none; }
+.sc-jump button {
+  flex: 0 0 auto; font: 700 13px system-ui, sans-serif; color: #dfe8d8; cursor: pointer;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.16); border-radius: 999px; padding: 7px 13px;
 }
-.sc-card h2, .sc-track h3 { margin: 0 0 10px; font-size: 19px; }
+.sc-jump button:hover { border-color: #ffd23f; color: #fff; }
+.models-inner .sc-group {
+  display: flex; align-items: center; gap: 12px; margin: 30px 0 14px; scroll-margin-top: 12px;
+  font-size: 12px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; color: #ffd23f;
+}
+.models-inner .sc-group::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(255,210,63,0.4), transparent); }
+.sc-grid { display: grid; gap: 18px; }
+.sc-card {
+  display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  background: linear-gradient(180deg, #1b2516 0%, #161e12 100%);
+  border: 1px solid #2c3a22; border-radius: 16px; box-shadow: 0 10px 28px rgba(0,0,0,0.28);
+}
+.sc-card-head { padding: 14px 16px 12px; }
+.sc-card-head h3 { margin: 0; font-size: 18px; line-height: 1.25; }
+.sc-meta { margin: 3px 0 0; font-size: 13px; color: #93a585; }
+.sc-stage {
+  position: relative; aspect-ratio: 4 / 3; overflow: hidden;
+  background: radial-gradient(120% 100% at 50% 0%, #2c3a20 0%, #172012 72%);
+  border-top: 1px solid #26321e; border-bottom: 1px solid #26321e;
+}
+.sc-stage > .mv-gate { position: absolute; inset: 0; }
 .sc-card model-viewer {
-  width: 100%; height: 380px; border-radius: 10px;
-  background: radial-gradient(120% 100% at 50% 0%, #2c3a20 0%, #1a2413 70%);
+  display: block; width: 100%; height: 100%;
+  background: radial-gradient(120% 100% at 50% 0%, #2c3a20 0%, #172012 72%);
+  --poster-color: transparent;
 }
-/* Model-viewer touch gate (wired in index.html, coarse pointers
-   only — the McFam Monument Hunt fix, PR #70): until the reader
-   taps, the viewer takes no touches, so a scroll swipe that starts
-   on it scrolls the panel like anywhere else. Tapping hands the
-   touches to the viewer; "Done" hands them back. */
-.mv-gate { position: relative; }
+.sc-still { display: block; width: 100%; height: 100%; padding: 0; margin: 0; border: 0; cursor: zoom-in; background: #0f141b; }
+.sc-still img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.sc-badge {
+  position: absolute; left: 10px; top: 10px; z-index: 4; pointer-events: none;
+  font: 800 10.5px/1 system-ui, sans-serif; letter-spacing: 0.1em; text-transform: uppercase;
+  color: #fff; background: rgba(8, 12, 6, 0.78); border: 1px solid rgba(255,255,255,0.18); border-radius: 999px; padding: 6px 9px;
+}
+/* Exterior / Interior: a segmented switch floating on the stage. */
+.sc-toggle {
+  position: absolute; left: 10px; top: 10px; z-index: 4; display: flex; padding: 3px; gap: 2px;
+  background: rgba(8, 12, 6, 0.8); border: 1px solid rgba(255,255,255,0.16); border-radius: 999px;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.sc-toggle button {
+  font: 700 12.5px system-ui, sans-serif; cursor: pointer; color: #dfe8d8;
+  background: transparent; border: 0; border-radius: 999px; padding: 6px 12px; touch-action: manipulation;
+}
+.sc-toggle button.on { background: #ffd23f; color: #20180a; }
+.sc-facts { color: #b9c8ab; line-height: 1.55; margin: 10px 2px 0; }
+.sc-card .sc-facts { font-size: 14.5px; margin: 12px 16px 0; }
+.sc-renders {
+  display: flex; gap: 8px; overflow-x: auto; margin-top: auto; padding: 14px 16px 16px;
+  scrollbar-width: thin; scrollbar-color: #3a4a2e transparent; -webkit-overflow-scrolling: touch;
+}
+.sc-thumb {
+  flex: 0 0 auto; height: 72px; padding: 0; margin: 0; cursor: zoom-in; overflow: hidden;
+  background: #10150d; border: 1px solid #33442a; border-radius: 8px; transition: border-color 0.15s ease;
+}
+.sc-thumb:hover, .sc-thumb:focus-visible { border-color: #ffd23f; outline: none; }
+.sc-thumb img { display: block; height: 100%; width: auto; aspect-ratio: auto; }
+
+/* Model-viewer touch gate (coarse pointers only, wired in index.html —
+   the McFam Monument Hunt fix, PR #70): until the reader taps, the
+   viewer takes no touches (a swipe that starts on it scrolls the
+   panel) and has no GLB (the render poster shows). The tap loads the
+   model and hands it the touches; "Done" hands them back. */
 .mv-gate--gated model-viewer { pointer-events: none; }
 .mv-gate__activate {
   position: absolute; inset: 0; z-index: 2; display: flex;
@@ -611,37 +674,62 @@ body.car-burning #ctl-buttons [data-action="interact"] {
   background: transparent; border: 0; cursor: pointer; font: inherit;
 }
 .mv-gate__activate span {
-  font: 700 0.92rem system-ui, sans-serif; background: rgba(10, 16, 8, 0.92);
-  color: #fff; border: 1.5px solid rgba(255, 255, 255, 0.35);
-  padding: 9px 16px; border-radius: 999px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  display: inline-flex; align-items: center; gap: 7px;
+  font: 700 14px system-ui, sans-serif; background: rgba(10, 16, 8, 0.9);
+  color: #fff; border: 1px solid rgba(255, 210, 63, 0.55);
+  padding: 9px 16px; border-radius: 999px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
+.mv-gate__activate svg { width: 17px; height: 17px; fill: none; stroke: #ffd23f; stroke-width: 1.8; stroke-linejoin: round; }
 .mv-gate--active .mv-gate__activate { display: none; }
 .mv-gate__release {
   position: absolute; top: 10px; right: 10px; z-index: 3; display: none;
-  font: 700 0.88rem system-ui, sans-serif; background: rgba(10, 16, 8, 0.92);
-  color: #fff; border: 1.5px solid rgba(255, 255, 255, 0.35); border-radius: 999px;
-  padding: 8px 14px; cursor: pointer; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  font: 700 13px system-ui, sans-serif; background: #ffd23f; color: #20180a;
+  border: 0; border-radius: 999px; padding: 7px 14px; cursor: pointer; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 .mv-gate--active .mv-gate__release { display: block; }
-.sc-toggle { display: flex; gap: 6px; margin: 0 0 10px; }
-.sc-toggle button {
-  font: 800 13px system-ui, sans-serif; cursor: pointer;
-  color: #dfe8d8; background: rgba(255,255,255,0.08);
-  border: 1.5px solid rgba(255,255,255,0.25); border-radius: 999px; padding: 5px 12px;
+
+/* Render lightbox. */
+#lightbox {
+  width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0;
+  background: rgba(6, 8, 5, 0.97); color: #eef3e6;
 }
-.sc-toggle button.on { background: #ffd23f; color: #20180a; border-color: #ffd23f; }
-.sc-facts, .sc-track p { color: #b9c8ab; line-height: 1.55; margin: 10px 2px 0; }
-.sc-renders {
-  display: flex; gap: 8px; overflow-x: auto; margin-top: 12px;
-  padding-bottom: 4px; -webkit-overflow-scrolling: touch;
+#lightbox[open] { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+#lightbox::backdrop { background: rgba(0, 0, 0, 0.6); }
+#lb-img { max-width: min(96vw, 1400px); max-height: calc(100dvh - 120px); object-fit: contain; border-radius: 6px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+#lb-cap { margin: 12px 16px 0; font-size: 13.5px; color: #b9c8ab; text-align: center; }
+.lb-btn {
+  position: absolute; display: grid; place-items: center; width: 46px; height: 46px; padding: 0; cursor: pointer;
+  font: 400 26px/1 system-ui, sans-serif; color: #fff; background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2); border-radius: 50%;
 }
-.sc-renders img {
-  height: 120px; width: auto; border-radius: 8px; flex: 0 0 auto;
-  border: 1px solid #37492a;
+.lb-btn:hover { background: rgba(255,255,255,0.2); }
+.lb-close { top: max(12px, env(safe-area-inset-top)); right: 12px; font-size: 18px; }
+.lb-prev { left: 12px; top: 50%; transform: translateY(-50%); }
+.lb-next { right: 12px; top: 50%; transform: translateY(-50%); }
+@media (pointer: coarse) { .lb-prev, .lb-next { top: auto; bottom: max(16px, env(safe-area-inset-bottom)); transform: none; } }
+
+@media (min-width: 760px) {
+  .sc-inner { padding: 34px 24px 64px; }
+  .sc-inner h1 { font-size: 40px; }
+  .sc-jump { margin: 0; padding: 2px 0 4px; }
+  .sc-thumb { height: 84px; }
 }
-.sc-track audio { width: 100%; margin-top: 2px; }
-.sc-foot { color: #8fa382; font-size: 13px; line-height: 1.55; margin-top: 26px; }
-.sc-foot a, .sc-sub a { color: #ffd23f; }
+@media (min-width: 980px) {
+  .sc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+  .sc-stage { aspect-ratio: 16 / 11; }
+  /* An odd group's last card would sit alone beside a blank column:
+     it spans the row as a feature card, stage left, words right. */
+  .sc-grid > .sc-card:last-child:nth-child(odd) {
+    grid-column: 1 / -1; display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas: "stage head" "stage facts" "stage renders";
+  }
+  .sc-grid > .sc-card:last-child:nth-child(odd) .sc-card-head { grid-area: head; padding-top: 18px; }
+  .sc-grid > .sc-card:last-child:nth-child(odd) .sc-stage { grid-area: stage; aspect-ratio: 16 / 10; border: 0; border-right: 1px solid #26321e; }
+  .sc-grid > .sc-card:last-child:nth-child(odd) .sc-facts { grid-area: facts; }
+  .sc-grid > .sc-card:last-child:nth-child(odd) .sc-renders { grid-area: renders; align-self: end; }
+}
 
 /* Maps tab: the embedded 3D Fredericton (lazy MapLibre view, created
    by src/maps-view.ts on first open) + the data-provenance copy. */
@@ -651,111 +739,235 @@ body.car-burning #ctl-buttons [data-action="interact"] {
 }
 .sc-copy { color: #b9c8ab; line-height: 1.6; margin: 0 0 6px; }
 @media (max-width: 560px) {
-  .site-brand { font-size: 21px; }
-  /* Mobile first (Daniel, 2026-11-19): all five pills fit the row —
-     no horizontal scrolling. Each pill stacks its icon over its
-     label and the five share the row evenly. If the taller tab line
-     (or a text-scaling webview) grows the header past 92px, the
-     --header-h sync moves the HUD/showcase offsets with it. */
-  #site-header { padding: 6px 8px; }
-  #site-tabs { overflow-x: visible; gap: 4px; }
-  #site-tabs button, #site-tabs a.tab-link {
-    flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center;
-    gap: 1px; padding: 5px 1px; font-size: 10.5px; border-radius: 16px;
-  }
-  #site-tabs .tab-ico { font-size: 17px; line-height: 1.1; }
-  #site-tabs .tab-label { font-size: 9.5px; line-height: 1.15; white-space: nowrap; letter-spacing: -0.02em; }
-  #site-tabs a.tab-3d { position: relative; }
-  .tab-new { position: absolute; top: -7px; right: -3px; font-size: 7.5px; padding: 1.5px 5px; transform: rotate(3deg); box-shadow: 0 1px 4px rgba(0,0,0,0.45); }
-  .sc-card model-viewer { height: 300px; }
   #maps-map { height: 380px; }
 }
 
-/* --- radio dashboard (the Cannoli head unit) ------------------------- */
-.radio-inner { max-width: 720px; }
-.dash {
-  background: linear-gradient(180deg, #232323 0%, #171717 60%, #101010 100%);
-  border: 1px solid #3a3a3a; border-radius: 18px; padding: 14px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 30px rgba(0,0,0,0.5);
-}
-.dash-car {
-  width: 100%; height: 300px; border-radius: 12px; display: block;
-  background: radial-gradient(120% 100% at 50% 0%, #2c3a20 0%, #141c0e 70%);
-}
-.headunit { margin-top: 14px; background: #0c0c0c; border: 1px solid #333; border-radius: 12px; padding: 12px; }
-.hu-lcd {
-  background: linear-gradient(180deg, #9db38a, #8aa873);
-  color: #14210c; border-radius: 8px; padding: 10px 12px;
-  font-family: "Courier New", ui-monospace, monospace;
-  box-shadow: inset 0 2px 8px rgba(0,0,0,0.35);
-}
-.hu-lcd-top { display: flex; gap: 10px; align-items: baseline; font-weight: bold; }
-#hu-freq { font-size: 30px; }
-.hu-band { font-size: 13px; }
-#hu-call { margin-left: auto; font-size: 15px; text-align: right; }
-#hu-clock { font-size: 13px; }
-.hu-lcd-track { font-size: 17px; font-weight: bold; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hu-lcd-sub { display: flex; justify-content: space-between; font-size: 12px; margin-top: 2px; }
-.hu-prog { height: 5px; background: rgba(20,33,12,0.35); border-radius: 3px; margin-top: 8px; }
-#hu-prog-fill { height: 100%; width: 0%; background: #14210c; border-radius: 3px; }
-.hu-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
-.hu-preset {
-  background: #1e1e1e; color: #e8e8e8; border: 1px solid #444; border-radius: 9px;
-  padding: 8px 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 1px;
-  font: inherit;
-}
-.hu-preset b { font-size: 11px; color: #ffd23f; }
-.hu-preset span { font-size: 16px; font-weight: bold; letter-spacing: 0.04em; }
-.hu-preset small { font-size: 11px; color: #9a9a9a; }
-.hu-preset.on { background: #ffd23f; color: #20180a; border-color: #ffd23f; }
-.hu-preset.on b, .hu-preset.on small { color: #20180a; }
-.hu-controls { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
-.hu-btn {
-  background: #262626; color: #f2f2f2; border: 1px solid #4a4a4a; border-radius: 50%;
-  width: 46px; height: 46px; font-size: 17px; cursor: pointer; flex: 0 0 auto;
-}
-.hu-play { width: 56px; height: 56px; font-size: 21px; background: #ffd23f; color: #20180a; border-color: #ffd23f; }
-.hu-vol { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 1 1 auto; max-width: 220px; }
-.hu-vol input { flex: 1; accent-color: #ffd23f; }
-.hu-playlist { list-style: none; margin: 12px 0 2px; padding: 0; counter-reset: trk; }
-.hu-playlist li { border-top: 1px solid #262626; }
-.hu-playlist li button {
-  width: 100%; text-align: left; background: none; border: 0; color: #cfd6c4;
-  padding: 9px 8px; font: inherit; font-size: 15px; cursor: pointer;
-}
-.hu-playlist li.on button { color: #ffd23f; font-weight: bold; }
-.hu-playlist li button::before { counter-increment: trk; content: counter(trk) ". "; color: #777; }
-@media (max-width: 560px) {
-  .dash-car { height: 220px; }
-  .hu-presets { grid-template-columns: repeat(3, 1fr); }
-  #hu-freq { font-size: 24px; }
-  .hu-lcd-track { font-size: 15px; }
-}
-
-/* Radio v2 (2026-11-23): the tab sits in the old Songs slot, and the
-   head unit is overlaid on the inside of the Cannoli — the viewer
-   camera is in the driver's seat looking at the dash, with the
-   radio panel laid over the lower frame like the centre stack. */
-.dash { position: relative; padding: 0; overflow: hidden; }
-.dash-car { height: 470px; border-radius: 18px; }
+/* --- the FM tab: the Cannoli head unit (polish pass 2026-11-23) --------
+   One clean block replacing three stacked override layers (dash,
+   in-cabin overlay, plain block). An in-dash faceplate: amber VFD
+   display (unlit segments ghosted behind the digits, faint scan
+   lines, glass glare), an 88–108 MHz scale whose needle slides to
+   the station, LED presets, transport + volume. Phones stack the
+   unit over the playlist; wide screens put them side by side. */
+.radio-inner { max-width: 640px; }
+.radio-inner .sc-foot { margin-top: 18px; }
 .headunit {
-  position: absolute; left: 50%; transform: translateX(-50%);
-  bottom: 12px; width: min(94%, 540px); margin-top: 0;
-  background: rgba(10, 10, 10, 0.92);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  --vfd: #ffbf47; --vfd-dim: rgba(255, 191, 71, 0.55); --vfd-ghost: rgba(255, 191, 71, 0.06);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
-.hu-playlist {
-  background: #101010; border: 1px solid #333; border-radius: 12px;
-  padding: 6px 10px; margin-top: 14px;
+.hu-face {
+  position: relative; padding: 14px; border-radius: 18px;
+  background: linear-gradient(180deg, #2c2e33 0%, #1c1d21 46%, #131417 100%);
+  border: 1px solid #050506;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.13), inset 0 -2px 0 rgba(0,0,0,0.6),
+    0 0 0 1px rgba(255,255,255,0.04), 0 18px 40px rgba(0,0,0,0.55);
 }
-@media (max-width: 560px) {
-  .dash-car { height: 430px; }
-  .headunit { bottom: 8px; }
-  .hu-presets { gap: 6px; }
-  .hu-btn { width: 40px; height: 40px; }
-  .hu-play { width: 50px; height: 50px; }
+/* The display: deep glass, amber phosphor. */
+.hu-display {
+  position: relative; overflow: hidden; border-radius: 10px; padding: 11px 14px 10px;
+  background: radial-gradient(130% 140% at 50% 0%, #1d1608 0%, #0c0904 68%);
+  border: 1px solid #000;
+  box-shadow: inset 0 0 0 1px rgba(255,190,80,0.07), inset 0 10px 28px rgba(0,0,0,0.65);
+  color: var(--vfd);
+  font-family: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  text-shadow: 0 0 7px rgba(255, 160, 40, 0.5), 0 0 1px rgba(255, 210, 140, 0.8);
+}
+.hu-display::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,0.16) 0 1px, transparent 1px 3px);
+}
+.hu-display::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(165deg, rgba(255,255,255,0.075) 0%, rgba(255,255,255,0) 38%);
+}
+.hu-row1 { display: flex; align-items: baseline; gap: 8px; }
+.hu-band {
+  align-self: center; font: 800 11px/1 system-ui, sans-serif; letter-spacing: 0.08em;
+  color: #0c0904; background: var(--vfd); border-radius: 3px; padding: 3px 5px 2px;
+  box-shadow: 0 0 8px rgba(255, 160, 40, 0.45); text-shadow: none;
+}
+.hu-freq { display: inline-grid; font-size: 44px; font-weight: 700; line-height: 1; letter-spacing: 0.02em; }
+.hu-freq > span { grid-area: 1 / 1; justify-self: end; }
+.hu-ghost { color: var(--vfd-ghost); text-shadow: none; }
+.hu-mhz { font-size: 12px; color: var(--vfd-dim); letter-spacing: 0.06em; }
+.hu-st {
+  margin-left: auto; align-self: center; font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+  border: 1px solid currentColor; border-radius: 3px; padding: 1px 4px;
+  color: var(--vfd-ghost); text-shadow: none; transition: color 0.3s ease;
+}
+.hu-st.lit { color: var(--vfd); text-shadow: 0 0 6px rgba(255, 160, 40, 0.6); }
+.hu-time { align-self: center; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 3.4em; text-align: right; }
+.hu-row2 {
+  display: flex; gap: 7px; margin-top: 8px; font-size: 13px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; overflow: hidden;
+}
+#hu-call { color: var(--vfd); }
+#hu-genre, .hu-sep { color: var(--vfd-dim); overflow: hidden; text-overflow: ellipsis; }
+.hu-track { margin-top: 5px; overflow: hidden; white-space: nowrap; font-size: 18px; font-weight: 700; line-height: 1.3; }
+#hu-track { display: inline-block; }
+.hu-track.marquee #hu-track { animation: hu-marquee 9s ease-in-out 1.2s infinite alternate; }
+@keyframes hu-marquee { 0%, 12% { transform: translateX(0); } 88%, 100% { transform: translateX(var(--shift, 0)); } }
+.hu-meta {
+  display: flex; justify-content: space-between; gap: 10px; margin-top: 6px;
+  font-size: 11px; letter-spacing: 0.12em; color: var(--vfd-dim); font-variant-numeric: tabular-nums;
+}
+#hu-state { color: var(--vfd); }
+/* Seekable progress: a tall hit area around a 4px bar. */
+.hu-prog { position: relative; height: 16px; margin-top: 2px; cursor: pointer; outline: none; }
+.hu-prog::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 6px; height: 4px; border-radius: 2px;
+  background: rgba(255, 191, 71, 0.16);
+}
+#hu-prog-fill {
+  position: absolute; left: 0; top: 6px; height: 4px; width: 0; border-radius: 2px;
+  background: var(--vfd); box-shadow: 0 0 8px rgba(255, 160, 40, 0.7);
+}
+.hu-prog:focus-visible::before { outline: 1px solid var(--vfd); outline-offset: 3px; }
+/* The tuning scale: 1 MHz ticks, labels every 4, station dots, needle. */
+.hu-dial { position: relative; height: 30px; margin-top: 4px; cursor: pointer; }
+.hu-scale {
+  position: absolute; left: 0; right: 0; top: 0; height: 9px;
+  background:
+    linear-gradient(var(--vfd-dim), var(--vfd-dim)) left bottom / 100% 1px no-repeat,
+    repeating-linear-gradient(90deg, var(--vfd-dim) 0 1px, transparent 1px 5%) left top / calc(100% + 1px) 9px no-repeat;
+  opacity: 0.8;
+}
+.hu-tlabel {
+  position: absolute; top: 13px; transform: translateX(-50%);
+  font-size: 9.5px; letter-spacing: 0.04em; color: var(--vfd-dim); text-shadow: none;
+}
+.hu-tlabel:first-child { transform: none; }
+.hu-tlabel:last-of-type { transform: translateX(-100%); }
+.hu-mark {
+  position: absolute; top: 3px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%;
+  background: var(--vfd); box-shadow: 0 0 6px rgba(255, 160, 40, 0.8);
+}
+.hu-needle {
+  position: absolute; top: -3px; height: 15px; width: 2px; margin-left: -1px; border-radius: 1px;
+  background: #ff5a36; box-shadow: 0 0 8px rgba(255, 70, 30, 0.9);
+  transition: left 0.7s cubic-bezier(0.3, 1.25, 0.4, 1);
+}
+/* Presets: physical buttons with an LED. */
+.hu-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.hu-preset {
+  position: relative; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto;
+  align-items: center; column-gap: 6px; row-gap: 1px; padding: 8px 10px 7px; min-height: 52px;
+  font: inherit; text-align: left; color: #cdd0d5; cursor: pointer; touch-action: manipulation;
+  background: linear-gradient(180deg, #36383d 0%, #26272b 100%);
+  border: 1px solid #08080a; border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 2px 0 #050506, 0 3px 6px rgba(0,0,0,0.35);
+  transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.2s ease;
+}
+.hu-preset:active { transform: translateY(2px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 #050506; }
+.hu-preset:focus-visible { outline: 2px solid var(--vfd); outline-offset: 2px; }
+.hu-preset .led {
+  grid-row: 1; grid-column: 1; width: 6px; height: 6px; border-radius: 50%;
+  background: #3a3226; box-shadow: inset 0 1px 1px rgba(0,0,0,0.6);
+}
+.hu-preset b { grid-row: 1; grid-column: 2; font-size: 10px; font-weight: 800; color: #8b9096; letter-spacing: 0.08em; }
+.hu-preset .c { grid-row: 2; grid-column: 1 / 3; font-size: 16px; font-weight: 800; letter-spacing: 0.06em; color: #eef0f2; }
+.hu-preset small { position: absolute; right: 9px; top: 8px; font-size: 10.5px; color: #8b9096; font-variant-numeric: tabular-nums; }
+.hu-preset.on { background: linear-gradient(180deg, #3d3a33 0%, #2a2822 100%); }
+.hu-preset.on .led { background: var(--vfd); box-shadow: 0 0 8px rgba(255, 170, 40, 0.95), 0 0 2px #fff3d6; }
+.hu-preset.on .c { color: var(--vfd); }
+/* Transport + volume. */
+.hu-controls { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.hu-btn {
+  flex: 0 0 auto; display: grid; place-items: center; width: 46px; height: 46px; padding: 0;
+  border-radius: 50%; cursor: pointer; color: #e9ebee; touch-action: manipulation;
+  background: radial-gradient(circle at 50% 30%, #3c3e44 0%, #222327 70%);
+  border: 1px solid #060607;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 2px 0 #050506, 0 4px 10px rgba(0,0,0,0.4);
+}
+.hu-btn svg { width: 19px; height: 19px; fill: currentColor; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.hu-btn:active { transform: translateY(2px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.08); }
+.hu-btn:focus-visible { outline: 2px solid var(--vfd); outline-offset: 2px; }
+.hu-play {
+  width: 58px; height: 58px; color: #20180a;
+  background: radial-gradient(circle at 50% 30%, #ffe27a 0%, #ffd23f 55%, #e0b21c 100%);
+  border-color: #6b5208;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 2px 0 #4c3a05, 0 6px 16px rgba(255, 190, 40, 0.25);
+}
+.hu-play svg { width: 22px; height: 22px; stroke: none; }
+.hu-play .i-pause, .hu-play.is-playing .i-play { display: none; }
+.hu-play.is-playing .i-pause { display: block; }
+.hu-vol { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 1 1 auto; max-width: 200px; color: #9aa0a6; }
+.hu-vol[hidden] { display: none; }
+.hu-vol svg { flex: 0 0 auto; width: 20px; height: 20px; fill: currentColor; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.hu-vol svg .w { fill: none; }
+.hu-vol input { flex: 1; min-width: 0; height: 24px; margin: 0; background: transparent; accent-color: var(--gold, #ffd23f); -webkit-appearance: none; appearance: none; cursor: pointer; }
+.hu-vol input::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: #3a3c41; }
+.hu-vol input::-moz-range-track { height: 4px; border-radius: 2px; background: #3a3c41; }
+.hu-vol input::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 18px; height: 18px; margin-top: -7px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, #fafafa, #b9bcc1); border: 1px solid #111; box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+.hu-vol input::-moz-range-thumb {
+  width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #fafafa, #b9bcc1);
+  border: 1px solid #111; box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+/* The station's playlist. */
+.hu-list {
+  margin-top: 16px; background: #131518; border: 1px solid #25292d; border-radius: 14px; overflow: hidden;
+  box-shadow: 0 10px 26px rgba(0,0,0,0.3);
+}
+.hu-list-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 12px 14px 10px; border-bottom: 1px solid #23272b;
+}
+.hu-list-head h2 { margin: 0; font-size: 12px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: #9aa3a9; }
+.hu-list-head h2 span { color: #ffd23f; }
+.hu-list-count { font-size: 12px; color: #6f777d; }
+.hu-playlist { list-style: none; margin: 0; padding: 4px 0; }
+.hu-playlist li + li { border-top: 1px solid #1d2024; }
+.hu-playlist li button {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 14px; margin: 0;
+  background: none; border: 0; text-align: left; cursor: pointer; touch-action: manipulation;
+  font: 500 15px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #d6dbdf;
+}
+.hu-playlist li button:hover { background: rgba(255,255,255,0.035); }
+.hu-playlist li button:focus-visible { outline: 2px solid #ffd23f; outline-offset: -2px; }
+.hu-playlist .n { flex: 0 0 1.4em; text-align: right; font-size: 13px; color: #6f777d; font-variant-numeric: tabular-nums; }
+.hu-playlist .t { flex: 1 1 auto; min-width: 0; }
+.hu-playlist li.on button { color: #ffd23f; font-weight: 700; background: rgba(255, 210, 63, 0.06); }
+.hu-playlist li.on .n { color: #ffd23f; }
+.hu-playlist .eq { display: none; flex: 0 0 auto; align-items: flex-end; gap: 2px; height: 14px; }
+.hu-playlist .eq i { display: block; width: 3px; height: 100%; background: #ffd23f; border-radius: 1px; transform-origin: bottom; animation: hu-eq 0.9s ease-in-out infinite alternate; }
+.hu-playlist .eq i:nth-child(2) { animation-duration: 0.65s; animation-delay: -0.3s; }
+.hu-playlist .eq i:nth-child(3) { animation-duration: 0.8s; animation-delay: -0.5s; }
+.hu-playlist li.live .eq { display: flex; }
+@keyframes hu-eq { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .hu-track.marquee #hu-track, .hu-playlist .eq i { animation: none; }
+  .hu-needle { transition: none; }
+}
+@media (max-width: 380px) {
+  .hu-face { padding: 11px; }
+  .hu-display { padding: 10px 11px 9px; }
+  .hu-freq { font-size: 38px; }
+  .hu-preset { padding: 7px 8px 6px; }
+  .hu-preset .c { font-size: 15px; }
+  .hu-controls { gap: 8px; }
+}
+@media (min-width: 620px) {
+  .hu-presets { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; }
+  .hu-preset { grid-template-rows: auto auto auto; justify-items: center; text-align: center; padding: 8px 4px 7px; }
+  .hu-preset .led { grid-row: 1; grid-column: 1 / 3; margin-bottom: 3px; }
+  .hu-preset b { grid-row: 2; grid-column: 1 / 3; }
+  .hu-preset .c { grid-row: 3; grid-column: 1 / 3; }
+  .hu-preset small { position: static; grid-row: 4; grid-column: 1 / 3; }
+  .hu-freq { font-size: 52px; }
+}
+@media (min-width: 1040px) {
+  .radio-inner {
+    max-width: 1120px; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    column-gap: 28px; align-items: start; padding-top: 34px;
+  }
+  .radio-inner .hu-list { margin-top: 0; }
+  .radio-inner .sc-foot { grid-column: 1 / -1; }
 }
 
-/* Radio v3 (2026-11-23): Daniel killed the in-cabin model view —
-   the FM tab is just the dial. Head unit back to a plain block. */
-.headunit { position: static; transform: none; width: auto; margin-top: 0; box-shadow: none; }
+/* A deep link straight to a panel (/#radio, /#models, /#maps) must
+   not sit behind the game's loading screen: the game boots unseen
+   underneath and the overlay only shows if you open the game. */
+body.showcase-open #loading { display: none; }

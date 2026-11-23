@@ -508,6 +508,28 @@ describe('FOLLOW iteration 2 — boot cinematic (intro camera)', () => {
     expect(dist(after.camera, g.playerPos)).toBeLessThan(1);
   });
 
+  it('frames the SHORT side: phones unchanged, landscape widens by the aspect', () => {
+    const portrait = new Game(introWorld(), new MemoryStorage());
+    portrait.setViewportSize(390, 844);
+    expect(portrait.streetViewM).toBeCloseTo(30, 6);
+    // A landscape phone (short side < 600 px): 30 m top to bottom.
+    const landscapePhone = new Game(introWorld(), new MemoryStorage());
+    landscapePhone.setViewportSize(844, 390);
+    expect(landscapePhone.streetViewM / (844 / 390)).toBeCloseTo(30, 6);
+    // 1440×900 desktop: short side 900 px → the 1.25× big-screen
+    // cap, so 37.5 m top to bottom and 60 m across. The old width-
+    // only rule showed 18.75 m top to bottom (a car ≈ 1/5 of the
+    // screen height).
+    const desktop = new Game(introWorld(), new MemoryStorage());
+    desktop.setViewportSize(1440, 900);
+    expect(desktop.streetViewM).toBeCloseTo(60, 6);
+    expect(desktop.streetViewM / (1440 / 900)).toBeCloseTo(37.5, 6);
+    // Garbage sizes never poison the framing.
+    desktop.setViewportSize(NaN, 900);
+    desktop.setViewportSize(0, 0);
+    expect(desktop.streetViewM).toBeCloseTo(60, 6);
+  });
+
   it('locks driving input while it runs (the player cannot walk off)', () => {
     const g = new Game(introWorld(), new MemoryStorage());
     g.beginIntro(390 / 844);
