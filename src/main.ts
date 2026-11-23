@@ -221,7 +221,15 @@ async function boot(): Promise<void> {
   // re-render (battery), no engine hum. The tab script in
   // index.html toggles body.showcase-open; we just observe it.
   let showcasePaused = document.body.classList.contains('showcase-open');
-  const audio = new GameAudio(() => audioOn && !showcasePaused);
+  // The site's FM radio outranks ALL game noise (Daniel, 2026-11-23:
+  // "if the radio is playing the game shouldn't make noise") — while
+  // /radio.js holds body.fm-on, the enabled check fails, so one-shots
+  // never fire and refreshMaster parks the master at 0; the frame
+  // loop's fm-on edge calls silence() so loops stop the moment a
+  // song starts.
+  const audio = new GameAudio(
+    () => audioOn && !showcasePaused && !document.body.classList.contains('fm-on'),
+  );
   (window as unknown as { __mvtAudio?: () => AudioStateSnapshot }).__mvtAudio = () => audio.state();
   const unlockAudio = (): void => audio.unlock();
   window.addEventListener('pointerdown', unlockAudio, { passive: true });
@@ -1008,13 +1016,25 @@ async function boot(): Promise<void> {
     else audio.refreshMaster();
   }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   const audioToggle = el('audio-toggle') as HTMLInputElement;
-  audioToggle.checked = audioOn;
-  audioToggle.addEventListener('change', () => {
-    audioOn = audioToggle.checked;
-    store.set('mvt-audio', audioOn ? 'on' : 'off');
-    if (!audioOn) audio.silence();
+  // The bottom-right mute button (below the E button in #ctl-right)
+  // and the ? overlay's checkbox are two faces of the one setting.
+  const muteBtn = el('btn-mute') as HTMLButtonElement;
+  const syncAudioChrome = (): void => {
+    audioToggle.checked = audioOn;
+    muteBtn.classList.toggle('muted', !audioOn);
+    muteBtn.setAttribute('aria-pressed', String(!audioOn));
+    muteBtn.setAttribute('aria-label', audioOn ? 'Mute game sounds' : 'Unmute game sounds');
+  };
+  const setAudioOn = (on: boolean): void => {
+    audioOn = on;
+    store.set('mvt-audio', on ? 'on' : 'off');
+    if (!on) audio.silence();
     else audio.refreshMaster();
-  });
+    syncAudioChrome();
+  };
+  syncAudioChrome();
+  audioToggle.addEventListener('change', () => setAudioOn(audioToggle.checked));
+  muteBtn.addEventListener('click', () => setAudioOn(!audioOn));
   // Input readout (v0.27): live STEER / THR / WHEEL° / km/h corner
   // box for diagnosing real-device input. Persisted, default OFF.
   let readoutOn = store.get('mvt-input-readout') === 'on';
@@ -1339,6 +1359,13 @@ async function boot(): Promise<void> {
   const hudSpeed = el('hud-speed');
   const goalFill = el('goalfill') as HTMLElement;
   const pager = el('pager');
+  const pagerShow = el('pager-show') as HTMLButtonElement;
+  // Pager dismissed by the player (Daniel, 2026-11-23: the pager
+  // display blocks the map — a button removes it). Sticky until the
+  // player brings it back with the 📟 PAGER button; the frame loop
+  // keeps both elements' visibility in step with the brief state.
+  let pagerDismissed = false;
+  let pagerHasContent = false;
   const hudBrief = el('hud-brief');
   const hudObjective = el('hud-objective');
   const hudTimer = el('hud-timer');
@@ -1385,6 +1412,22 @@ async function boot(): Promise<void> {
       }
     }
   });
+  // The ✕ on the pager hides it (and must not fall through to the
+  // pager's mission tap); the 📟 PAGER button left in its place
+  // brings it back.
+  el('pager-hide').addEventListener('click', (e) => {
+    e.stopPropagation();
+    pagerDismissed = true;
+    pager.hidden = true;
+    pagerShow.hidden = !pagerHasContent;
+    haptics.tick();
+  });
+  pagerShow.addEventListener('click', () => {
+    pagerDismissed = false;
+    pagerShow.hidden = true;
+    pager.hidden = !pagerHasContent;
+    haptics.tick();
+  });
   let carBannerUntil = 0;
   const stamp = el('stamp');
   const overlay = el('overlay');
@@ -1409,6 +1452,7 @@ async function boot(): Promise<void> {
   let prevPickupsTaken = 0;
   let prevFrenzyStarts = 0;
   let prevStation = -1;
+  let prevFmOn = false;
 
   // Pager brief typing effect.
   let typeTimer = 0;
@@ -1680,6 +1724,15 @@ async function boot(): Promise<void> {
     // radio (/radio.js, body.fm-on while it plays) outranks it: the
     // synth car radio stays off while real songs are on.
     const fmOn = document.body.classList.contains('fm-on');
+    if (fmOn !== prevFmOn) {
+      // FM started or stopped: game audio yields to the radio —
+      // silence() kills the loops the moment a song starts, and
+      // refreshMaster() restores the player's own mute setting
+      // (via the enabled check) when the radio stops.
+      if (fmOn) audio.silence();
+      else audio.refreshMaster();
+      prevFmOn = fmOn;
+    }
     const station = hud.inCar && !fmOn ? stationForClass(hud.carClass) : -1;
     if (station !== prevStation) {
       if (station >= 0) chromeToast(`📻 ${STATIONS[station].name}`, 2600);
@@ -1710,9 +1763,12 @@ async function boot(): Promise<void> {
         ? `${hud.reversing ? 'R · ' : ''}${hud.speedKmh} km/h${hud.carHealth !== null && hud.carHealth < 45 ? ` · car ${hud.carHealth}%` : ''}`
         : '';
       goalFill.style.width = `${Math.round(hud.goalPct * 100)}%`;
-      // Pager: only when it has something to say.
+      // Pager: only when it has something to say — and only while
+      // the player hasn't dismissed it off the map.
       const showPager = hud.brief !== '' || hud.objective !== '';
-      pager.hidden = !showPager;
+      pagerHasContent = showPager;
+      pager.hidden = !showPager || pagerDismissed;
+      pagerShow.hidden = !(showPager && pagerDismissed);
       if (hud.brief && hud.brief !== typedBriefFor) typeBrief(hud.brief);
       if (!hud.brief) {
         typedBriefFor = '';

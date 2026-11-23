@@ -523,7 +523,10 @@
         <p id="hud-objective"></p>
         <p id="hud-timer" hidden></p>
       </div>
+      <button id="pager-hide" type="button" aria-label="Hide pager">✕</button>
     </div>
+    <!-- Left behind when the pager is dismissed: brings it back. -->
+    <button id="pager-show" type="button" hidden>📟 PAGER</button>
 
     <!-- Transient centre toast. -->
     <div id="hud-toast" role="status"></div>
@@ -600,6 +603,14 @@
             <button id="btn-fire" type="button" class="round fire-btn" aria-label="fire weapon">FIRE</button>
           </div>
         </div>
+        <!-- Game-sound mute (Daniel, 2026-11-23): below the E button,
+             outside the state groups so it shows in car and foot
+             states alike — and it survives the follow scheme's trim,
+             which hides every #ctl-right button except the E buttons
+             and this one. Same setting as the ? overlay's checkbox. -->
+        <div class="ctl-row mute-row">
+          <button id="btn-mute" type="button" class="round mute-btn" aria-label="Mute game sounds" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="i-spk" d="M4 9.5v5h3.5L12 18.6V5.4L7.5 9.5H4z"/><path class="i-waves" d="M15.5 9.2a4 4 0 0 1 0 5.6M18 6.8a7.4 7.4 0 0 1 0 10.4"/><path class="i-slash" d="M4.5 4.5l15 15"/></svg></button>
+        </div>
       </div>
       <!-- Follow scheme (the default): no zone of its own — taps
            are captured at window level in main.ts (guarded off
@@ -643,10 +654,35 @@
       MVT Fredericton Web v0.33 · <span id="renderer-name">…</span> · buildings, roads &amp; water © GeoNB (OGL-NB) · mission coords © OpenStreetMap contributors (ODbL)
     </div>
     <div id="help" title="Controls">
-      <span id="help-full" hidden>Steal cars, answer payphones ☎, watch the stars, respray on Queen St kills the heat. R restarts a finished run.
-        WEAPONS (v0.30): on foot, hold Space/F (touch FIRE, gamepad RT) to shoot where you face — crates around downtown hold pistols, machine guns and worse; Q / WPN cycles what you own. The river DROWNS you — bridges are roads and hold. A car at zero health burns, then explodes: bail with E. Wanted heat now cools slowly and not at all while a cop can see you; at 4 stars expect roadblocks and return fire. Sell stolen cars at the CHOP SHOP $ marker; skull crates start Kill Frenzies.
+      <span id="help-full" hidden>
+        <h3>How to play</h3>
+        <p><b>Goal: earn $250,000</b> (top-left), then get to the <b>EXIT</b> point to clear the district. The gold arrow at the screen edge points to your current objective.</p>
+        <h3>Get work</h3>
+        <ul>
+          <li>Tap the <b>pager</b> (top-left on phones) or walk/drive to a ringing <b>payphone ☎</b> to start a mission, then follow the objective in the pager.</li>
+          <li>No mission? Steal cars and sell them at the <b>CHOP SHOP $</b> marker, open crates, and finish <b>Kill Frenzies</b> (skull crates) — they all pay.</li>
+        </ul>
+        <h3>Touch — Follow controls (default)</h3>
+        <ul>
+          <li><b>On foot:</b> tap the ground to walk there. Tap a <b>car</b> to walk over and get in. Tap a <b>payphone</b> to answer it. Tap far across the map to zip there.</li>
+          <li><b>In a car:</b> tap where you want to go — the car drives itself there. Tap <b>close behind</b> the car to reverse in. Tap the car itself to stop.</li>
+          <li><b>Green E button</b> (bottom right): get out of a car, or interact on foot. <b>Double-tap</b> in a car = handbrake at speed, get out at a standstill, bail out if it&#8217;s on fire.</li>
+          <li><b>Pinch / mouse wheel</b> zooms out to the whole city. While zoomed out, tap a far corner and the car routes there by road, then the camera dives back in.</li>
+          <li><b>Shooting:</b> tap a person or cop to shoot them (hold to keep firing). To shoot a <i>car</i>, hold your finger on it instead of tapping.</li>
+        </ul>
+        <h3>Keyboard &amp; gamepad</h3>
+        <p><kbd>W A S D</kbd> / arrows drive or walk · <kbd>S</kbd> reverse · <kbd>E</kbd> get in/out &amp; interact · <kbd>Space</kbd> handbrake (in a car) · <kbd>F</kbd> fire (on foot) · <kbd>Q</kbd> switch weapon · <kbd>R</kbd> restart a finished run. Gamepad: left stick, <b>RT/LT</b> pedals, <b>A</b> = E, <b>X</b> handbrake, <b>Y</b> weapon, <b>RT</b> fire on foot.</p>
+        <h3>Wanted stars, money &amp; staying alive</h3>
+        <ul>
+          <li>Crime raises your <b>stars</b>. Heat cools slowly — and not at all while a cop can see you, so break line of sight first.</li>
+          <li><b>Respray on Queen St</b> clears all stars, $500 per star. At 4 stars expect roadblocks and cops shooting back.</li>
+          <li>Crates hold <b>pistols, machine guns, armour</b> and more. Picked-up weapons equip automatically.</li>
+          <li>A car at zero health <b>catches fire, then explodes</b> — bail with <b>E</b> or a double-tap.</li>
+          <li>The <b>river drowns you</b>, on foot or in a car. Bridges are safe — their guardrails hold.</li>
+          <li><b>Saffron procession?</b> That&#8217;s the Gouranga bonus (a GTA 1 tribute): a line of 7 walkers in orange crosses downtown now and then. Down the whole line within 12 seconds for <b>+$1,500</b> — or just let them pass.</li>
+        </ul>
         <span class="ctl-settings">
-          Touch controls:
+          Touch control scheme:
           <button type="button" data-set-scheme="stick">Stick</button>
           <button type="button" data-set-scheme="drag">Drag-steer</button>
           <button type="button" data-set-scheme="buttons">Buttons</button>
@@ -655,7 +691,7 @@
           <label><input type="checkbox" id="haptics-toggle" checked /> Haptics</label>
           <label><input type="checkbox" id="audio-toggle" checked /> Sound</label>
           <label><input type="checkbox" id="readout-toggle" /> Input readout</label>
-          <span class="ctl-note">FOLLOW (the default) is all taps — except the one button that matters: the green E (bottom right) gets you out of a car and interacts on foot. ON FOOT: tap the ground to walk there · tap FAR across the map and you ZIP straight there, camera dive and all, in under five seconds (places zip; cars and payphones you still walk up to) · tap a CAR to walk over and get in (already next to it? you hop straight in) · tap a ☎ PAYPHONE to walk over and answer it · tap the PAGER (bottom left) and it takes you to the mission — the current objective, or the nearest payphone with one waiting · tap a PERSON or a COP to shoot them — hold your finger down to keep firing, and you face what you tapped. A car tap ALWAYS means get in, gun or no gun — to shoot a car instead, HOLD your finger on it (with a gun out). IN A CAR: tap where you want to go and the car drives there and stops on the gold marker — hold and drag to move the point under your finger, tap the car itself to stop where you are, tap BEHIND the car close in and it reverses in (farther behind and it loops around). DOUBLE-TAP in a car: at speed it's the handbrake; at a standstill it gets you out — and if the car is ON FIRE, a double-tap bails you out at any speed (the E button works too). ZOOM (iteration 5): PINCH two fingers (or the mouse wheel) to pull the camera from street level all the way out to the whole city — the camera keeps following the car at whatever zoom you leave it at. While you're zoomed out, TAP a far corner of the map and the car routes itself there BY ROAD (junction to junction, over the bridge) at full speed; when it arrives the camera dives back down to street level for you. Pinch back in to street level any time to hand the framing back to the speed camera. The bridge decks have GUARDRAILS now: lean on them, they hold — the river only gets you off a bank, never off a deck. One gap, stated plainly: weapon SWITCHING has no gesture yet — crates equip what you pick up, and Q / the WPN button in other schemes / gamepad Y still cycle. The other schemes keep their buttons: REVERSE there is hold BRK at a stop — it brakes first, then backs up (keyboard S, stick pulled down, gamepad LT); the speedo shows R and the car lights its white reverse lamps while you're backing up. Stick: thumb anywhere left = the steering wheel; push up/down for gas/brake. Drag-steer: hold and drag, the car steers toward your thumb and drives itself — BRK still reverses. Haptics use the Vibration API — Android/Chrome only; iOS Safari has none. Gamepad: left stick steers, RT/LT are the pedals in a car and RT is FIRE on foot, A = E, X = handbrake, Y = switch weapon.</span>
+          <span class="ctl-note">Follow is tap-to-go (above). Stick: thumb anywhere left steers, push up/down for gas/brake. Drag-steer: hold and drag and the car steers toward your thumb. Buttons: GAS/BRK pedals — hold BRK at a stop to reverse. Tilt: steer by rolling the phone (calibrate below).</span>
         </span>
         <span class="ctl-settings" id="tilt-settings">
           Tilt steering:
@@ -664,7 +700,7 @@
           <button type="button" data-tilt-sens="low">Low</button>
           <button type="button" data-tilt-sens="standard">Standard</button>
           <button type="button" data-tilt-sens="high">High</button>
-          <span class="ctl-note">TILT (v0.31): roll the phone like a steering wheel to steer — the on-screen wheel mirrors your tilt. Hold the phone how you'll play, then Calibrate: that pose becomes "straight". GAS/BRK stay on screen; on foot you still walk with the stick. iOS asks permission to use motion sensors when you tap Tilt.</span>
+          <span class="ctl-note">Hold the phone how you&#8217;ll play, then Calibrate — that pose becomes &#8220;straight&#8221;. iOS asks permission for motion sensors when you pick Tilt.</span>
         </span>
       </span>
       <span class="help-row"><span class="help-keys"><kbd>WASD</kbd> drive/walk <kbd>S</kbd> reverse <kbd>E</kbd> interact <kbd>Space</kbd> handbrake · on foot <kbd>F</kbd> fire <kbd>Q</kbd> weapon</span><span id="help-toggle" role="button" tabindex="0" aria-label="Controls and settings">?</span></span>

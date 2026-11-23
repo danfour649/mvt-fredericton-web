@@ -96,6 +96,26 @@ body { font-family: system-ui, sans-serif; }
 #hud-brief:empty, #hud-objective:empty { display: none; }
 #hud-timer { margin: 4px 0 0; font-size: 15px; font-weight: 800; color: #ffd23f; }
 #hud-timer.low { color: #ff5a4e; }
+/* Pager dismiss (Daniel, 2026-11-23): the ✕ parks the pager off the
+   map; the 📟 PAGER button stays at the pager's own anchor (same
+   fixed slot, same coarse-pointer move to the top) to bring it
+   back. main.ts keeps the two in step with the brief state. */
+#pager-hide {
+  flex: 0 0 auto; align-self: flex-start;
+  width: 26px; height: 26px; margin: -3px -5px 0 0; padding: 0;
+  background: none; border: none; cursor: pointer;
+  color: #7fb069; font: 700 13px system-ui, sans-serif; line-height: 1;
+}
+#pager-hide:hover { color: #d9f7c4; }
+#pager-show {
+  position: fixed; left: 10px; bottom: 34px; z-index: 20;
+  background: rgba(16, 22, 14, 0.88); color: #b6f09a;
+  border: 2px solid #3f6212; border-radius: 8px; padding: 7px 10px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10px; letter-spacing: 0.22em; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+}
+#pager-show[hidden] { display: none; }
 
 /* --- toast --------------------------------------------------------------- */
 #hud-toast {
@@ -162,26 +182,29 @@ body { font-family: system-ui, sans-serif; }
 #help {
   position: fixed;
   right: max(10px, env(safe-area-inset-right));
-  /* The raised position that clears the touch cluster lives in
-     the coarse-pointer block below (the cluster only exists
-     there); on desktop the corner is free and the ? stays in it. */
-  bottom: max(10px, calc(env(safe-area-inset-bottom) + 4px));
+  /* Top right, out of the way (Daniel, 2026-11-23): below the site
+     header and below the score/stars strip, clear of the bottom-right
+     driving cluster and the green E button at every screen size.
+     The panel opens DOWNWARD from here (column-reverse puts the
+     toggle row first), so it never runs off the top or bottom. */
+  top: calc(var(--header-h, 92px) + 46px);
   z-index: 34; /* above the touch layer (22) and the follow marker (21) */
   font-size: 10.5px; color: rgba(255,255,255,0.9);
   text-shadow: 0 1px 2px rgba(0,0,0,0.7);
   max-width: calc(100vw - 20px); text-align: right;
   pointer-events: none; /* the container never eats a world tap… */
+  display: flex; flex-direction: column-reverse; align-items: flex-end;
 }
 /* …only the toggle (and the open panel) take touches. FOLLOW
    iteration 2: the ? is a real settings button now — a 60 px gold
    disc you cannot miss, miss-tap, or lose under a thumb. */
 #help #help-toggle {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 60px; height: 60px; border-radius: 50%;
+  width: 44px; height: 44px; border-radius: 50%;
   background: #ffd23f; color: #20180a;
   border: 3px solid rgba(16, 14, 4, 0.85);
   box-shadow: 0 4px 14px rgba(0,0,0,0.5), inset 0 -3px 0 rgba(0,0,0,0.22);
-  font-size: 27px; font-weight: 900; line-height: 1;
+  font-size: 21px; font-weight: 900; line-height: 1;
   cursor: pointer; pointer-events: auto; user-select: none;
   -webkit-user-select: none; touch-action: manipulation;
   text-shadow: none; text-decoration: none; vertical-align: bottom;
@@ -205,24 +228,36 @@ body { font-family: system-ui, sans-serif; }
   box-shadow: inset 0 -1.5px 0 rgba(0,0,0,0.28); margin: 0 3px 0 8px;
 }
 #help .help-keys kbd:first-child { margin-left: 0; }
-@media (pointer: coarse), (max-width: 1000px) { #help .help-keys { display: none; } }
+/* The key line now lives INSIDE the panel (Keyboard section) — a
+   loose pill beside the ? only crowded the top-right HUD. */
+#help .help-keys { display: none; }
 /* The expanded help is a readable panel (it's the only teacher the
    gesture vocabulary has): dark card, real type, above everything
    but the stamps/overlay/loading layers. */
 #help #help-full:not([hidden]) {
   display: block; pointer-events: auto;
-  margin: 0 0 10px auto; max-width: min(500px, calc(100vw - 20px));
+  margin: 8px 0 0 auto; max-width: min(500px, calc(100vw - 20px));
   background: rgba(10, 14, 8, 0.94); color: #eef7e6;
   border: 2px solid rgba(255, 210, 63, 0.85); border-radius: 12px;
-  padding: 10px 12px; text-align: left;
+  padding: 12px 14px; text-align: left;
   font-size: 12.5px; line-height: 1.55; text-shadow: none;
   box-shadow: 0 10px 30px rgba(0,0,0,0.55);
-  /* v0.34 QA: the panel grows UP from the toggle, so its height
-     budget must subtract everything below AND the site header
-     above. The old flat 110px let the panel's top slide under the
-     header (and off the top of the screen on phones, where the ?
-     parks 238px up) — the first lines of help were unreachable. */
-  max-height: calc(100dvh - var(--header-h) - 122px); overflow-y: auto;
+  /* The panel grows DOWN from the top-right toggle: its budget is
+     the screen below the header, the toggle and a bottom margin. */
+  max-height: calc(100dvh - var(--header-h, 92px) - 110px); overflow-y: auto;
+}
+#help #help-full h3 {
+  margin: 10px 0 3px; font-size: 11px; letter-spacing: 0.14em;
+  color: #ffd23f; text-transform: uppercase;
+}
+#help #help-full h3:first-child { margin-top: 0; }
+#help #help-full p { margin: 0 0 4px; }
+#help #help-full ul { margin: 0 0 4px; padding-left: 17px; }
+#help #help-full li { margin: 1px 0; }
+#help #help-full kbd {
+  display: inline-block; font: 800 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #20180a; background: #f1ecdc; border-radius: 4px; padding: 0 5px;
+  box-shadow: inset 0 -1.5px 0 rgba(0,0,0,0.28); margin: 0 1px;
 }
 
 /* --- touch controls ---------------------------------------------------- */
@@ -310,6 +345,26 @@ body { font-family: system-ui, sans-serif; }
   width: 80px; height: 80px; font-size: 15px; background: rgba(190, 40, 30, 0.55);
 }
 #ctl-right button.wpn-btn { width: 60px; height: 60px; font-size: 11px; }
+/* Game-sound mute row (Daniel, 2026-11-23): below the E button,
+   outside the state groups, right-aligned under the cluster. 56px
+   to satisfy the layout audit's touch-target floor. The follow
+   scheme's trim list below does NOT name it, so it stays visible
+   next to the E button in follow mode too. */
+#ctl-right .mute-row { margin-top: 12px; justify-content: flex-end; }
+#ctl-right button.mute-btn {
+  width: 56px; height: 56px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+#ctl-right button.mute-btn svg { width: 27px; height: 27px; }
+#ctl-right button.mute-btn .i-spk { fill: #fff; }
+#ctl-right button.mute-btn .i-waves,
+#ctl-right button.mute-btn .i-slash {
+  fill: none; stroke: #fff; stroke-width: 1.9; stroke-linecap: round;
+}
+#ctl-right button.mute-btn .i-slash { display: none; stroke: #ff5a4e; }
+#ctl-right button.mute-btn.muted .i-slash { display: block; }
+#ctl-right button.mute-btn.muted .i-waves { display: none; }
+#ctl-right button.mute-btn.muted { opacity: 0.6; }
 /* v0.31 tilt: while DRIVING under the tilt scheme the sensors own
    steering — the stick zone must not capture left-side touches at
    all (the wheel is a mirror of the tilt value, not a control).
@@ -325,8 +380,9 @@ body.tilt-driving #stick-zone { pointer-events: none; }
    safely carry: the follow double-tap only exits at a near-stop
    (at speed it's the handbrake), which left a player in a BURNING
    car with no way out on a phone (Daniel, 2026-11-21). CSS below
-   hides every #ctl-right button except the two E buttons while
-   body.follow-mode is set (applyScheme in main.ts). */
+   hides every #ctl-right button except the two E buttons and the
+   game-sound mute button while body.follow-mode is set
+   (applyScheme in main.ts). */
 #follow-hint {
   position: absolute; left: 50%; bottom: 108px; transform: translateX(-50%);
   font: 700 12px system-ui, sans-serif; color: rgba(255,255,255,0.85);
@@ -508,32 +564,16 @@ body.car-burning #ctl-buttons [data-action="interact"] {
   /* Pager moves up: the stick lives bottom-left now. */
   #pager { bottom: auto; top: calc(var(--header-h) + 6px); }
   #credit { display: none; }
-  /* The ? disc parks ABOVE the bottom-right control cluster on
-     touch screens: the cluster's top edge reaches ~218px from the
-     bottom (pedals 116 + gap + 64px row + its 26px offset), and
-     the disc used to sit right on the E button — #help is z 34,
-     over the touch layer's 22 — eating the tap that gets you out
-     of a car (worse: out of a BURNING car; Daniel, 2026-11-21). */
-  #help { bottom: calc(env(safe-area-inset-bottom) + 238px); }
-  /* With the ? parked 238px up, the open panel's budget shrinks by
-     the same amount or its top leaves the screen (see base rule). */
-  #help #help-full:not([hidden]) { max-height: calc(100dvh - var(--header-h) - 356px); }
+  /* The ? stays top-right on touch too (base rule) — well clear of
+     the bottom-right control cluster and the green E button it used
+     to sit on (Daniel, 2026-11-21; moved top-right 2026-11-23). */
 }
-/* Short landscape phones (polish pass): 238px up from the bottom is
-   the TOP of a 390px-tall screen — the disc sat on the wanted stars,
-   and the panel's height budget went negative so it could not open.
-   Here the disc parks under the top-right HUD instead (clear of the
-   control cluster, whose top edge is ≥172px down at 390px tall) and
-   the panel opens DOWNWARD from it. */
+/* Short landscape phones: shrink the disc a touch so it never
+   crowds the stars on a 390px-tall screen. */
 @media (pointer: coarse) and (max-height: 500px) and (orientation: landscape) {
-  #help {
-    bottom: auto; top: calc(var(--header-h) + 50px);
-    display: flex; flex-direction: column-reverse; align-items: flex-end;
-  }
-  #help #help-toggle { width: 48px; height: 48px; font-size: 22px; }
+  #help #help-toggle { width: 40px; height: 40px; font-size: 19px; }
   #help #help-full:not([hidden]) {
-    margin: 8px 0 0 auto;
-    max-height: calc(100dvh - var(--header-h) - 150px);
+    max-height: calc(100dvh - var(--header-h) - 104px);
   }
 }
 @media (max-width: 560px) {
@@ -563,12 +603,13 @@ body.car-burning #ctl-buttons [data-action="interact"] {
 /* Game HUD offset by the header height. */
 #goalbar { top: var(--header-h); }
 #topbar { top: calc(var(--header-h) + 5px); }
-#hud-gear { top: calc(var(--header-h) + 34px); }
+#hud-gear { top: calc(var(--header-h) + 46px); right: 64px; }
 #input-readout { top: calc(var(--header-h) + 38px); }
 #car-banner { top: calc(var(--header-h) + 40px); }
 #hud-toast { top: calc(var(--header-h) + 96px); }
 @media (pointer: coarse) {
   #pager { top: calc(var(--header-h) + 58px); }
+  #pager-show { bottom: auto; top: calc(var(--header-h) + 58px); }
   /* The toast's slot (header + 96px) sits INSIDE the pager's box on
      touch screens — the pager moved up to header + 58px and runs
      ~90–130px tall, so "Reckless driving — wanted level up" printed
