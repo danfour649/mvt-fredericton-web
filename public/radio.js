@@ -56,6 +56,7 @@
       ['Mon Truck, Mon Ski-Doo, Ma Blonde', 'mon-truck.ogg'],
       ['Bleu Nuit', 'bleu-nuit.ogg']
     ]},
+    { call: 'CWOL', freq: '95.7', name: 'Wolastoqey', tracks: [] },
     { call: 'CKCH', freq: '102.9', name: 'Sunday / Church', tracks: [
       ['Seventy-One Years to the Water', 'seventy-one-years-to-the-water.ogg'],
       ['O King of Mercy', 'o-king-of-mercy-a.ogg'],
@@ -146,6 +147,7 @@
     playing: function () { return !!R.audio && !R.audio.paused && !R.audio.ended; },
     loading: function () { return R.playing() && R.audio.readyState < 3; },
     stateLabel: function () {
+      if (!R.track()) return 'COMING SOON';
       if (R.failed) return 'NO SIGNAL';
       if (!R.playing()) return 'PAUSED';
       return R.loading() ? 'TUNING…' : 'PLAYING';
@@ -153,11 +155,13 @@
 
     load: function (play) {
       R.failed = false;
+      if (!R.track()) { R.audio.removeAttribute('src'); R.audio.load(); R._emit(); return; }
       R.audio.src = BASE + R.track()[1];
       R._mediaSession();
       if (play) R.play(); else R._emit();
     },
     play: function () {
+      if (!R.track()) return;
       if (R.failed) { R.load(true); return; }
       var p = R.audio.play();
       if (p && p.catch) p.catch(function () { R._emit(); });
@@ -172,6 +176,7 @@
     select: function (ti, play) { R.ti = ti; R.load(play); },
     step: function (d) {
       var n = STATIONS[R.si].tracks.length;
+      if (!n) return;
       R.ti = (R.ti + d + n) % n;
       R.load(true);
     },
@@ -319,9 +324,10 @@
       host.classList.toggle('is-playing', on);
       host.classList.toggle('is-failed', R.failed);
       call.textContent = st.call + ' ' + st.freq;
-      now.textContent = R.track()[0];
+      now.textContent = R.track() ? R.track()[0] : '— songs coming soon —';
       stEl.textContent = st.call + ' ' + st.freq + ' · ' + st.name;
-      if (title.textContent !== R.track()[0]) title.textContent = R.track()[0];
+      var tn = R.track() ? R.track()[0] : '— songs coming soon —';
+      if (title.textContent !== tn) title.textContent = tn;
       stateEl.textContent = R.stateLabel();
       timeEl.textContent = fmt(a.currentTime || 0) + ' / ' + fmt(a.duration);
       var pct = a.duration ? 100 * a.currentTime / a.duration : 0;
@@ -329,7 +335,7 @@
       bar.setAttribute('aria-valuenow', String(Math.round(pct)));
       playB.classList.toggle('is-playing', on);
       playB.setAttribute('aria-label', on ? 'Pause' : 'Play');
-      pill.setAttribute('aria-label', 'Radio — ' + (on ? 'playing ' + R.track()[0] + ' on ' : 'paused, ') + st.call + ' ' + st.freq);
+      pill.setAttribute('aria-label', 'Radio — ' + (on && R.track() ? 'playing ' + R.track()[0] + ' on ' : 'paused, ') + st.call + ' ' + st.freq);
       presets.querySelectorAll('button').forEach(function (b, i) {
         b.classList.toggle('on', i === R.si); b.setAttribute('aria-pressed', i === R.si ? 'true' : 'false');
       });

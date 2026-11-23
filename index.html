@@ -934,6 +934,12 @@
           el.playlist.innerHTML = '';
           el.listCall.textContent = st.call + ' ' + st.freq;
           el.listCount.textContent = st.tracks.length + (st.tracks.length === 1 ? ' track' : ' tracks');
+          if (!st.tracks.length) {
+            var li0 = document.createElement('li');
+            li0.className = 'hu-empty';
+            li0.textContent = 'Songs coming soon';
+            el.playlist.appendChild(li0);
+          }
           st.tracks.forEach(function (t, i) {
             var li = document.createElement('li');
             var b = document.createElement('button');
@@ -952,8 +958,9 @@
           if (builtFor !== R.si) buildPlaylist();
           el.freq.textContent = st.freq;
           el.call.textContent = st.call; el.genre.textContent = st.name;
-          if (el.track.textContent !== R.track()[0]) { el.track.textContent = R.track()[0]; fitTrack(); }
-          el.pos.textContent = 'TRK ' + (R.ti + 1) + '/' + st.tracks.length;
+          var tkName = R.track() ? R.track()[0] : '— songs coming soon —';
+          if (el.track.textContent !== tkName) { el.track.textContent = tkName; fitTrack(); }
+          el.pos.textContent = st.tracks.length ? 'TRK ' + (R.ti + 1) + '/' + st.tracks.length : 'TRK 0/0';
           el.state.textContent = R.stateLabel();
           el.st.classList.toggle('lit', on && !R.failed);
           el.play.classList.toggle('is-playing', on);
