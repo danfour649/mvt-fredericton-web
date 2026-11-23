@@ -11,7 +11,8 @@
  * alongside for traceability and tests. The two added missions use the
  * same grid conversion with hand-placed downtown grid coordinates.
  */
-import { mvtGridToLocal, type Vec2 } from './geo';
+import { dist, mvtGridToLocal, type Vec2 } from './geo';
+import { collideWorld, nearestRoadPoint, pointInWater, type WorldModel } from './world';
 
 export type StepKind = 'interact' | 'steal_vehicle' | 'deliver_vehicle';
 
@@ -176,6 +177,62 @@ export const MISSIONS: MissionDef[] = [
   },
 ];
 
+/**
+ * Reachability guard (Daniel, 2026-11-23: "mission points that are
+ * impossible to reach"). The hand-placed grid positions above were
+ * never checked against the real GeoNB building geometry: the George
+ * Street Drop payphone and its pickup sat sealed inside a building
+ * block 36 m from the nearest road (no free spot inside their own
+ * interact radius), and the Downtown Burner payphone and the George
+ * dropoff were embedded in building collision. A point only stays
+ * where it was authored if a player can actually stand there: free
+ * of building collision, out of open water, near a road. Anything
+ * else is moved to the nearest standable roadside spot — the road
+ * point itself if no offset clears — so a mission point can never
+ * spawn inside a building or a sealed block again, whatever the
+ * dataset does to the authored coordinates.
+ */
+export function standablePoint(world: WorldModel, pos: Vec2): Vec2 {
+  const standable = (p: Vec2): boolean => {
+    if (collideWorld(world, p, 0.55)) return false;
+    if (!pointInWater(world, p)) return true;
+    const nr = nearestRoadPoint(world, p); // on a bridge deck = fine
+    return !!nr && dist(p, nr.pos) <= 6;
+  };
+  if (standable(pos)) {
+    const near = nearestRoadPoint(world, pos);
+    if (near && dist(pos, near.pos) <= 15) return pos;
+  }
+  const near = nearestRoadPoint(world, pos);
+  if (!near) return pos;
+  const hx = Math.cos(near.heading), hz = Math.sin(near.heading);
+  const candidates: Vec2[] = [near.pos];
+  for (const off of [3.5, 5.5, 8]) {
+    candidates.push({ x: near.pos.x - hz * off, z: near.pos.z + hx * off });
+    candidates.push({ x: near.pos.x + hz * off, z: near.pos.z - hx * off });
+  }
+  for (const slide of [5, 10, -5, -10]) {
+    candidates.push({ x: near.pos.x + hx * slide, z: near.pos.z + hz * slide });
+  }
+  let best: Vec2 | null = null;
+  let bestD = Infinity;
+  for (const c of candidates) {
+    if (!standable(c)) continue;
+    const d = dist(c, pos);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return best ?? near.pos;
+}
+
+/** MISSIONS with every payphone / step position made standable. */
+export function sanitizeMissions(world: WorldModel, defs: MissionDef[] = MISSIONS): MissionDef[] {
+  return defs.map((m) => ({
+    ...m,
+    startPos: standablePoint(world, m.startPos),
+    steps: m.steps.map((s) => (s.pos ? { ...s, pos: standablePoint(world, s.pos) } : s)),
+  }));
+}
+
 export type MissionEvent =
   | { type: 'started'; mission: MissionDef }
   | { type: 'step'; mission: MissionDef; step: MissionStep }
@@ -207,8 +264,13 @@ export class MissionRunner {
   /** Seconds left on the active timed mission; null when untimed/none. */
   timeLeft: number | null = null;
 
-  constructor(completedIds: string[] = []) {
+  /** The mission definitions in play (the Game passes a
+   *  reachability-sanitized copy — see sanitizeMissions). */
+  readonly defs: MissionDef[];
+
+  constructor(completedIds: string[] = [], defs: MissionDef[] = MISSIONS) {
     for (const id of completedIds) this.completed.add(id);
+    this.defs = defs;
   }
 
   get currentStep(): MissionStep | null {
@@ -217,7 +279,7 @@ export class MissionRunner {
 
   /** Missions that can still be started (not completed, not active). */
   available(): MissionDef[] {
-    return MISSIONS.filter((m) => !this.completed.has(m.id) && m.id !== this.active?.id);
+    return this.defs.filter((m) => !this.completed.has(m.id) && m.id !== this.active?.id);
   }
 
   start(mission: MissionDef): boolean {
@@ -239,7 +301,7 @@ export class MissionRunner {
       this.stepIndex = 0;
       this.timeLeft = null;
       this.events.push({ type: 'completed', mission, payoutScale: this.payoutScale() });
-      if (this.completed.size >= MISSIONS.length) {
+      if (this.completed.size >= this.defs.length) {
         // Encore lap: refill the payphones rather than declaring
         // "all missions complete" and leaving free roam goalless.
         this.completed.clear();
