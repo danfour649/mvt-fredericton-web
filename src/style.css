@@ -731,3 +731,27 @@ body.car-burning #ctl-buttons [data-action="interact"] {
   #hu-freq { font-size: 24px; }
   .hu-lcd-track { font-size: 15px; }
 }
+
+/* Radio v2 (2026-11-23): the tab sits in the old Songs slot, and the
+   head unit is overlaid on the inside of the Cannoli — the viewer
+   camera is in the driver's seat looking at the dash, with the
+   radio panel laid over the lower frame like the centre stack. */
+.dash { position: relative; padding: 0; overflow: hidden; }
+.dash-car { height: 470px; border-radius: 18px; }
+.headunit {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: 12px; width: min(94%, 540px); margin-top: 0;
+  background: rgba(10, 10, 10, 0.92);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+.hu-playlist {
+  background: #101010; border: 1px solid #333; border-radius: 12px;
+  padding: 6px 10px; margin-top: 14px;
+}
+@media (max-width: 560px) {
+  .dash-car { height: 430px; }
+  .headunit { bottom: 8px; }
+  .hu-presets { gap: 6px; }
+  .hu-btn { width: 40px; height: 40px; }
+  .hu-play { width: 50px; height: 50px; }
+}

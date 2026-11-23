@@ -36,21 +36,21 @@
     <header id="site-header">
       <div class="site-brand">MVT <span>FREDERICTON</span></div>
       <nav id="site-tabs" aria-label="Site sections">
-        <button type="button" data-view="radio" class="on"><span class="tab-ico" aria-hidden="true">📻</span><span class="tab-label">Radio</span></button>
-        <button type="button" data-view="game"><span class="tab-ico" aria-hidden="true">🎮</span><span class="tab-label">2D</span></button>
+        <button type="button" data-view="game" class="on"><span class="tab-ico" aria-hidden="true">🎮</span><span class="tab-label">2D</span></button>
         <a class="tab-link tab-3d" href="/bambam/"><span class="tab-ico" aria-hidden="true">🎬</span><span class="tab-label">3D</span><span class="tab-new">New</span></a>
         <button type="button" data-view="models"><span class="tab-ico" aria-hidden="true">🏛️</span><span class="tab-label">Models</span></button>
+        <button type="button" data-view="radio"><span class="tab-ico" aria-hidden="true">📻</span><span class="tab-label">FM</span></button>
         <button type="button" data-view="maps"><span class="tab-ico" aria-hidden="true">🗺️</span><span class="tab-label">Maps</span></button>
       </nav>
     </header>
 
-    <section id="view-radio" class="showcase">
+    <section id="view-radio" class="showcase" hidden>
       <div class="sc-inner radio-inner">
         <h1>The radio</h1>
-        <p class="sc-sub">You're sitting in the Cannoli — the game's 2018 Corolla. Six Fredericton stations, every one a playlist of original songs written in-house for this town: its river, its floods, its mills, its history. Pick a preset, turn it up. Drag the car to have a look at her.</p>
+        <p class="sc-sub">You're in the driver's seat of the Cannoli — the game's 2018 Corolla, seen from inside her own cabin. The radio in her dash plays six Fredericton stations, every one a playlist of original songs written in-house for this town: its river, its floods, its mills, its history. Pick a preset, turn it up. Drag to look around the cabin.</p>
 
         <div class="dash">
-          <model-viewer class="dash-car" src="https://mvtf-assets.vercel.app/models/cannoli/exterior.glb" poster="https://mvtf-assets.vercel.app/models/cannoli/renders/front3q.jpg" alt="Yotola Cannoli — the game's 2018 Toyota Corolla" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
+          <model-viewer class="dash-car" src="https://mvtf-assets.vercel.app/models/cannoli/exterior.glb" poster="https://mvtf-assets.vercel.app/models/cannoli/renders/frontclose.jpg" alt="Inside the Cannoli — the 2018 Corolla cabin and dashboard" camera-controls camera-orbit="-17deg 78deg 1.25m" camera-target="0m 0.8m -1m" field-of-view="55deg" min-camera-orbit="auto 55deg 0.6m" max-camera-orbit="auto 100deg 2.4m" shadow-intensity="0.6"></model-viewer>
 
           <div class="headunit" role="group" aria-label="Car radio">
             <div class="hu-lcd">
@@ -66,10 +66,10 @@
               <button type="button" id="hu-next" class="hu-btn" aria-label="Next track">⏭</button>
               <label class="hu-vol"><span aria-hidden="true">🔊</span><input type="range" id="hu-volume" min="0" max="100" value="80" aria-label="Volume"></label>
             </div>
-            <ol class="hu-playlist" id="hu-playlist"></ol>
             <audio id="radio-audio" preload="none"></audio>
           </div>
         </div>
+        <ol class="hu-playlist" id="hu-playlist"></ol>
         <p class="sc-foot">Every track is an original MVT Fredericton song — written in-house, generated on Suno, banked in the audio pipeline. The stations mirror the dial in MVTF6's cars. Sketch music videos for the head unit are coming; the <a href="/bambam/">Bam Bam</a> and <a href="/callie/">Callie</a> videos are already up.</p>
       </div>
     </section>
@@ -605,9 +605,9 @@
         }
         buttons.forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.view); }); });
         // Deep links from the standalone pages' headers (e.g. /bambam/ links to /#models).
-        // The radio is the landing view: with no (or an unknown) hash, show it.
+        // The game is the landing view; the radio sits in the old Songs tab slot.
         var hashView = window.location.hash.replace('#', '');
-        if (hashView && panels[hashView]) show(hashView); else if (hashView === 'game') show('game'); else show('radio');
+        if (hashView && panels[hashView]) show(hashView); else show('game');
         document.querySelectorAll('.sc-toggle').forEach(function (tg) {
           var card = tg.closest('.sc-card');
           var viewer = card.querySelector('model-viewer');
