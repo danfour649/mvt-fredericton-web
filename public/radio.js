@@ -54,7 +54,7 @@
       ['Quinze-Août (Fais du Bruit)', 'quinze-aout.ogg'],
       ['Le Reel de Paquetville', 'le-reel-de-paquetville.ogg'],
       ['Mon Truck, Mon Ski-Doo, Ma Blonde', 'mon-truck.ogg'],
-      ['Bleu Nuit', 'bleu-nuit.ogg']
+      ['Bleu Nuit', 'bleu-nuit.ogg'],
       ["Ça Roule à l'Envers", 'ca-roule-a-lenvers.ogg']
     ]},
     { call: 'CWOL', freq: '95.7', name: 'Wolastoqey', tracks: [] },
