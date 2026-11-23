@@ -755,3 +755,7 @@ body.car-burning #ctl-buttons [data-action="interact"] {
   .hu-btn { width: 40px; height: 40px; }
   .hu-play { width: 50px; height: 50px; }
 }
+
+/* Radio v3 (2026-11-23): Daniel killed the in-cabin model view —
+   the FM tab is just the dial. Head unit back to a plain block. */
+.headunit { position: static; transform: none; width: auto; margin-top: 0; box-shadow: none; }
