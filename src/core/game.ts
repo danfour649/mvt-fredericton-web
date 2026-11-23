@@ -32,7 +32,7 @@ import { spawnCop, updateCop, type CopCar } from './cops';
 import { spawnPeds, spawnProcession, updatePed, nudgePed, reanchorPed, forceDown, type Ped } from './peds';
 import { Wanted } from './wanted';
 import { Wallet, BUSTED_FINE, HOSPITAL_FEE } from './wallet';
-import { MissionRunner, SPAWN_POS, type MissionDef } from './missions';
+import { MissionRunner, sanitizeMissions, SPAWN_POS, type MissionDef } from './missions';
 import { SaveStore, type StorageAdapter } from './save';
 import { Loadout, WEAPONS, type WeaponId } from './weapons';
 import { placePickups, PICKUP_STYLE, RESPAWN_SEC, type Pickup } from './pickups';
@@ -419,7 +419,7 @@ export class Game {
     this.enteredCar = save.hasEnteredCar;
     this.seenDriveHint = save.hasSeenDriveHint;
     if (save.districtCleared) this.goalState = 'done';
-    this.missions = new MissionRunner(); // a fresh run: payphones ring again
+    this.missions = new MissionRunner([], sanitizeMissions(world)); // a fresh run: payphones ring again
     this.resprayPos = snapToRoad(world, 95, 55);
     this.exitPos = snapToRoad(world, 170, 20);
     this.chopShopPos = snapToRoad(world, -120, 100);
@@ -930,7 +930,7 @@ export class Game {
     this.lives = START_LIVES;
     this.playerHealth = 100;
     this.wanted.reset();
-    this.missions = new MissionRunner();
+    this.missions = new MissionRunner([], sanitizeMissions(this.world));
     this.goalState = this.archive.districtCleared ? 'done' : 'progress';
     this.cops = [];
     this.drivenCar = null;

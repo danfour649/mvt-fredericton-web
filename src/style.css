@@ -170,6 +170,10 @@ body { font-family: system-ui, sans-serif; }
   color: #ffd23f; background: rgba(8, 10, 6, 0.62);
   padding: 5px 9px; border-radius: 7px;
   pointer-events: none; white-space: nowrap;
+  /* Never run under the top-right gear line / ? disc (Daniel's
+     2026-11-23 phone shot: the MOVE line printed straight through
+     FISTS and FOLLOW behind the ?). */
+  max-width: calc(100vw - 150px); overflow: hidden; text-overflow: ellipsis;
 }
 
 /* --- corner lines ---------------------------------------------------------- */
@@ -561,8 +565,10 @@ body.car-burning #ctl-buttons [data-action="interact"] {
 
 @media (pointer: coarse) {
   #touch { display: block; }
-  /* Pager moves up: the stick lives bottom-left now. */
-  #pager { bottom: auto; top: calc(var(--header-h) + 6px); }
+  /* Pager moves up: the stick lives bottom-left now. Its width is
+     capped 66px short of the right edge so the top-right ? disc
+     never sits on its corner (Daniel's 2026-11-23 phone shot). */
+  #pager { bottom: auto; top: calc(var(--header-h) + 6px); max-width: min(330px, calc(100vw - 66px)); }
   #credit { display: none; }
   /* The ? stays top-right on touch too (base rule) — well clear of
      the bottom-right control cluster and the green E button it used
