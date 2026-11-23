@@ -35,7 +35,7 @@
 
 import type { Vec2 } from '../core/geo';
 import { dist } from '../core/geo';
-import { findRoute, routableDestination, type RoadGraph } from '../core/routing';
+import { findRoute, legObstructed, routableDestination, type RoadGraph } from '../core/routing';
 import type { WorldModel } from '../core/world';
 
 /** Distance at which the car is declared ON the point (m). */
@@ -248,8 +248,14 @@ export interface FollowPlan {
 }
 
 /**
- * Plan a follow target: near → the point itself; far → the road
- * route, falling back to the point itself when no route exists.
+ * Plan a follow target: near + clear → the point itself; far, or
+ * ANY distance with a building/water obstruction on the straight
+ * leg → the road route, falling back to the point itself when no
+ * route exists. (The distance-only rule left near targets to pure
+ * pursuit: a mission endpoint 40 m away across a building had the
+ * walker grind its wall until the stuck ladder gave up — Daniel,
+ * 2026-11-23, George Street dropoff. If you can't walk straight
+ * there, you walk around, however near it is.)
  */
 export function planFollowPoints(
   graph: RoadGraph,
@@ -257,7 +263,7 @@ export function planFollowPoints(
   from: Vec2,
   to: Vec2,
 ): FollowPlan {
-  if (dist(from, to) > FOLLOW_ROUTE_MIN_M) {
+  if (dist(from, to) > FOLLOW_ROUTE_MIN_M || legObstructed(world, from, to)) {
     const route = findRoute(graph, world, from, to);
     if (route && route.length) return { points: route, routed: true };
   }
