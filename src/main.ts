@@ -1676,8 +1676,11 @@ async function boot(): Promise<void> {
       }
     }
     // Radio: station follows the car class; entering a car (or a
-    // different class) announces it on the toast line.
-    const station = hud.inCar ? stationForClass(hud.carClass) : -1;
+    // different class) announces it on the toast line. The site's FM
+    // radio (/radio.js, body.fm-on while it plays) outranks it: the
+    // synth car radio stays off while real songs are on.
+    const fmOn = document.body.classList.contains('fm-on');
+    const station = hud.inCar && !fmOn ? stationForClass(hud.carClass) : -1;
     if (station !== prevStation) {
       if (station >= 0) chromeToast(`📻 ${STATIONS[station].name}`, 2600);
       prevStation = station;

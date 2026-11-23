@@ -30,6 +30,12 @@
 <meta name="twitter:player:stream:content_type" content="video/mp4">
 <meta name="theme-color" content="#0b0d10">
 <link rel="stylesheet" href="/site.css">
+<script>
+  // Framed inside the app's 3D tab (/bambam/?embed=1): the app has the
+  // header and the radio, so this page drops its own.
+  if (window.self !== window.top && /[?&]embed\b/.test(window.location.search)) document.documentElement.classList.add('embed');
+</script>
+<script src="/radio.js" defer></script>
 <style>
   /* The 3D preview page (polish pass 2026-11-23). Header chrome comes
      from /site.css (shared with the game page); this sheet is only
@@ -127,6 +133,8 @@
     .pv-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
   }
   @media (prefers-reduced-motion: reduce) { .pv-scene { transition: none; } }
+  html.embed #site-header { display: none; }
+  html.embed .pv-hero { padding-top: 22px; }
 </style>
 </head>
 <body>
@@ -139,6 +147,7 @@
     <a class="tab-link" href="/#radio"><span class="tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2.5" y="8" width="19" height="13" rx="2.5"/><path d="M6.5 8 17 3.5"/><circle cx="15.5" cy="14.5" r="3"/><path d="M5.8 12.5h3.6M5.8 15.5h3.6M5.8 18.2h3.6"/></svg></span><span class="tab-label">FM</span></a>
     <a class="tab-link" href="/#maps"><span class="tab-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 4 3 6.5V20l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></svg></span><span class="tab-label">Maps</span></a>
   </nav>
+  <div class="mini-radio" id="mini-radio"></div>
 </header>
 <main class="pv">
   <section class="wrap pv-hero">
@@ -200,6 +209,40 @@
       if (video.readyState >= 1) seek(); else video.addEventListener('loadedmetadata', seek, { once: true });
       video.preload = 'metadata';
       window.requestAnimationFrame(function () { video.scrollIntoView({ block: 'center' }); });
+    }
+    // Radio ⇄ video: only one of them plays at a time. Framed in the
+    // app, this page tells the app (which owns the radio) and obeys
+    // its pause / seek messages; visited directly, it has its own
+    // mini radio in the header and the two pause each other here.
+    var EMBED = document.documentElement.classList.contains('embed');
+    if (EMBED) {
+      var toApp = function (msg) { window.parent.postMessage(msg, window.location.origin); };
+      video.addEventListener('play', function () { toApp({ mvt: 'video-play' }); });
+      window.addEventListener('message', function (e) {
+        if (e.origin !== window.location.origin || e.source !== window.parent || !e.data) return;
+        if (e.data.mvt === 'pause-video') video.pause();
+        if (e.data.mvt === 'seek' && isFinite(e.data.t)) {
+          video.currentTime = e.data.t;
+          video.scrollIntoView({ block: 'center' });
+        }
+      });
+      // Links back into the app switch its tab instead of loading
+      // the whole app inside this frame.
+      document.addEventListener('click', function (e) {
+        var a = e.target.closest && e.target.closest('a[href]');
+        if (!a) return;
+        var u = new URL(a.getAttribute('href'), window.location.href);
+        if (u.origin !== window.location.origin || u.pathname !== '/') return;
+        e.preventDefault();
+        toApp({ mvt: 'show', view: u.hash.replace('#', '') || 'game' });
+      });
+    } else {
+      window.addEventListener('DOMContentLoaded', function () {
+        if (!window.MVTRadio) return;
+        window.MVTRadio.mountMini(document.getElementById('mini-radio'), { openFull: '/#radio' });
+        video.addEventListener('play', function () { window.MVTRadio.pause(); });
+        window.addEventListener('mvt-radio-playing', function (e) { if (e.detail) video.pause(); });
+      });
     }
     video.addEventListener('timeupdate', function () {
       var cur = -1;

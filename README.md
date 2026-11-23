@@ -55,8 +55,16 @@ A quality pass after a run of fast content drops:
 - **FM** is a real head unit: amber VFD with ghosted segments, an
   88–108 MHz scale whose needle tunes, LED presets, seekable progress,
   lock-screen controls (Media Session), remembered station/volume.
-- **3D** (`/bambam/`) is a proper preview page: tappable scene
-  chapters (stills in `public/bambam/scenes/`), `#t=84` deep links.
+- **The radio plays on everywhere.** One engine (`public/radio.js`)
+  drives both the FM tab and a mini player in the header (radio pill
+  → popover with play/skip/stations), on every view and on the
+  standalone `/bambam/` page. While it plays, `body.fm-on` silences
+  the game's synthesized car radio.
+- **3D** is an in-app tab now: it frames `/bambam/?embed=1`, so the
+  radio survives it. Video and radio pause each other (postMessage),
+  and leaving the tab pauses the video. `/bambam/` itself stays a
+  standalone page for share links: tappable scene chapters (stills
+  in `public/bambam/scenes/`), `#t=84` deep links.
 - **Models**: grouped cards, a render lightbox, and the **F-22** from
   MVTF6 as renders (`public/models/f22/`, 204 KB). It is a CGTrader
   royalty-free model, so its GLB is deliberately NOT published.

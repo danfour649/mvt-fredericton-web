@@ -731,6 +731,11 @@ body.car-burning #ctl-buttons [data-action="interact"] {
   .sc-grid > .sc-card:last-child:nth-child(odd) .sc-renders { grid-area: renders; align-self: end; }
 }
 
+/* 3D tab: the /bambam/ preview page, framed edge to edge; the frame
+   scrolls itself. */
+.showcase--frame { overflow: hidden; background: #0b0d10; }
+.showcase--frame iframe { display: block; width: 100%; height: 100%; border: 0; background: #0b0d10; }
+
 /* Maps tab: the embedded 3D Fredericton (lazy MapLibre view, created
    by src/maps-view.ts on first open) + the data-provenance copy. */
 #maps-map {
