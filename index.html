@@ -523,7 +523,10 @@
         <p id="hud-objective"></p>
         <p id="hud-timer" hidden></p>
       </div>
+      <button id="pager-hide" type="button" aria-label="Hide pager">✕</button>
     </div>
+    <!-- Left behind when the pager is dismissed: brings it back. -->
+    <button id="pager-show" type="button" hidden>📟 PAGER</button>
 
     <!-- Transient centre toast. -->
     <div id="hud-toast" role="status"></div>
@@ -599,6 +602,14 @@
           <div class="ctl-row">
             <button id="btn-fire" type="button" class="round fire-btn" aria-label="fire weapon">FIRE</button>
           </div>
+        </div>
+        <!-- Game-sound mute (Daniel, 2026-11-23): below the E button,
+             outside the state groups so it shows in car and foot
+             states alike — and it survives the follow scheme's trim,
+             which hides every #ctl-right button except the E buttons
+             and this one. Same setting as the ? overlay's checkbox. -->
+        <div class="ctl-row mute-row">
+          <button id="btn-mute" type="button" class="round mute-btn" aria-label="Mute game sounds" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="i-spk" d="M4 9.5v5h3.5L12 18.6V5.4L7.5 9.5H4z"/><path class="i-waves" d="M15.5 9.2a4 4 0 0 1 0 5.6M18 6.8a7.4 7.4 0 0 1 0 10.4"/><path class="i-slash" d="M4.5 4.5l15 15"/></svg></button>
         </div>
       </div>
       <!-- Follow scheme (the default): no zone of its own — taps

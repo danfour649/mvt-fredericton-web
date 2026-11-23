@@ -96,6 +96,26 @@ body { font-family: system-ui, sans-serif; }
 #hud-brief:empty, #hud-objective:empty { display: none; }
 #hud-timer { margin: 4px 0 0; font-size: 15px; font-weight: 800; color: #ffd23f; }
 #hud-timer.low { color: #ff5a4e; }
+/* Pager dismiss (Daniel, 2026-11-23): the ✕ parks the pager off the
+   map; the 📟 PAGER button stays at the pager's own anchor (same
+   fixed slot, same coarse-pointer move to the top) to bring it
+   back. main.ts keeps the two in step with the brief state. */
+#pager-hide {
+  flex: 0 0 auto; align-self: flex-start;
+  width: 26px; height: 26px; margin: -3px -5px 0 0; padding: 0;
+  background: none; border: none; cursor: pointer;
+  color: #7fb069; font: 700 13px system-ui, sans-serif; line-height: 1;
+}
+#pager-hide:hover { color: #d9f7c4; }
+#pager-show {
+  position: fixed; left: 10px; bottom: 34px; z-index: 20;
+  background: rgba(16, 22, 14, 0.88); color: #b6f09a;
+  border: 2px solid #3f6212; border-radius: 8px; padding: 7px 10px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10px; letter-spacing: 0.22em; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+}
+#pager-show[hidden] { display: none; }
 
 /* --- toast --------------------------------------------------------------- */
 #hud-toast {
@@ -310,6 +330,26 @@ body { font-family: system-ui, sans-serif; }
   width: 80px; height: 80px; font-size: 15px; background: rgba(190, 40, 30, 0.55);
 }
 #ctl-right button.wpn-btn { width: 60px; height: 60px; font-size: 11px; }
+/* Game-sound mute row (Daniel, 2026-11-23): below the E button,
+   outside the state groups, right-aligned under the cluster. 56px
+   to satisfy the layout audit's touch-target floor. The follow
+   scheme's trim list below does NOT name it, so it stays visible
+   next to the E button in follow mode too. */
+#ctl-right .mute-row { margin-top: 12px; justify-content: flex-end; }
+#ctl-right button.mute-btn {
+  width: 56px; height: 56px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+#ctl-right button.mute-btn svg { width: 27px; height: 27px; }
+#ctl-right button.mute-btn .i-spk { fill: #fff; }
+#ctl-right button.mute-btn .i-waves,
+#ctl-right button.mute-btn .i-slash {
+  fill: none; stroke: #fff; stroke-width: 1.9; stroke-linecap: round;
+}
+#ctl-right button.mute-btn .i-slash { display: none; stroke: #ff5a4e; }
+#ctl-right button.mute-btn.muted .i-slash { display: block; }
+#ctl-right button.mute-btn.muted .i-waves { display: none; }
+#ctl-right button.mute-btn.muted { opacity: 0.6; }
 /* v0.31 tilt: while DRIVING under the tilt scheme the sensors own
    steering — the stick zone must not capture left-side touches at
    all (the wheel is a mirror of the tilt value, not a control).
@@ -325,8 +365,9 @@ body.tilt-driving #stick-zone { pointer-events: none; }
    safely carry: the follow double-tap only exits at a near-stop
    (at speed it's the handbrake), which left a player in a BURNING
    car with no way out on a phone (Daniel, 2026-11-21). CSS below
-   hides every #ctl-right button except the two E buttons while
-   body.follow-mode is set (applyScheme in main.ts). */
+   hides every #ctl-right button except the two E buttons and the
+   game-sound mute button while body.follow-mode is set
+   (applyScheme in main.ts). */
 #follow-hint {
   position: absolute; left: 50%; bottom: 108px; transform: translateX(-50%);
   font: 700 12px system-ui, sans-serif; color: rgba(255,255,255,0.85);
@@ -569,6 +610,7 @@ body.car-burning #ctl-buttons [data-action="interact"] {
 #hud-toast { top: calc(var(--header-h) + 96px); }
 @media (pointer: coarse) {
   #pager { top: calc(var(--header-h) + 58px); }
+  #pager-show { bottom: auto; top: calc(var(--header-h) + 58px); }
   /* The toast's slot (header + 96px) sits INSIDE the pager's box on
      touch screens — the pager moved up to header + 58px and runs
      ~90–130px tall, so "Reckless driving — wanted level up" printed
