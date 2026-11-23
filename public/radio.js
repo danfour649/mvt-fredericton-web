@@ -49,7 +49,12 @@
       ['Light the River (Diwali in Fredericton)', 'light-the-river.ogg']
     ]},
     { call: 'CFSE', freq: '89.5', name: 'Francophone', tracks: [
-      ['Pointe-Sainte-Anne (1759)', 'pointe-sainte-anne.ogg']
+      ['Pointe-Sainte-Anne (1759)', 'pointe-sainte-anne.ogg'],
+      ['Ej Drive à Fredericton', 'ej-drive-a-fredericton.ogg'],
+      ['Quinze-Août (Fais du Bruit)', 'quinze-aout.ogg'],
+      ['Le Reel de Paquetville', 'le-reel-de-paquetville.ogg'],
+      ['Mon Truck, Mon Ski-Doo, Ma Blonde', 'mon-truck.ogg'],
+      ['Bleu Nuit', 'bleu-nuit.ogg']
     ]},
     { call: 'CKCH', freq: '102.9', name: 'Sunday / Church', tracks: [
       ['Seventy-One Years to the Water', 'seventy-one-years-to-the-water.ogg'],
