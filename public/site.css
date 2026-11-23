@@ -1,0 +1,207 @@
+/* Shared site chrome — the header + section tabs used by EVERY page
+   (the game at /, the 3D preview at /bambam/). One file so the pages
+   can't drift again: the 3D page used to carry its own copy, which
+   had diverged (zero padding on phones clipped the brand and the
+   "New" badge). Each page only sets how the header is positioned
+   (fixed over the game, sticky on the scrolling 3D page).
+
+   Mobile first: a two-line header — the brand, then five equal
+   stacked tabs that always fit the row. From 760px wide it becomes
+   one 60px row: brand left, tabs beside it. */
+
+:root {
+  --ink: #0b1009;
+  --ink-2: #121a0e;
+  --gold: #ffd23f;
+  --gold-ink: #20180a;
+  --chrome-line: rgba(255, 255, 255, 0.14);
+}
+
+#site-header {
+  top: 0; left: 0; right: 0; z-index: 55;
+  display: flex; flex-direction: column; align-items: stretch; gap: 7px;
+  padding: 7px 8px 8px;
+  background: linear-gradient(180deg, #121a0f 0%, var(--ink) 100%);
+  border-bottom: 2px solid var(--gold);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+.site-brand {
+  display: flex; align-items: baseline; gap: 0.32em;
+  font-weight: 900; letter-spacing: 0.06em; line-height: 1.05;
+  font-size: 21px; color: #fff; white-space: nowrap; text-decoration: none;
+}
+.site-brand span { color: var(--gold); }
+
+#site-tabs {
+  display: flex; gap: 5px; margin: 0; padding: 0;
+}
+#site-tabs button, #site-tabs a.tab-link {
+  position: relative;
+  flex: 1 1 0; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  padding: 7px 2px 6px; margin: 0;
+  font: 700 10.5px/1.1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: 0.02em; color: #d8e2cf; text-decoration: none; white-space: nowrap;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--chrome-line); border-radius: 12px;
+  cursor: pointer; touch-action: manipulation;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+#site-tabs .tab-ico { display: block; width: 20px; height: 20px; }
+#site-tabs .tab-ico svg {
+  display: block; width: 100%; height: 100%;
+  fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+#site-tabs .tab-label { display: block; }
+#site-tabs button:hover, #site-tabs a.tab-link:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+#site-tabs button:focus-visible, #site-tabs a.tab-link:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+#site-tabs button.on, #site-tabs a.tab-link.on {
+  background: var(--gold); color: var(--gold-ink); border-color: var(--gold);
+  box-shadow: 0 2px 10px rgba(255, 210, 63, 0.25);
+}
+/* The "New" badge on the 3D tab: pinned to the pill's corner so it
+   adds no height on phones; inline beside the label on desktop. */
+.tab-new {
+  position: absolute; top: -6px; right: 2px;
+  font: 900 7.5px/1.3 system-ui, sans-serif; letter-spacing: 0.06em; text-transform: uppercase;
+  color: #fff; background: #e2481d; border-radius: 999px; padding: 1px 5px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+@media (min-width: 380px) {
+  .site-brand { font-size: 22px; }
+  #site-tabs { gap: 6px; }
+  #site-tabs button, #site-tabs a.tab-link { font-size: 11px; }
+}
+
+/* One row from 760px: compact first (it must fit brand + five tabs +
+   the radio pill in 760px), roomier from 1060px. */
+@media (min-width: 760px) {
+  #site-header {
+    flex-direction: row; align-items: center; gap: 12px;
+    padding: 0 12px; min-height: 58px;
+  }
+  .site-brand { font-size: 19px; }
+  #site-tabs { gap: 5px; }
+  #site-tabs button, #site-tabs a.tab-link {
+    flex: 0 0 auto; flex-direction: row; gap: 6px;
+    padding: 6px 10px; font-size: 12.5px; border-radius: 999px;
+  }
+  #site-tabs .tab-ico { width: 16px; height: 16px; }
+  .tab-new { position: static; font-size: 8px; padding: 2px 5px; margin-left: 1px; box-shadow: none; }
+}
+@media (min-width: 1060px) {
+  #site-header { gap: 22px; padding: 0 20px; min-height: 60px; }
+  .site-brand { font-size: 22px; }
+  #site-tabs { gap: 6px; }
+  #site-tabs button, #site-tabs a.tab-link { gap: 7px; padding: 7px 14px; font-size: 13.5px; }
+  #site-tabs .tab-ico { width: 17px; height: 17px; }
+  .tab-new { font-size: 8.5px; padding: 2px 6px; }
+}
+
+/* --- Mini radio (built by /radio.js) ------------------------------------
+   The FM radio plays on across every view; this pill keeps it one tap
+   away. Phones: an icon + level meter tucked at the right end of the
+   brand line. Desktop: the end of the header row, with the station
+   and the song. The popover is fixed under the header (positioned by
+   radio.js), inside the header's stacking layer. */
+.mini-radio { position: absolute; top: 5px; right: 8px; z-index: 2; }
+.mr-pill {
+  display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px 0 9px; margin: 0;
+  font: 700 12px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #d8e2cf;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid var(--chrome-line); border-radius: 999px;
+  cursor: pointer; touch-action: manipulation; white-space: nowrap;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+.mr-pill:hover { background: rgba(255, 255, 255, 0.11); color: #fff; }
+.mr-pill:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.mr-ico { display: block; width: 18px; height: 18px; }
+.mr-ico svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mr-eq { display: flex; align-items: flex-end; gap: 2px; height: 12px; }
+.mr-eq i { display: block; width: 3px; height: 100%; border-radius: 1px; background: currentColor; opacity: 0.45; transform: scaleY(0.3); transform-origin: bottom; }
+.mini-radio.is-playing .mr-pill { border-color: rgba(255, 210, 63, 0.75); color: var(--gold); background: rgba(255, 210, 63, 0.1); }
+.mini-radio.is-playing .mr-eq i { opacity: 1; animation: mr-eq 0.9s ease-in-out infinite alternate; }
+.mini-radio.is-playing .mr-eq i:nth-child(2) { animation-duration: 0.65s; animation-delay: -0.3s; }
+.mini-radio.is-playing .mr-eq i:nth-child(3) { animation-duration: 0.8s; animation-delay: -0.5s; }
+@keyframes mr-eq { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }
+.mr-label { display: none; }
+
+.mr-pop {
+  position: fixed; z-index: 3; width: min(330px, calc(100vw - 16px)); box-sizing: border-box;
+  padding: 12px 14px 10px; border-radius: 14px; color: #e9ecef;
+  background: linear-gradient(180deg, #1b1d21 0%, #121316 100%);
+  border: 1px solid #2c3036; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.4);
+  font: 400 14px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.mr-pop[hidden] { display: none; }
+.mr-top { display: flex; align-items: center; gap: 8px; }
+.mr-led { width: 7px; height: 7px; border-radius: 50%; background: #3a3226; flex: 0 0 auto; }
+.mini-radio.is-playing .mr-led { background: #ffbf47; box-shadow: 0 0 8px rgba(255, 170, 40, 0.9); }
+.mr-st {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 700 11.5px/1.2 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: 0.08em;
+  text-transform: uppercase; color: #ffbf47;
+}
+.mr-x {
+  flex: 0 0 auto; width: 30px; height: 30px; margin: -6px -8px -6px 0; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: #9aa0a6; font-size: 14px; cursor: pointer;
+}
+.mr-x:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.mr-title {
+  margin-top: 6px; font-size: 16px; font-weight: 700; color: #fff;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.mr-bar { position: relative; height: 14px; margin-top: 6px; cursor: pointer; outline: none; }
+.mr-bar::before { content: ""; position: absolute; left: 0; right: 0; top: 5px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); }
+.mr-bar i { position: absolute; left: 0; top: 5px; height: 4px; width: 0; border-radius: 2px; background: #ffbf47; }
+.mr-bar:focus-visible::before { outline: 1px solid #ffbf47; outline-offset: 3px; }
+.mr-times {
+  display: flex; justify-content: space-between; font: 600 11px/1 ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: 0.06em; color: #8b9096; font-variant-numeric: tabular-nums;
+}
+.mr-ctl { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 10px 0 12px; }
+.mr-b {
+  display: grid; place-items: center; width: 42px; height: 42px; padding: 0; border-radius: 50%; cursor: pointer;
+  color: #e9ebee; background: radial-gradient(circle at 50% 30%, #3c3e44 0%, #222327 70%); border: 1px solid #060607;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 2px 0 #050506; touch-action: manipulation;
+}
+.mr-b svg { width: 17px; height: 17px; fill: currentColor; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.mr-b:active { transform: translateY(1px); }
+.mr-b:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.mr-play { width: 52px; height: 52px; color: var(--gold-ink); background: radial-gradient(circle at 50% 30%, #ffe27a 0%, #ffd23f 55%, #e0b21c 100%); border-color: #6b5208; }
+.mr-play svg { width: 21px; height: 21px; stroke: none; }
+.mr-play .i-pause, .mr-play.is-playing .i-play { display: none; }
+.mr-play.is-playing .i-pause { display: block; }
+.mr-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.mr-preset {
+  display: flex; align-items: baseline; justify-content: center; gap: 5px; padding: 7px 4px; margin: 0; cursor: pointer;
+  font: inherit; color: #cdd0d5; background: #24262a; border: 1px solid #0b0b0d; border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08); touch-action: manipulation;
+}
+.mr-preset b { font-size: 12.5px; letter-spacing: 0.05em; }
+.mr-preset small { font-size: 10.5px; color: #80868c; font-variant-numeric: tabular-nums; }
+.mr-preset.on { color: #ffbf47; border-color: rgba(255, 191, 71, 0.5); background: #2d2a22; }
+.mr-preset.on small { color: rgba(255, 191, 71, 0.7); }
+.mr-preset:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.mr-full {
+  display: block; width: 100%; margin: 10px 0 0; padding: 9px 0 2px; box-sizing: border-box;
+  border: 0; border-top: 1px solid #262a2f; background: transparent; cursor: pointer; text-align: center; text-decoration: none;
+  font: 700 13px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--gold);
+}
+@media (prefers-reduced-motion: reduce) { .mini-radio.is-playing .mr-eq i { animation: none; transform: scaleY(0.8); } }
+
+@media (min-width: 760px) {
+  .mini-radio { position: relative; top: auto; right: auto; margin-left: auto; flex: 0 0 auto; }
+  .mr-pill { height: 34px; padding: 0 12px; }
+}
+@media (min-width: 1060px) {
+  .mr-pill { padding: 0 14px 0 12px; gap: 9px; font-size: 13px; }
+  .mr-label { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .mr-call { letter-spacing: 0.04em; }
+  .mr-now { display: none; max-width: 210px; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: #d8e2cf; }
+}
+@media (min-width: 1240px) {
+  .mini-radio.is-playing .mr-now { display: block; }
+}

@@ -144,6 +144,12 @@ async function boot(): Promise<void> {
 
   setLoading(0.74, 'WAKING THE CITIZENS…');
   const game = new Game(world, localStorageAdapter);
+  // The street framing spans the viewport's short side (desktop
+  // landscape used to be framed like a portrait phone — see
+  // dynamicCameraTarget). Kept live across resizes and rotations.
+  const syncViewport = (): void => game.setViewportSize(window.innerWidth, window.innerHeight);
+  syncViewport();
+  window.addEventListener('resize', syncViewport);
   if (params.get('scenario') === 'demo') game.applyDemoScenario();
   // Screenshot/testing hook: harmless, exposes the running game.
   (window as unknown as { __game?: Game }).__game = game;
@@ -209,7 +215,13 @@ async function boot(): Promise<void> {
   // policy), and every event is inferred from state transitions in
   // the frame loop below.
   let audioOn = store.get('mvt-audio') !== 'off';
-  const audio = new GameAudio(() => audioOn);
+  // Polish pass: a showcase panel (Models / FM / Maps) covers the
+  // whole game, so the game PAUSES under it — no simulation (cops
+  // used to keep chasing while you read the Models page), no map
+  // re-render (battery), no engine hum. The tab script in
+  // index.html toggles body.showcase-open; we just observe it.
+  let showcasePaused = document.body.classList.contains('showcase-open');
+  const audio = new GameAudio(() => audioOn && !showcasePaused);
   (window as unknown as { __mvtAudio?: () => AudioStateSnapshot }).__mvtAudio = () => audio.state();
   const unlockAudio = (): void => audio.unlock();
   window.addEventListener('pointerdown', unlockAudio, { passive: true });
@@ -988,6 +1000,13 @@ async function boot(): Promise<void> {
     store.set('mvt-haptics', hapticsOn ? 'on' : 'off');
     if (!hapticsOn) haptics.cancel();
   });
+  new MutationObserver(() => {
+    const open = document.body.classList.contains('showcase-open');
+    if (open === showcasePaused) return;
+    showcasePaused = open;
+    if (open) audio.silence();
+    else audio.refreshMaster();
+  }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   const audioToggle = el('audio-toggle') as HTMLInputElement;
   audioToggle.checked = audioOn;
   audioToggle.addEventListener('change', () => {
@@ -1298,9 +1317,13 @@ async function boot(): Promise<void> {
     }
   }
 
-  el('help-toggle').addEventListener('click', () => {
+  const toggleHelp = (): void => {
     const full = el('help-full');
     full.hidden = !full.hidden;
+  };
+  el('help-toggle').addEventListener('click', toggleHelp);
+  el('help-toggle').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); toggleHelp(); }
   });
   el('btn-primary').addEventListener('click', () => {
     if (game.phase === 'district-done') game.confirmFreeroam();
@@ -1473,6 +1496,13 @@ async function boot(): Promise<void> {
   let gameTimeS = 0;
   (window as unknown as { __mvtTime?: number }).__mvtTime = 0;
   function frame(now: number) {
+    // Paused under a showcase panel (after the first frame, which
+    // must run so boot completes and the loading screen clears).
+    if (showcasePaused && bootedFlag) {
+      last = now;
+      requestAnimationFrame(frame);
+      return;
+    }
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     gameTimeS += dt;
@@ -1646,8 +1676,11 @@ async function boot(): Promise<void> {
       }
     }
     // Radio: station follows the car class; entering a car (or a
-    // different class) announces it on the toast line.
-    const station = hud.inCar ? stationForClass(hud.carClass) : -1;
+    // different class) announces it on the toast line. The site's FM
+    // radio (/radio.js, body.fm-on while it plays) outranks it: the
+    // synth car radio stays off while real songs are on.
+    const fmOn = document.body.classList.contains('fm-on');
+    const station = hud.inCar && !fmOn ? stationForClass(hud.carClass) : -1;
     if (station !== prevStation) {
       if (station >= 0) chromeToast(`📻 ${STATIONS[station].name}`, 2600);
       prevStation = station;

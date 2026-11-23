@@ -37,6 +37,40 @@ npm run dev        # http://localhost:5173
   adapter — same game, same data. `?scenario=demo` boots into a scripted
   live-gameplay state (used for screenshots).
 
+## Polish pass (2026-11-23) — desktop, radio, 3D page, models
+
+A quality pass after a run of fast content drops:
+
+- **Desktop framing fixed.** The street camera's metres used to span
+  the viewport WIDTH — right on a portrait phone, but a 1440×900
+  monitor showed 18.75 m top to bottom (a car filled a fifth of the
+  screen). They now span the SHORT side (portrait phones unchanged),
+  with up to 25 % more ground on big screens (`Game.setViewportSize`,
+  tested in `game.test.ts`).
+- **One header everywhere.** `public/site.css` is shared by `/` and
+  `/bambam/` (their copies had drifted); one 60 px row from 760 px
+  wide, SVG tab icons instead of emoji.
+- **The game pauses under the Models / FM / Maps panels** (no
+  simulation, map redraws or engine hum while you read).
+- **FM** is a real head unit: amber VFD with ghosted segments, an
+  88–108 MHz scale whose needle tunes, LED presets, seekable progress,
+  lock-screen controls (Media Session), remembered station/volume.
+- **The radio plays on everywhere.** One engine (`public/radio.js`)
+  drives both the FM tab and a mini player in the header (radio pill
+  → popover with play/skip/stations), on every view and on the
+  standalone `/bambam/` page. While it plays, `body.fm-on` silences
+  the game's synthesized car radio.
+- **3D** is an in-app tab now: it frames `/bambam/?embed=1`, so the
+  radio survives it. Video and radio pause each other (postMessage),
+  and leaving the tab pauses the video. `/bambam/` itself stays a
+  standalone page for share links: tappable scene chapters (stills
+  in `public/bambam/scenes/`), `#t=84` deep links.
+- **Models**: grouped cards, a render lightbox, and the **F-22** from
+  MVTF6 as renders (`public/models/f22/`, 204 KB). It is a CGTrader
+  royalty-free model, so its GLB is deliberately NOT published.
+  model-viewer is pinned (4.4.0) and only loads when Models opens;
+  on touch screens GLBs load on "Tap to spin", not on scroll.
+
 ## What's new in v0.33 — Stage 1: the city beyond downtown
 
 Zoom out and the city used to end at the downtown pavement: the
