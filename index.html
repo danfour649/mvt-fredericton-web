@@ -3,18 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>MVT Fredericton Web — top-down Fredericton</title>
-    <meta name="description" content="A minimalist, web-playable, top-down MVT Fredericton: real GeoNB buildings and roads for downtown Fredericton, NB, in your browser." />
+    <title>MVT Fredericton — Radio in the Cannoli</title>
+    <meta name="description" content="The MVT Fredericton radio: sit in the 2018 Corolla (the Cannoli) and tune six Fredericton stations — every station a playlist of original songs written for the town. Plus the top-down web game, models and maps." />
     <link rel="canonical" href="https://www.mvtfredericton.ca/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="MVT Fredericton" />
-    <meta property="og:title" content="MVT Fredericton — Fredericton, playable in your browser" />
-    <meta property="og:description" content="A web-playable, top-down Fredericton built from real GeoNB buildings, roads and LiDAR. Drive the city in your browser, tour the landmark models, and watch the Bam Bam music video shot entirely in-game." />
+    <meta property="og:title" content="MVT Fredericton — Radio in the Cannoli" />
+    <meta property="og:description" content="Sit in the Cannoli and tune six Fredericton stations of original songs — plus the web-playable top-down Fredericton built from real GeoNB buildings, roads and LiDAR." />
     <meta property="og:url" content="https://www.mvtfredericton.ca/" />
     <meta property="og:image" content="https://www.mvtfredericton.ca/bambam/poster.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="MVT Fredericton — Fredericton, playable in your browser" />
-    <meta name="twitter:description" content="A web-playable, top-down Fredericton built from real GeoNB buildings, roads and LiDAR. Drive the city in your browser." />
+    <meta name="twitter:title" content="MVT Fredericton — Radio in the Cannoli" />
+    <meta name="twitter:description" content="Six Fredericton radio stations of original songs, in the game's 2018 Corolla. Plus the playable top-down city." />
     <meta name="twitter:image" content="https://www.mvtfredericton.ca/bambam/poster.jpg" />
     <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
     <script>
@@ -36,13 +36,44 @@
     <header id="site-header">
       <div class="site-brand">MVT <span>FREDERICTON</span></div>
       <nav id="site-tabs" aria-label="Site sections">
-        <button type="button" data-view="game" class="on"><span class="tab-ico" aria-hidden="true">🎮</span><span class="tab-label">2D</span></button>
+        <button type="button" data-view="radio" class="on"><span class="tab-ico" aria-hidden="true">📻</span><span class="tab-label">Radio</span></button>
+        <button type="button" data-view="game"><span class="tab-ico" aria-hidden="true">🎮</span><span class="tab-label">2D</span></button>
         <a class="tab-link tab-3d" href="/bambam/"><span class="tab-ico" aria-hidden="true">🎬</span><span class="tab-label">3D</span><span class="tab-new">New</span></a>
         <button type="button" data-view="models"><span class="tab-ico" aria-hidden="true">🏛️</span><span class="tab-label">Models</span></button>
         <button type="button" data-view="songs"><span class="tab-ico" aria-hidden="true">🎵</span><span class="tab-label">Songs</span></button>
         <button type="button" data-view="maps"><span class="tab-ico" aria-hidden="true">🗺️</span><span class="tab-label">Maps</span></button>
       </nav>
     </header>
+
+    <section id="view-radio" class="showcase">
+      <div class="sc-inner radio-inner">
+        <h1>The radio</h1>
+        <p class="sc-sub">You're sitting in the Cannoli — the game's 2018 Corolla. Six Fredericton stations, every one a playlist of original songs written in-house for this town: its river, its floods, its mills, its history. Pick a preset, turn it up. Drag the car to have a look at her.</p>
+
+        <div class="dash">
+          <model-viewer class="dash-car" src="https://mvtf-assets.vercel.app/models/cannoli/exterior.glb" poster="https://mvtf-assets.vercel.app/models/cannoli/renders/front3q.jpg" alt="Yotola Cannoli — the game's 2018 Toyota Corolla" camera-controls auto-rotate shadow-intensity="0.6"></model-viewer>
+
+          <div class="headunit" role="group" aria-label="Car radio">
+            <div class="hu-lcd">
+              <div class="hu-lcd-top"><span id="hu-freq">98.5</span><span class="hu-band">FM</span><span id="hu-call">CROC</span><span id="hu-clock">--:--</span></div>
+              <div class="hu-lcd-track" id="hu-track">Callie (506-555-0169)</div>
+              <div class="hu-lcd-sub"><span id="hu-pos">1 / 6</span><span id="hu-state">PAUSED</span></div>
+              <div class="hu-prog"><div id="hu-prog-fill"></div></div>
+            </div>
+            <div class="hu-presets" id="hu-presets" role="group" aria-label="Station presets"></div>
+            <div class="hu-controls">
+              <button type="button" id="hu-prev" class="hu-btn" aria-label="Previous track">⏮</button>
+              <button type="button" id="hu-play" class="hu-btn hu-play" aria-label="Play or pause">▶</button>
+              <button type="button" id="hu-next" class="hu-btn" aria-label="Next track">⏭</button>
+              <label class="hu-vol"><span aria-hidden="true">🔊</span><input type="range" id="hu-volume" min="0" max="100" value="80" aria-label="Volume"></label>
+            </div>
+            <ol class="hu-playlist" id="hu-playlist"></ol>
+            <audio id="radio-audio" preload="none"></audio>
+          </div>
+        </div>
+        <p class="sc-foot">Every track is an original MVT Fredericton song — written in-house, generated on Suno, banked in the audio pipeline. The stations mirror the dial in MVTF6's cars. Sketch music videos for the head unit are coming; the <a href="/bambam/">Bam Bam</a> and <a href="/callie/">Callie</a> videos are already up.</p>
+      </div>
+    </section>
 
     <section id="view-models" class="showcase" hidden>
       <div class="sc-inner">
@@ -654,17 +685,19 @@
         syncHeaderH();
         if (window.ResizeObserver) new ResizeObserver(syncHeaderH).observe(header);
         var buttons = document.querySelectorAll('#site-tabs button');
-        var panels = { models: document.getElementById('view-models'), songs: document.getElementById('view-songs'), maps: document.getElementById('view-maps') };
+        var panels = { radio: document.getElementById('view-radio'), models: document.getElementById('view-models'), songs: document.getElementById('view-songs'), maps: document.getElementById('view-maps') };
         function show(view) {
           buttons.forEach(function (b) { b.classList.toggle('on', b.dataset.view === view); });
           Object.keys(panels).forEach(function (k) { panels[k].hidden = k !== view; });
           if (view !== 'songs') document.querySelectorAll('#view-songs audio').forEach(function (a) { a.pause(); });
+          if (view !== 'radio') { var ra = document.getElementById('radio-audio'); if (ra) ra.pause(); }
           document.body.classList.toggle('showcase-open', view !== 'game');
         }
         buttons.forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.view); }); });
         // Deep links from the standalone pages' headers (e.g. /bambam/ links to /#models).
+        // The radio is the landing view: with no (or an unknown) hash, show it.
         var hashView = window.location.hash.replace('#', '');
-        if (hashView && panels[hashView]) show(hashView);
+        if (hashView && panels[hashView]) show(hashView); else if (hashView === 'game') show('game'); else show('radio');
         document.querySelectorAll('.sc-toggle').forEach(function (tg) {
           var card = tg.closest('.sc-card');
           var viewer = card.querySelector('model-viewer');
@@ -719,7 +752,7 @@
       // back to the panel. Mouse visitors keep the always-live
       // viewer. Styles live in src/style.css under .mv-gate.
       if (window.matchMedia('(pointer: coarse)').matches) {
-        document.querySelectorAll('.sc-card model-viewer').forEach(function (viewer) {
+        document.querySelectorAll('.sc-card model-viewer, model-viewer.dash-car').forEach(function (viewer) {
           var gate = document.createElement('div');
           gate.className = 'mv-gate mv-gate--gated';
           viewer.parentNode.insertBefore(gate, viewer);
@@ -747,6 +780,111 @@
           gate.append(activate, release);
         });
       }
+    </script>
+    <script>
+      // The Cannoli head unit: six stations, each a playlist of banked
+      // MVT Fredericton songs streaming from the assets host. Presets
+      // mirror the MVTF6 game dial where the dial has a match (CROC,
+      // CHSR, CFHA, CFLO, CFSE) plus CKCH for the church pack. Tracks
+      // auto-advance within a station and wrap; tuning to a station
+      // starts its playlist from the top and plays.
+      (function () {
+        var BASE = 'https://mvtf-assets.vercel.app/songs/';
+        var STATIONS = [
+          { call: 'CROC', freq: '98.5', name: 'Classic Rock', tracks: [
+            ['Callie (506-555-0169)', 'callie-506-cr2.ogg'],
+            ['High Water', 'high-water.ogg'],
+            ['Harmony Corruption', 'harmony-corruption.ogg'],
+            ['Fiesta on the Wolastoq', 'fiesta-on-the-wolastoq.ogg'],
+            ['Fredericton (Bam Bam)', 'fredericton-bambam-a.ogg'],
+            ['He Took My Name at Marysville', 'he-took-my-name-at-marysville.ogg']
+          ]},
+          { call: 'CHSR', freq: '97.9', name: 'Campus / Grunge', tracks: [
+            ['Beach Goth Party', 'beach-goth-party.ogg'],
+            ['Woke Up in the Snowbank', 'woke-up-in-the-snowbank.ogg'],
+            ['The Bridge Is Breathing', 'the-bridge-is-breathing.ogg'],
+            ['Thick Enough', 'thick-enough.ogg'],
+            ['Get Me Out of My Mind', 'get-me-out-of-my-mind.ogg'],
+            ['Drawn Back Down', 'drawn-back-down.ogg']
+          ]},
+          { call: 'CFHA', freq: '91.7', name: 'Folk & Roots', tracks: [
+            ['Eight Metres Rising (The 2018 Freshet)', 'eight-metres-rising.ogg'],
+            ["Marysville (Boss Gibson's Town)", 'marysville.ogg'],
+            ['Two Days on the Nashwaak (1696)', 'two-days-on-the-nashwaak.ogg'],
+            ['Twenty Shillings (Benedict Arnold)', 'twenty-shillings.ogg']
+          ]},
+          { call: 'CFLO', freq: '94.3', name: 'Soul & World', tracks: [
+            ["One Good Eye (Willie O'Ree)", 'one-good-eye.ogg'],
+            ['Light the River (Diwali in Fredericton)', 'light-the-river.ogg']
+          ]},
+          { call: 'CFSE', freq: '89.5', name: 'Francophone', tracks: [
+            ['Pointe-Sainte-Anne (1759)', 'pointe-sainte-anne.ogg']
+          ]},
+          { call: 'CKCH', freq: '102.9', name: 'Sunday / Church', tracks: [
+            ['Seventy-One Years to the Water', 'seventy-one-years-to-the-water.ogg'],
+            ['O King of Mercy', 'o-king-of-mercy-a.ogg'],
+            ['Put Not Your Trust in Princes', 'put-not-your-trust-in-princes.ogg'],
+            ['When Evening Falls', 'when-evening-falls.ogg'],
+            ['God of the Living Waters', 'god-of-the-living-waters.ogg'],
+            ['Cod Be With You', 'cod-be-with-you.ogg'],
+            ['Bless Me Father', 'bless-me-father.ogg']
+          ]}
+        ];
+        var audio = document.getElementById('radio-audio');
+        var el = {
+          freq: document.getElementById('hu-freq'), call: document.getElementById('hu-call'),
+          track: document.getElementById('hu-track'), pos: document.getElementById('hu-pos'),
+          state: document.getElementById('hu-state'), clock: document.getElementById('hu-clock'),
+          fill: document.getElementById('hu-prog-fill'), presets: document.getElementById('hu-presets'),
+          playlist: document.getElementById('hu-playlist'), play: document.getElementById('hu-play')
+        };
+        var si = 0, ti = 0;
+        function fmt(s) { if (!isFinite(s)) return '--:--'; s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+        function render() {
+          var st = STATIONS[si];
+          el.freq.textContent = st.freq; el.call.textContent = st.call + ' · ' + st.name;
+          el.track.textContent = st.tracks[ti][0];
+          el.pos.textContent = (ti + 1) + ' / ' + st.tracks.length;
+          el.state.textContent = audio.paused ? 'PAUSED' : 'PLAYING';
+          el.play.textContent = audio.paused ? '▶' : '⏸';
+          el.clock.textContent = fmt(audio.currentTime) + ' / ' + fmt(audio.duration);
+          el.fill.style.width = (audio.duration ? (100 * audio.currentTime / audio.duration) : 0) + '%';
+          el.presets.querySelectorAll('button').forEach(function (b, i) { b.classList.toggle('on', i === si); });
+          el.playlist.querySelectorAll('li').forEach(function (li, i) { li.classList.toggle('on', i === ti); });
+        }
+        function buildPlaylist() {
+          el.playlist.innerHTML = '';
+          STATIONS[si].tracks.forEach(function (t, i) {
+            var li = document.createElement('li');
+            var b = document.createElement('button');
+            b.type = 'button'; b.textContent = t[0];
+            b.addEventListener('click', function () { ti = i; load(true); });
+            li.appendChild(b); el.playlist.appendChild(li);
+          });
+        }
+        function load(play) {
+          audio.src = BASE + STATIONS[si].tracks[ti][1];
+          if (play) audio.play();
+          render();
+        }
+        function tune(i, play) { si = (i + STATIONS.length) % STATIONS.length; ti = 0; buildPlaylist(); load(play); }
+        STATIONS.forEach(function (st, i) {
+          var b = document.createElement('button');
+          b.type = 'button'; b.className = 'hu-preset';
+          b.innerHTML = '<b>' + (i + 1) + '</b><span>' + st.call + '</span><small>' + st.freq + '</small>';
+          b.addEventListener('click', function () { tune(i, true); });
+          el.presets.appendChild(b);
+        });
+        el.play.addEventListener('click', function () { if (audio.paused) audio.play(); else audio.pause(); });
+        document.getElementById('hu-next').addEventListener('click', function () { ti = (ti + 1) % STATIONS[si].tracks.length; load(true); });
+        document.getElementById('hu-prev').addEventListener('click', function () { ti = (ti - 1 + STATIONS[si].tracks.length) % STATIONS[si].tracks.length; load(true); });
+        document.getElementById('hu-volume').addEventListener('input', function (e) { audio.volume = e.target.value / 100; });
+        audio.addEventListener('ended', function () { ti = (ti + 1) % STATIONS[si].tracks.length; load(true); });
+        audio.addEventListener('play', render); audio.addEventListener('pause', render);
+        audio.addEventListener('loadedmetadata', render); audio.addEventListener('timeupdate', render);
+        audio.volume = 0.8;
+        buildPlaylist(); load(false);
+      })();
     </script>
     <script type="module" src="/src/main.ts"></script>
     <script type="module" src="/src/maps-view.ts"></script>

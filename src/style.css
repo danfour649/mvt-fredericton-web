@@ -670,3 +670,64 @@ body.car-burning #ctl-buttons [data-action="interact"] {
   .sc-card model-viewer { height: 300px; }
   #maps-map { height: 380px; }
 }
+
+/* --- radio dashboard (the Cannoli head unit) ------------------------- */
+.radio-inner { max-width: 720px; }
+.dash {
+  background: linear-gradient(180deg, #232323 0%, #171717 60%, #101010 100%);
+  border: 1px solid #3a3a3a; border-radius: 18px; padding: 14px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 30px rgba(0,0,0,0.5);
+}
+.dash-car {
+  width: 100%; height: 300px; border-radius: 12px; display: block;
+  background: radial-gradient(120% 100% at 50% 0%, #2c3a20 0%, #141c0e 70%);
+}
+.headunit { margin-top: 14px; background: #0c0c0c; border: 1px solid #333; border-radius: 12px; padding: 12px; }
+.hu-lcd {
+  background: linear-gradient(180deg, #9db38a, #8aa873);
+  color: #14210c; border-radius: 8px; padding: 10px 12px;
+  font-family: "Courier New", ui-monospace, monospace;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.35);
+}
+.hu-lcd-top { display: flex; gap: 10px; align-items: baseline; font-weight: bold; }
+#hu-freq { font-size: 30px; }
+.hu-band { font-size: 13px; }
+#hu-call { margin-left: auto; font-size: 15px; text-align: right; }
+#hu-clock { font-size: 13px; }
+.hu-lcd-track { font-size: 17px; font-weight: bold; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hu-lcd-sub { display: flex; justify-content: space-between; font-size: 12px; margin-top: 2px; }
+.hu-prog { height: 5px; background: rgba(20,33,12,0.35); border-radius: 3px; margin-top: 8px; }
+#hu-prog-fill { height: 100%; width: 0%; background: #14210c; border-radius: 3px; }
+.hu-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.hu-preset {
+  background: #1e1e1e; color: #e8e8e8; border: 1px solid #444; border-radius: 9px;
+  padding: 8px 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  font: inherit;
+}
+.hu-preset b { font-size: 11px; color: #ffd23f; }
+.hu-preset span { font-size: 16px; font-weight: bold; letter-spacing: 0.04em; }
+.hu-preset small { font-size: 11px; color: #9a9a9a; }
+.hu-preset.on { background: #ffd23f; color: #20180a; border-color: #ffd23f; }
+.hu-preset.on b, .hu-preset.on small { color: #20180a; }
+.hu-controls { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.hu-btn {
+  background: #262626; color: #f2f2f2; border: 1px solid #4a4a4a; border-radius: 50%;
+  width: 46px; height: 46px; font-size: 17px; cursor: pointer; flex: 0 0 auto;
+}
+.hu-play { width: 56px; height: 56px; font-size: 21px; background: #ffd23f; color: #20180a; border-color: #ffd23f; }
+.hu-vol { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 1 1 auto; max-width: 220px; }
+.hu-vol input { flex: 1; accent-color: #ffd23f; }
+.hu-playlist { list-style: none; margin: 12px 0 2px; padding: 0; counter-reset: trk; }
+.hu-playlist li { border-top: 1px solid #262626; }
+.hu-playlist li button {
+  width: 100%; text-align: left; background: none; border: 0; color: #cfd6c4;
+  padding: 9px 8px; font: inherit; font-size: 15px; cursor: pointer;
+}
+.hu-playlist li.on button { color: #ffd23f; font-weight: bold; }
+.hu-playlist li button::before { counter-increment: trk; content: counter(trk) ". "; color: #777; }
+@media (max-width: 560px) {
+  .dash-car { height: 220px; }
+  .hu-presets { grid-template-columns: repeat(3, 1fr); }
+  #hu-freq { font-size: 24px; }
+  .hu-lcd-track { font-size: 15px; }
+}
