@@ -241,8 +241,8 @@ function buildAdjacency(graph: RoadGraph): Adj[][] {
   return adj;
 }
 
-/** Final off-road legs up to this length (m) are trusted when clear. */
-export const ROUTE_DEST_FREE_LEG_M = 30;
+/** (Removed 2026-11-23: final off-road legs are now trusted only
+ *  when CLEAR, at any length — see routableDestination.) */
 
 /** Is `p` standing on a road surface (the game's own bridge-deck
  *  test: over water but on a road is deck, not drowning)? */
@@ -264,7 +264,7 @@ function standable(world: WorldModel, p: Vec2): boolean {
  *  with no road surface under it (a riverbank final leg used to
  *  grind the FOLLOW walker against the Nashwaak for a quarter of
  *  an hour before the stuck ladder gave up). */
-function legObstructed(world: WorldModel, a: Vec2, b: Vec2): boolean {
+export function legObstructed(world: WorldModel, a: Vec2, b: Vec2): boolean {
   const d = dist(a, b);
   const n = Math.max(1, Math.ceil(d / 5));
   for (let i = 1; i < n; i++) {
@@ -281,15 +281,18 @@ function legObstructed(world: WorldModel, a: Vec2, b: Vec2): boolean {
  * sent to the raw point grinds against a wall or a riverbank
  * until the stuck ladder surrenders metres short. When the tap
  * itself is unstandable, or the off-road leg from its road snap
- * is long AND obstructed, the route ends at the snap instead:
- * the street in front of the place you tapped. Clear legs of any
+ * is obstructed AT ANY LENGTH, the route ends at the snap instead:
+ * the street in front of the place you tapped. (The obstructed
+ * leg used to need to be >30 m to park at the snap — a 20 m leg
+ * through a building still ground the walker into its wall,
+ * Daniel 2026-11-23, George Street dropoff.) Clear legs of any
  * length (a tap in an open field) keep the exact point.
  */
 export function routableDestination(world: WorldModel, to: Vec2): Vec2 {
   const snap = nearestRoadPoint(world, to);
   if (!snap) return to;
   if (!standable(world, to)) return { ...snap.pos };
-  if (dist(snap.pos, to) > ROUTE_DEST_FREE_LEG_M && legObstructed(world, snap.pos, to)) {
+  if (legObstructed(world, snap.pos, to)) {
     return { ...snap.pos };
   }
   return to;

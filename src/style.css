@@ -566,9 +566,12 @@ body.car-burning #ctl-buttons [data-action="interact"] {
 @media (pointer: coarse) {
   #touch { display: block; }
   /* Pager moves up: the stick lives bottom-left now. Its width is
-     capped 66px short of the right edge so the top-right ? disc
-     never sits on its corner (Daniel's 2026-11-23 phone shot). */
-  #pager { bottom: auto; top: calc(var(--header-h) + 6px); max-width: min(330px, calc(100vw - 66px)); }
+     capped 120px short of the right edge: the 66px cap still left
+     the top-right ? disc (44px + its shadow) sitting on the pager's
+     corner, covering the ✕ hide button (Daniel's 2026-11-23 phone
+     shots, twice). 120px leaves a clear gutter right of the pager
+     for the whole ? column. */
+  #pager { bottom: auto; top: calc(var(--header-h) + 6px); max-width: min(330px, calc(100vw - 120px)); }
   #credit { display: none; }
   /* The ? stays top-right on touch too (base rule) — well clear of
      the bottom-right control cluster and the green E button it used
