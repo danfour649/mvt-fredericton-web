@@ -54,7 +54,8 @@ A quality pass after a run of fast content drops:
   simulation, map redraws or engine hum while you read).
 - **FM** is a real head unit: amber VFD with ghosted segments, an
   88–108 MHz scale whose needle tunes, LED presets, seekable progress,
-  lock-screen controls (Media Session), remembered station/volume.
+  lock-screen controls (Media Session), remembered volume; a fresh
+  page opens on CHSR, cued to Harmony Corruption.
 - **The radio plays on everywhere.** One engine (`public/radio.js`)
   drives both the FM tab and a mini player in the header (radio pill
   → popover with play/skip/stations), on every view and on the
