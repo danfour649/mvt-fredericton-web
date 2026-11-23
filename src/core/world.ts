@@ -218,7 +218,11 @@ export function loadWorld(doc: unknown): WorldModel {
       path,
       name: String(f.properties.Formatted_Street_Name ?? f.properties.Route_Name_English_1 ?? ''),
       lanes,
-      speedKmh: num(f.properties.Speed_Restrictions_Both, 0),
+      // GeoNB's -1 sentinel means "no posted limit", not a speed:
+      // clamp any non-positive raw value to 0 (the "none posted"
+      // marker cruiseFor already defaults from) so the sentinel can
+      // never leak into speed maths as a negative limit.
+      speedKmh: Math.max(0, num(f.properties.Speed_Restrictions_Both, 0)),
       dirFlow: String(f.properties.Dir_of_Traffic_Flow ?? ''),
       widthM: 3.6 * lanes + 2,
       segLens,

@@ -32,7 +32,13 @@ export interface TrafficCar {
  *  (iteration 3 mayhem dial: the cap was 11 m/s — traffic now runs
  *  at the full 50 km/h limit on the roads that post one). */
 export function cruiseFor(road: Road): number {
-  return Math.min(14, ((road.speedKmh || 40) * 1000) / 3600);
+  // GeoNB marks "no posted limit" as -1 in Speed_Restrictions_Both
+  // (5 roads in the extract, incl. both Westmorland bridge spans):
+  // the old `|| 40` guard caught 0 but let -1 through, giving those
+  // roads a cruise speed of -0.28 m/s — traffic froze/bounced at
+  // their junctions and crept backwards when spawned on them.
+  const kmh = road.speedKmh > 0 ? road.speedKmh : 40;
+  return Math.min(14, (kmh * 1000) / 3600);
 }
 
 export function spawnTraffic(road: Road, distAlong: number): TrafficCar {

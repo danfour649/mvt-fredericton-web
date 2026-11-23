@@ -52,6 +52,11 @@ export interface CarEntity extends CarState {
   stolen: boolean;
   /** Seconds a traffic car stays stopped after being hit. */
   trafficStopT: number;
+  /** v0.34: seconds this traffic car has been continuously held at
+   *  ~0 speed by a blocker (the player in its lane, or a stopped
+   *  leader). Past ~6 s the car creeps (see updateTrafficCars) so a
+   *  queue can never freeze permanently. */
+  trafficBlockedT: number;
   /** v0.30: health hit 0 — the car is ON FIRE and will explode when
    *  burnT runs out. Bail, or burn with it. */
   burning: boolean;
@@ -496,6 +501,7 @@ export class Game {
         wrecked: false,
         stolen: false,
         trafficStopT: 0,
+        trafficBlockedT: 0,
         bodyType: body.bodyType,
         ...freshCar,
       };
@@ -524,6 +530,7 @@ export class Game {
         wrecked: false,
         stolen: false,
         trafficStopT: 0,
+        trafficBlockedT: 0,
         bodyType: body.bodyType,
         ...freshCar,
       });
@@ -685,6 +692,7 @@ export class Game {
       car.burnT = 0;
       car.traffic = landing;
       car.trafficStopT = 0;
+      car.trafficBlockedT = 0;
       car.pos = { ...car.traffic.pos };
       car.heading = car.traffic.heading;
       car.speed = car.traffic.speedMps;
@@ -1216,12 +1224,23 @@ export class Game {
     for (const car of this.cars) {
       if (!car.traffic || car === this.drivenCar || car.wrecked) continue;
       car.trafficStopT = Math.max(0, car.trafficStopT - dt);
-      // Brake when the player is blocking the road ahead.
+      // Brake when the player is blocking the road ahead — but only
+      // when he is actually IN this car's lane corridor (v0.34,
+      // exploratory Finding 2). The old test braked for the player
+      // anywhere in the 9 m front hemisphere, so a player standing
+      // on the sidewalk froze the whole street: the follow profile
+      // below then collapsed every follower to the leader's 0, and a
+      // 15-car Queen St queue sat at exactly 0 for 6 sim-minutes.
+      // The lateral bound is the same 1.7 m corridor the car-ahead
+      // logic uses — kerbside does not brake traffic; in the lane
+      // still does.
+      const hvx = Math.cos(car.heading);
+      const hvz = Math.sin(car.heading);
       const toPlayer = { x: this.playerPos.x - car.pos.x, z: this.playerPos.z - car.pos.z };
       const d = Math.hypot(toPlayer.x, toPlayer.z);
-      const ahead =
-        d < 9 &&
-        (toPlayer.x * Math.cos(car.heading) + toPlayer.z * Math.sin(car.heading)) / (d || 1) > 0.4;
+      const playerAlong = toPlayer.x * hvx + toPlayer.z * hvz;
+      const playerLateral = Math.abs(toPlayer.x * -hvz + toPlayer.z * hvx);
+      const ahead = d < 9 && playerAlong / (d || 1) > 0.4 && playerLateral <= 1.7;
       // A car the player has taken is DRIVERLESS once he steps
       // out: traffic must not resume its route and drive it away
       // from beside him (Daniel, 2026-11-21: "the car disappeared
@@ -1233,24 +1252,29 @@ export class Game {
       // as "stopped" here, which zeroes the route speed below and
       // also makes followers queue behind the car, as they should
       // for a car abandoned in the road.
-      car.traffic.stopped = car.trafficStopT > 0 || ahead || car.stolen || car.burning;
-      // v0.25 follow behaviour: cap this car's speed by whatever is
-      // rolling ahead of it in its lane corridor — another traffic car
-      // or the player's car. Before this, traffic had NO car-ahead
-      // braking at all: a follower drove straight through a stopped
-      // leader (measured overlap −21 m in the audit test) and every
-      // queue collapsed into one point. The cap is a closing-speed
-      // profile: match the leader's speed plus a term that grows
-      // with the bumper gap, so the follower creeps up to ~1.6 m
-      // behind a stopped leader and never touches it. Parked cars
-      // are excluded — they're kerbside (lateral offset ~2 m from
-      // the traffic lane), outside the 1.7 m corridor anyway.
-      if (car.traffic.stopped) {
+      const hardStop = car.trafficStopT > 0 || car.stolen || car.burning;
+      if (hardStop) {
+        // Hit-pause, driverless or burning: a full stop that must
+        // never creep (a stolen car driving itself away again is
+        // the exact bug the driverless rule exists to prevent).
+        car.traffic.stopped = true;
         car.traffic.speedMps = 0;
+        car.trafficBlockedT = 0;
       } else {
+        // v0.25 follow behaviour: cap this car's speed by whatever is
+        // rolling ahead of it in its lane corridor — another traffic
+        // car or the player's car. Before this, traffic had NO
+        // car-ahead braking at all: a follower drove straight
+        // through a stopped leader (measured overlap −21 m in the
+        // audit test) and every queue collapsed into one point. The
+        // cap is a closing-speed profile: match the leader's speed
+        // plus a term that grows with the bumper gap, so the
+        // follower creeps up to ~1.6 m behind a stopped leader and
+        // never touches it. Parked cars are excluded — they're
+        // kerbside (lateral offset ~2 m from the traffic lane),
+        // outside the 1.7 m corridor anyway.
         let cap = Infinity;
-        const hvx = Math.cos(car.heading);
-        const hvz = Math.sin(car.heading);
+        let nearestGap = Infinity;
         for (const other of this.cars) {
           if (other === car || other.wrecked) continue;
           const isDriven = other === this.drivenCar;
@@ -1296,6 +1320,7 @@ export class Game {
               ? 0
               : other.traffic!.speedMps;
           const bumperGap = along - 4.4;
+          if (bumperGap < nearestGap) nearestGap = bumperGap;
           let capHere = leaderSpeed + Math.max(0, bumperGap - 1.6) * 0.85;
           // Inside the desired 1.6 m bumper gap the follower must go
           // SLOWER than the leader (a fraction of its speed), not
@@ -1305,7 +1330,33 @@ export class Game {
           if (bumperGap <= 0.2) capHere = 0;
           if (capHere < cap) cap = capHere;
         }
-        car.traffic.speedMps = Math.max(0, Math.min(car.traffic.baseSpeedMps, cap));
+        let desired = ahead ? 0 : Math.max(0, Math.min(car.traffic.baseSpeedMps, cap));
+        if (desired <= 0.01) {
+          // Held — by the player standing in the lane, or by a
+          // stopped leader. v0.34 creep: once a car has been held
+          // ~6 s, it edges forward at up to 1 m/s, easing off to a
+          // stop a car's length short of the player (3.4 m centre
+          // distance) or ~0.9 m behind the leader's bumper — so the
+          // queue compresses and inches instead of sitting at
+          // exactly 0 forever (Finding 2's permanent Queen St
+          // freeze). The head car's creep feeds the followers'
+          // follow profile, so the whole queue moves with it.
+          car.trafficBlockedT += dt;
+          if (car.trafficBlockedT > 6) {
+            let creep = 1;
+            if (ahead) creep = Math.min(creep, Math.max(0, d - 3.4) * 0.5);
+            if (nearestGap < Infinity) creep = Math.min(creep, Math.max(0, nearestGap - 0.9) * 0.5);
+            desired = creep;
+          }
+        } else {
+          car.trafficBlockedT = 0;
+        }
+        car.traffic.speedMps = desired;
+        // `stopped` still reports a car held at ~0 by the player (so
+        // followers read its speed as 0), but a creeping car is not
+        // stopped: updateTraffic must advance it, and followers read
+        // its real creep speed from speedMps.
+        car.traffic.stopped = desired <= 0.01 && ahead;
       }
       updateTraffic(car.traffic, dt, this.roadGraph, this.trafficRng);
       car.pos = { ...car.traffic.pos };
