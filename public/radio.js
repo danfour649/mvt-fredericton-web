@@ -67,7 +67,13 @@
     ]}
   ];
 
-  // Per-viewer conveniences only: the last station and volume.
+  // What a fresh page opens on (Daniel, 2026-11-23): CHSR, cued to
+  // Harmony Corruption. Looked up by call sign + file, so reordering a
+  // playlist can't silently cue the wrong song. Selected, not played —
+  // browsers block sound before the visitor taps.
+  var START = { call: 'CHSR', file: 'harmony-corruption.ogg' };
+
+  // Per-viewer convenience only: the volume.
   function recall(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
   function remember(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
 
@@ -92,7 +98,12 @@
       if (R.audio) return R;
       var a = R.audio = new Audio();
       a.preload = 'none';
-      R.si = Math.max(0, Math.min(STATIONS.length - 1, parseInt(recall('mvt-radio-station') || '0', 10) || 0));
+      R.si = 0; R.ti = 0;
+      STATIONS.forEach(function (st, i) {
+        if (st.call !== START.call) return;
+        R.si = i;
+        st.tracks.forEach(function (t, j) { if (t[1] === START.file) R.ti = j; });
+      });
       var vol = parseInt(recall('mvt-radio-volume') || '80', 10);
       if (!(vol >= 0 && vol <= 100)) vol = 80;
       // iOS ignores element volume (hardware buttons only): probe it,
@@ -156,7 +167,6 @@
     tune: function (i, play) {
       R.si = (i + STATIONS.length) % STATIONS.length;
       R.ti = 0;
-      remember('mvt-radio-station', String(R.si));
       R.load(play);
     },
     select: function (ti, play) { R.ti = ti; R.load(play); },
